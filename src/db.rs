@@ -30,6 +30,7 @@ impl Db {
                 key TEXT NOT NULL,
                 value TEXT NOT NULL,
                 value_type TEXT NOT NULL,
+                last_timestamp INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(target_type, target_value, key)
             );
 
@@ -66,11 +67,11 @@ impl Db {
         timestamp: i64,
     ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO metadata (target_type, target_value, key, value, value_type)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(target_type, target_value, key) DO UPDATE
-             SET value = excluded.value, value_type = excluded.value_type",
-            params![target_type, target_value, key, value, value_type],
+             SET value = excluded.value, value_type = excluded.value_type, last_timestamp = excluded.last_timestamp",
+            params![target_type, target_value, key, value, value_type, timestamp],
         )?;
 
         self.conn.execute(
@@ -233,11 +234,11 @@ impl Db {
         };
 
         self.conn.execute(
-            "INSERT INTO metadata (target_type, target_value, key, value, value_type)
-             VALUES (?1, ?2, ?3, ?4, 'list')
+            "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp)
+             VALUES (?1, ?2, ?3, ?4, 'list', ?5)
              ON CONFLICT(target_type, target_value, key) DO UPDATE
-             SET value = excluded.value, value_type = 'list'",
-            params![target_type, target_value, key, &new_value],
+             SET value = excluded.value, value_type = 'list', last_timestamp = excluded.last_timestamp",
+            params![target_type, target_value, key, &new_value, timestamp],
         )?;
 
         self.conn.execute(
@@ -277,8 +278,8 @@ impl Db {
                 let new_value = serde_json::to_string(&list)?;
 
                 self.conn.execute(
-                    "UPDATE metadata SET value = ?1 WHERE target_type = ?2 AND target_value = ?3 AND key = ?4",
-                    params![&new_value, target_type, target_value, key],
+                    "UPDATE metadata SET value = ?1, last_timestamp = ?2 WHERE target_type = ?3 AND target_value = ?4 AND key = ?5",
+                    params![&new_value, timestamp, target_type, target_value, key],
                 )?;
 
                 self.conn.execute(
@@ -294,9 +295,10 @@ impl Db {
     }
 
     /// Get all metadata entries (for serialization).
-    pub fn get_all_metadata(&self) -> Result<Vec<(String, String, String, String, String)>> {
+    /// Returns (target_type, target_value, key, value, value_type, last_timestamp).
+    pub fn get_all_metadata(&self) -> Result<Vec<(String, String, String, String, String, i64)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT target_type, target_value, key, value, value_type FROM metadata ORDER BY target_type, target_value, key",
+            "SELECT target_type, target_value, key, value, value_type, last_timestamp FROM metadata ORDER BY target_type, target_value, key",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -306,6 +308,7 @@ impl Db {
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
             ))
         })?;
 
@@ -481,5 +484,39 @@ mod tests {
         assert_eq!(db.get_last_materialized().unwrap(), None);
         db.set_last_materialized(5000).unwrap();
         assert_eq!(db.get_last_materialized().unwrap(), Some(5000));
+    }
+
+    #[test]
+    fn test_last_timestamp_stored_and_returned() {
+        let db = Db::open_in_memory().unwrap();
+
+        // set stores the timestamp
+        db.set("commit", "abc123", "key", "\"val\"", "string", "a@b.com", 5000)
+            .unwrap();
+        let entries = db.get_all_metadata().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].5, 5000);
+
+        // upsert updates the timestamp
+        db.set("commit", "abc123", "key", "\"val2\"", "string", "a@b.com", 9000)
+            .unwrap();
+        let entries = db.get_all_metadata().unwrap();
+        assert_eq!(entries[0].5, 9000);
+
+        // list_push stores the timestamp
+        db.list_push("commit", "abc123", "tags", "first", "a@b.com", 11000)
+            .unwrap();
+        let entries = db.get_all_metadata().unwrap();
+        let tags = entries.iter().find(|e| e.2 == "tags").unwrap();
+        assert_eq!(tags.5, 11000);
+
+        // list_pop updates the timestamp
+        db.list_push("commit", "abc123", "tags", "second", "a@b.com", 12000)
+            .unwrap();
+        db.list_pop("commit", "abc123", "tags", "second", "a@b.com", 13000)
+            .unwrap();
+        let entries = db.get_all_metadata().unwrap();
+        let tags = entries.iter().find(|e| e.2 == "tags").unwrap();
+        assert_eq!(tags.5, 13000);
     }
 }

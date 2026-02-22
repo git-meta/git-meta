@@ -75,14 +75,12 @@ pub fn run() -> Result<()> {
 /// Build a complete Git tree from all metadata entries.
 fn build_tree(
     repo: &git2::Repository,
-    entries: &[(String, String, String, String, String)],
+    entries: &[(String, String, String, String, String, i64)],
 ) -> Result<git2::Oid> {
     // Collect all file paths -> blob content
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    let now = Utc::now().timestamp_millis();
-
-    for (target_type, target_value, key, value, value_type) in entries {
+    for (target_type, target_value, key, value, value_type, last_timestamp) in entries {
         let target = if target_type == "project" {
             Target::parse("project")?
         } else {
@@ -103,7 +101,7 @@ fn build_tree(
                 let list: Vec<String> = serde_json::from_str(value)
                     .context("failed to decode list value")?;
                 for (i, item) in list.iter().enumerate() {
-                    let ts = now + i as i64;
+                    let ts = last_timestamp + i as i64;
                     let mut hasher = Sha256::new();
                     hasher.update(item.as_bytes());
                     let hash = format!("{:x}", hasher.finalize());
