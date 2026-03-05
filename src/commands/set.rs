@@ -4,7 +4,8 @@ use std::fs;
 
 use crate::db::Db;
 use crate::git_utils;
-use crate::types::{Target, ValueType};
+use crate::list_value::{encode_entries, parse_entries};
+use crate::types::{validate_key, Target, ValueType};
 
 pub fn run(
     target_str: &str,
@@ -14,6 +15,7 @@ pub fn run(
     value_type_str: &str,
 ) -> Result<()> {
     let mut target = Target::parse(target_str)?;
+    validate_key(key)?;
     let value_type = ValueType::from_str(value_type_str)?;
 
     let raw_value = match (value, file) {
@@ -39,9 +41,8 @@ pub fn run(
             serde_json::to_string(&raw_value)?
         }
         ValueType::List => {
-            // Value should be a JSON array already; validate it
-            let parsed: Vec<serde_json::Value> = serde_json::from_str(&raw_value)?;
-            serde_json::to_string(&parsed)?
+            let entries = parse_entries(&raw_value)?;
+            encode_entries(&entries)?
         }
     };
 

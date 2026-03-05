@@ -3,10 +3,11 @@ use chrono::Utc;
 
 use crate::db::Db;
 use crate::git_utils;
-use crate::types::Target;
+use crate::types::{validate_key, Target};
 
 pub fn run_push(target_str: &str, key: &str, value: &str) -> Result<()> {
     let mut target = Target::parse(target_str)?;
+    validate_key(key)?;
 
     let repo = git_utils::discover_repo()?;
     target.resolve(&repo)?;
@@ -30,6 +31,7 @@ pub fn run_push(target_str: &str, key: &str, value: &str) -> Result<()> {
 
 pub fn run_pop(target_str: &str, key: &str, value: &str) -> Result<()> {
     let mut target = Target::parse(target_str)?;
+    validate_key(key)?;
 
     let repo = git_utils::discover_repo()?;
     target.resolve(&repo)?;

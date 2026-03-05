@@ -47,9 +47,9 @@ impl Target {
             });
         }
 
-        let (type_str, value) = s
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("target must be in type:value format (e.g. commit:abc123)"))?;
+        let (type_str, value) = s.split_once(':').ok_or_else(|| {
+            anyhow::anyhow!("target must be in type:value format (e.g. commit:abc123)")
+        })?;
 
         let target_type = TargetType::from_str(type_str)?;
 
@@ -130,19 +130,103 @@ impl ValueType {
     }
 }
 
-/// Build the full tree path for a key under a target.
+/// Root directory used to store key segments in serialized trees.
+pub const KEY_TREE_ROOT: &str = "k";
+
+/// Reserved filename for string terminal values.
+pub const STRING_VALUE_BLOB: &str = "__value";
+
+/// Reserved directory name for list terminal values.
+pub const LIST_VALUE_DIR: &str = "__list";
+
+/// Reserved directory for tombstone entries.
+pub const TOMBSTONE_ROOT: &str = "__tombstones";
+
+/// Reserved filename for tombstone blobs.
+pub const TOMBSTONE_BLOB: &str = "__deleted";
+
+fn validate_key_segment(segment: &str) -> Result<()> {
+    if segment.is_empty() {
+        bail!("key segments cannot be empty");
+    }
+    if segment == "." || segment == ".." {
+        bail!("key segment '{}' is not allowed", segment);
+    }
+    if segment.contains('/') {
+        bail!("key segment '{}' must not contain '/'", segment);
+    }
+    if segment.contains('\0') {
+        bail!("key segment '{}' must not contain null byte", segment);
+    }
+    if segment == KEY_TREE_ROOT || segment == STRING_VALUE_BLOB || segment == LIST_VALUE_DIR {
+        bail!("key segment '{}' is reserved", segment);
+    }
+    Ok(())
+}
+
+/// Validate that a metadata key can be serialized into the Git tree layout.
+pub fn validate_key(key: &str) -> Result<()> {
+    if key.is_empty() {
+        bail!("key cannot be empty");
+    }
+    for segment in key.split(':') {
+        validate_key_segment(segment)?;
+    }
+    Ok(())
+}
+
+/// Build the full tree path segments for a key under a target.
 /// Key is split by ':' into subtree segments.
 #[allow(dead_code)]
 pub fn key_to_path_segments(key: &str) -> Vec<String> {
     key.split(':').map(|s| s.to_string()).collect()
 }
 
+/// Decode raw key path segments back into `:`-namespaced key form.
+pub fn decode_key_path_segments(segments: &[&str]) -> Result<String> {
+    if segments.is_empty() {
+        bail!("key path must include at least one key segment");
+    }
+    let mut decoded = Vec::with_capacity(segments.len());
+    for segment in segments {
+        validate_key_segment(segment)?;
+        decoded.push((*segment).to_string());
+    }
+    Ok(decoded.join(":"))
+}
+
+/// Build the common tree path prefix for any key (string or list).
+pub fn build_key_tree_path(target: &Target, key: &str) -> Result<String> {
+    validate_key(key)?;
+    let base = target.tree_base_path();
+    let segments = key_to_path_segments(key).join("/");
+    Ok(format!("{}/{}/{}", base, KEY_TREE_ROOT, segments))
+}
+
 /// Build the full tree path for a string value.
 #[allow(dead_code)]
-pub fn build_tree_path(target: &Target, key: &str) -> String {
+pub fn build_tree_path(target: &Target, key: &str) -> Result<String> {
+    let key_path = build_key_tree_path(target, key)?;
+    Ok(format!("{}/{}", key_path, STRING_VALUE_BLOB))
+}
+
+/// Build the list directory path for a key.
+#[allow(dead_code)]
+pub fn build_list_tree_dir_path(target: &Target, key: &str) -> Result<String> {
+    let key_path = build_key_tree_path(target, key)?;
+    Ok(format!("{}/{}", key_path, LIST_VALUE_DIR))
+}
+
+/// Build the tombstone blob path for a key.
+#[allow(dead_code)]
+pub fn build_tombstone_tree_path(target: &Target, key: &str) -> Result<String> {
+    validate_key(key)?;
     let base = target.tree_base_path();
-    let key_path = key.replace(':', "/");
-    format!("{}/{}", base, key_path)
+    let segments = key_to_path_segments(key).join("/");
+    Ok(format!(
+        "{}/{}/{}/{}/{}",
+        base, TOMBSTONE_ROOT, KEY_TREE_ROOT, segments, TOMBSTONE_BLOB
+    ))
 }
 
 #[cfg(test)]
@@ -201,10 +285,10 @@ mod tests {
     #[test]
     fn test_build_tree_path() {
         let t = Target::parse("commit:13a7d29cde8f8557b54fd6474f547a56822180ae").unwrap();
-        let path = build_tree_path(&t, "agent:model");
+        let path = build_tree_path(&t, "agent:model").unwrap();
         assert_eq!(
             path,
-            "commit/13/0ae/13a7d29cde8f8557b54fd6474f547a56822180ae/agent/model"
+            "commit/13/0ae/13a7d29cde8f8557b54fd6474f547a56822180ae/k/agent/model/__value"
         );
     }
 
@@ -231,9 +315,52 @@ mod tests {
     #[test]
     fn test_tree_base_path_branch() {
         let t = Target::parse("branch:sc-branch-1-deadbeef").unwrap();
+        assert_eq!(t.tree_base_path(), "branch/sc/eef/sc-branch-1-deadbeef");
+    }
+
+    #[test]
+    fn test_decode_key_path_segments() {
+        let decoded = super::decode_key_path_segments(&["agent", "model"]).unwrap();
+        assert_eq!(decoded, "agent:model");
+    }
+
+    #[test]
+    fn test_validate_key_rejects_reserved_segments() {
+        assert!(super::validate_key("agent:__value").is_err());
+        assert!(super::validate_key("__list:chat").is_err());
+        assert!(super::validate_key("k:model").is_err());
+    }
+
+    #[test]
+    fn test_validate_key_rejects_unsafe_segments() {
+        assert!(super::validate_key("agent:/model").is_err());
+        assert!(super::validate_key("agent::model").is_err());
+        assert!(super::validate_key("agent:.").is_err());
+        assert!(super::validate_key("agent:..").is_err());
+    }
+
+    #[test]
+    fn test_validate_key_accepts_normal_segments() {
+        assert!(super::validate_key("agent:model:version").is_ok());
+    }
+
+    #[test]
+    fn test_build_list_tree_dir_path() {
+        let t = Target::parse("commit:13a7d29cde8f8557b54fd6474f547a56822180ae").unwrap();
+        let path = super::build_list_tree_dir_path(&t, "agent:chat").unwrap();
         assert_eq!(
-            t.tree_base_path(),
-            "branch/sc/eef/sc-branch-1-deadbeef"
+            path,
+            "commit/13/0ae/13a7d29cde8f8557b54fd6474f547a56822180ae/k/agent/chat/__list"
+        );
+    }
+
+    #[test]
+    fn test_build_tombstone_tree_path() {
+        let t = Target::parse("commit:13a7d29cde8f8557b54fd6474f547a56822180ae").unwrap();
+        let path = super::build_tombstone_tree_path(&t, "agent:chat").unwrap();
+        assert_eq!(
+            path,
+            "commit/13/0ae/13a7d29cde8f8557b54fd6474f547a56822180ae/__tombstones/k/agent/chat/__deleted"
         );
     }
 }

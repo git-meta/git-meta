@@ -2,6 +2,7 @@ mod cli;
 mod commands;
 mod db;
 mod git_utils;
+mod list_value;
 mod types;
 
 use anyhow::Result;
@@ -18,7 +19,13 @@ fn main() -> Result<()> {
             target,
             key,
             value,
-        } => commands::set::run(&target, &key, value.as_deref(), file.as_deref(), &value_type),
+        } => commands::set::run(
+            &target,
+            &key,
+            value.as_deref(),
+            file.as_deref(),
+            &value_type,
+        ),
 
         Commands::Get {
             json,
@@ -37,6 +44,8 @@ fn main() -> Result<()> {
 
         Commands::Serialize => commands::serialize::run(),
 
-        Commands::Materialize { remote } => commands::materialize::run(remote.as_deref()),
+        Commands::Materialize { remote, dry_run } => {
+            commands::materialize::run(remote.as_deref(), dry_run)
+        }
     }
 }

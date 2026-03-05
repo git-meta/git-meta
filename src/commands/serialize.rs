@@ -1,11 +1,17 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 use crate::db::Db;
 use crate::git_utils;
-use crate::types::Target;
+use crate::list_value::{make_entry_name, parse_entries};
+use crate::types::{build_list_tree_dir_path, build_tombstone_tree_path, build_tree_path, Target};
+
+#[derive(serde::Serialize)]
+struct TombstoneBlob<'a> {
+    timestamp: i64,
+    email: &'a str,
+}
 
 pub fn run() -> Result<()> {
     let repo = git_utils::discover_repo()?;
@@ -24,7 +30,7 @@ pub fn run() -> Result<()> {
         .map(|c| c.tree().unwrap());
 
     // Build new tree entries
-    let entries = if let Some(since) = last_materialized {
+    let metadata_entries = if let Some(since) = last_materialized {
         // Incremental: only modified entries
         let modified = db.get_modified_since(since)?;
         if modified.is_empty() && existing_tree.is_some() {
@@ -36,17 +42,19 @@ pub fn run() -> Result<()> {
     } else {
         db.get_all_metadata()?
     };
+    let tombstone_entries = db.get_all_tombstones()?;
 
-    if entries.is_empty() {
+    if metadata_entries.is_empty() && tombstone_entries.is_empty() {
         println!("no metadata to serialize");
         return Ok(());
     }
 
-    let tree_oid = build_tree(&repo, &entries)?;
+    let tree_oid = build_tree(&repo, &metadata_entries, &tombstone_entries)?;
 
     // Create commit
+    let name = git_utils::get_name(&repo)?;
     let email = git_utils::get_email(&repo)?;
-    let sig = git2::Signature::now(&email, &email)?;
+    let sig = git2::Signature::now(&name, &email)?;
 
     let tree = repo.find_tree(tree_oid)?;
 
@@ -75,43 +83,49 @@ pub fn run() -> Result<()> {
 /// Build a complete Git tree from all metadata entries.
 fn build_tree(
     repo: &git2::Repository,
-    entries: &[(String, String, String, String, String, i64)],
+    metadata_entries: &[(String, String, String, String, String, i64)],
+    tombstone_entries: &[(String, String, String, i64, String)],
 ) -> Result<git2::Oid> {
     // Collect all file paths -> blob content
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    for (target_type, target_value, key, value, value_type, last_timestamp) in entries {
+    for (target_type, target_value, key, value, value_type, _last_timestamp) in metadata_entries {
         let target = if target_type == "project" {
             Target::parse("project")?
         } else {
             Target::parse(&format!("{}:{}", target_type, target_value))?
         };
 
-        let base_path = target.tree_base_path();
-        let key_path = key.replace(':', "/");
-
         match value_type.as_str() {
             "string" => {
-                let raw_value: String = serde_json::from_str(value)
-                    .context("failed to decode string value")?;
-                let full_path = format!("{}/{}", base_path, key_path);
+                let raw_value: String =
+                    serde_json::from_str(value).context("failed to decode string value")?;
+                let full_path = build_tree_path(&target, key)?;
                 files.insert(full_path, raw_value.into_bytes());
             }
             "list" => {
-                let list: Vec<String> = serde_json::from_str(value)
-                    .context("failed to decode list value")?;
-                for (i, item) in list.iter().enumerate() {
-                    let ts = last_timestamp + i as i64;
-                    let mut hasher = Sha256::new();
-                    hasher.update(item.as_bytes());
-                    let hash = format!("{:x}", hasher.finalize());
-                    let entry_name = format!("{}-{}", ts, &hash[..5]);
-                    let full_path = format!("{}/{}/{}", base_path, key_path, entry_name);
-                    files.insert(full_path, item.clone().into_bytes());
+                let list_entries = parse_entries(value).context("failed to decode list value")?;
+                let list_dir_path = build_list_tree_dir_path(&target, key)?;
+                for entry in list_entries {
+                    let entry_name = make_entry_name(&entry);
+                    let full_path = format!("{}/{}", list_dir_path, entry_name);
+                    files.insert(full_path, entry.value.into_bytes());
                 }
             }
             _ => {}
         }
+    }
+
+    for (target_type, target_value, key, timestamp, email) in tombstone_entries {
+        let target = if target_type == "project" {
+            Target::parse("project")?
+        } else {
+            Target::parse(&format!("{}:{}", target_type, target_value))?
+        };
+
+        let full_path = build_tombstone_tree_path(&target, key)?;
+        let payload = serde_json::to_vec(&TombstoneBlob { timestamp: *timestamp, email })?;
+        files.insert(full_path, payload);
     }
 
     // Build nested tree from flat paths

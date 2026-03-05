@@ -24,6 +24,15 @@ pub fn get_email(repo: &Repository) -> Result<String> {
     Ok(email)
 }
 
+/// Get the user's name from Git config.
+pub fn get_name(repo: &Repository) -> Result<String> {
+    let config = repo.config()?;
+    let name = config
+        .get_string("user.name")
+        .unwrap_or_else(|_| "unknown".to_string());
+    Ok(name)
+}
+
 /// Get the meta namespace from Git config (defaults to "meta").
 pub fn get_namespace(repo: &Repository) -> Result<String> {
     let config = repo.config()?;

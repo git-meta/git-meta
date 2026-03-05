@@ -3,10 +3,11 @@ use chrono::Utc;
 
 use crate::db::Db;
 use crate::git_utils;
-use crate::types::Target;
+use crate::types::{validate_key, Target};
 
 pub fn run(target_str: &str, key: &str) -> Result<()> {
     let mut target = Target::parse(target_str)?;
+    validate_key(key)?;
 
     let repo = git_utils::discover_repo()?;
     target.resolve(&repo)?;
@@ -16,7 +17,13 @@ pub fn run(target_str: &str, key: &str) -> Result<()> {
 
     let db = Db::open(&db_path)?;
 
-    let removed = db.rm(target.type_str(), target.value_str(), key, &email, timestamp)?;
+    let removed = db.rm(
+        target.type_str(),
+        target.value_str(),
+        key,
+        &email,
+        timestamp,
+    )?;
 
     if !removed {
         eprintln!("key '{}' not found", key);

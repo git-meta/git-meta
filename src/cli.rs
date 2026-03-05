@@ -88,5 +88,9 @@ pub enum Commands {
     Materialize {
         /// Remote name (optional, defaults to all remotes)
         remote: Option<String>,
+
+        /// Show what would be changed without updating SQLite or refs
+        #[arg(long = "dry-run")]
+        dry_run: bool,
     },
 }

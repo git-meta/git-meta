@@ -25,7 +25,7 @@ fn setup_repo() -> (TempDir, String) {
 }
 
 fn gmeta(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("gmeta").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("gmeta");
     cmd.current_dir(dir);
     cmd
 }
@@ -279,7 +279,14 @@ fn test_set_list_type() {
     let target = commit_target(&sha);
 
     gmeta(dir.path())
-        .args(["set", "-t", "list", &target, "items", r#"["hello","world"]"#])
+        .args([
+            "set",
+            "-t",
+            "list",
+            &target,
+            "items",
+            r#"["hello","world"]"#,
+        ])
         .assert()
         .success();
 
@@ -316,7 +323,7 @@ fn test_serialize_creates_ref() {
     // Build the expected path from the full SHA
     let first2 = &sha[..2];
     let last3 = &sha[sha.len() - 3..];
-    let expected_path = format!("commit/{}/{}/{}/agent/model", first2, last3, sha);
+    let expected_path = format!("commit/{}/{}/{}/k/agent/model/__value", first2, last3, sha);
 
     // Walk the tree and verify structure
     let mut found = false;
@@ -390,10 +397,7 @@ fn test_serialize_list_values() {
         .assert()
         .success();
 
-    gmeta(dir.path())
-        .args(["serialize"])
-        .assert()
-        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
 
     // Verify tree structure has list entries with timestamp-hash format
     let repo = git2::Repository::open(dir.path()).unwrap();
@@ -404,7 +408,7 @@ fn test_serialize_list_values() {
     let mut list_entries = Vec::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         let full_path = format!("{}{}", root, entry.name().unwrap_or(""));
-        if full_path.starts_with("branch/sc/eef/sc-branch-1-deadbeef/agent/chat/") {
+        if full_path.starts_with("branch/sc/eef/sc-branch-1-deadbeef/k/agent/chat/__list/") {
             if entry.kind() == Some(git2::ObjectType::Blob) {
                 list_entries.push(full_path);
             }
@@ -535,10 +539,7 @@ fn test_serialize_list_uses_stored_timestamp() {
         .success();
 
     // Serialize once
-    gmeta(dir.path())
-        .args(["serialize"])
-        .assert()
-        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
 
     // Collect list entry names from first serialization
     let repo = git2::Repository::open(dir.path()).unwrap();
@@ -547,10 +548,7 @@ fn test_serialize_list_uses_stored_timestamp() {
 
     // Serialize again without any changes — timestamps should be identical
     // because serialize uses the stored last_timestamp, not the current time
-    gmeta(dir.path())
-        .args(["serialize"])
-        .assert()
-        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let second_entries = collect_list_entry_names(&repo);
@@ -563,6 +561,199 @@ fn test_serialize_list_uses_stored_timestamp() {
     );
 }
 
+#[test]
+fn test_serialize_rm_writes_tombstone_blob() {
+    let (dir, sha) = setup_repo();
+    let target = commit_target(&sha);
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "claude-4.6"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["rm", &target, "agent:model"])
+        .assert()
+        .success();
+
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let commit = reference.peel_to_commit().unwrap();
+    let tree = commit.tree().unwrap();
+
+    let first2 = &sha[..2];
+    let last3 = &sha[sha.len() - 3..];
+    let value_path = format!("commit/{}/{}/{}/k/agent/model/__value", first2, last3, sha);
+    let tombstone_path = format!(
+        "commit/{}/{}/{}/__tombstones/k/agent/model/__deleted",
+        first2, last3, sha
+    );
+
+    let mut found_value = false;
+    let mut found_tombstone = false;
+    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        let full_path = format!("{}{}", root, entry.name().unwrap_or(""));
+        if full_path == value_path {
+            found_value = true;
+        }
+        if full_path == tombstone_path {
+            found_tombstone = true;
+            let blob = repo.find_blob(entry.id()).unwrap();
+            let payload: serde_json::Value = serde_json::from_slice(blob.content()).unwrap();
+            assert_eq!(payload["email"], "test@example.com");
+            assert!(payload["timestamp"].as_i64().is_some());
+        }
+        git2::TreeWalkResult::Ok
+    })
+    .unwrap();
+
+    assert!(!found_value, "value blob should be removed after rm");
+    assert!(found_tombstone, "tombstone blob should be serialized");
+}
+
+#[test]
+fn test_materialize_fast_forward_applies_remote_removal() {
+    let (dir, sha) = setup_repo();
+    let target = commit_target(&sha);
+
+    // Initial value and first serialized snapshot.
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "v1"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let first_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    drop(repo);
+
+    // Remove the key and serialize second snapshot.
+    gmeta(dir.path())
+        .args(["rm", &target, "agent:model"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let second_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+
+    // Simulate a fetched remote ref ahead of local.
+    repo.reference("refs/meta/origin", second_oid, true, "test remote")
+        .unwrap();
+    // Move local ref back so materialize takes fast-forward path.
+    repo.reference("refs/meta/local", first_oid, true, "rollback local")
+        .unwrap();
+    drop(repo);
+
+    // Local SQLite still has a stale value to be removed.
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "stale"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["materialize"])
+        .assert()
+        .success();
+
+    // Key should be removed after materialize.
+    gmeta(dir.path())
+        .args(["get", &target, "agent:model"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn test_materialize_fast_forward_applies_remote_list_entry_removal() {
+    let (dir, _sha) = setup_repo();
+    let target = "branch:sc-branch-1-deadbeef";
+
+    // Initial list and first serialized snapshot.
+    gmeta(dir.path())
+        .args([
+            "set",
+            "-t",
+            "list",
+            target,
+            "agent:chat",
+            r#"["a","b","c"]"#,
+        ])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let first_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    drop(repo);
+
+    // Remove one list entry and serialize second snapshot.
+    gmeta(dir.path())
+        .args(["list:pop", target, "agent:chat", "b"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let second_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+
+    // Simulate fetched remote ahead of local, then rewind local ref.
+    repo.reference("refs/meta/origin", second_oid, true, "test remote")
+        .unwrap();
+    repo.reference("refs/meta/local", first_oid, true, "rollback local")
+        .unwrap();
+    drop(repo);
+
+    // Recreate stale local SQLite state with the removed item still present.
+    gmeta(dir.path())
+        .args([
+            "set",
+            "-t",
+            "list",
+            target,
+            "agent:chat",
+            r#"["a","b","c"]"#,
+        ])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["materialize"])
+        .assert()
+        .success();
+
+    // Removed list entry should be gone after materialize.
+    gmeta(dir.path())
+        .args(["get", target, "agent:chat"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("a"))
+        .stdout(predicate::str::contains("c"))
+        .stdout(predicate::str::contains("b").not());
+}
+
 fn collect_list_entry_names(repo: &git2::Repository) -> Vec<String> {
     let reference = repo.find_reference("refs/meta/local").unwrap();
     let commit = reference.peel_to_commit().unwrap();
@@ -571,7 +762,7 @@ fn collect_list_entry_names(repo: &git2::Repository) -> Vec<String> {
     let mut entries = Vec::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         let full_path = format!("{}{}", root, entry.name().unwrap_or(""));
-        if full_path.starts_with("branch/sc/eef/sc-branch-1-deadbeef/agent/chat/")
+        if full_path.starts_with("branch/sc/eef/sc-branch-1-deadbeef/k/agent/chat/__list/")
             && entry.kind() == Some(git2::ObjectType::Blob)
         {
             let name = entry.name().unwrap().to_string();
@@ -592,7 +783,10 @@ fn test_custom_namespace() {
 
     // Set meta.namespace to a custom value
     let repo = git2::Repository::open(dir.path()).unwrap();
-    repo.config().unwrap().set_str("meta.namespace", "notes").unwrap();
+    repo.config()
+        .unwrap()
+        .set_str("meta.namespace", "notes")
+        .unwrap();
     drop(repo);
 
     gmeta(dir.path())
@@ -649,12 +843,7 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
 
     // Push initial commit to bare so repo B can work
     repo_a
-        .reference(
-            "refs/remotes/origin/main",
-            init_oid,
-            true,
-            "init",
-        )
+        .reference("refs/remotes/origin/main", init_oid, true, "init")
         .unwrap();
 
     // Clone into repo B
@@ -677,12 +866,22 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
 
     // === Step 1: User A sets metadata and serializes ===
     gmeta(repo_a_dir.path())
-        .args(["set", "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp", "testing:user", "alice@example.com"])
+        .args([
+            "set",
+            "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp",
+            "testing:user",
+            "alice@example.com",
+        ])
         .assert()
         .success();
 
     gmeta(repo_a_dir.path())
-        .args(["set", "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp", "license", "apache"])
+        .args([
+            "set",
+            "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp",
+            "license",
+            "apache",
+        ])
         .assert()
         .success();
 
@@ -743,7 +942,12 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
 
     // A overwrites testing:user locally
     gmeta(repo_a_dir.path())
-        .args(["set", "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp", "testing:user", "tom@example.com"])
+        .args([
+            "set",
+            "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp",
+            "testing:user",
+            "tom@example.com",
+        ])
         .assert()
         .success();
 
@@ -769,7 +973,11 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
 
     // license should still be there (unchanged on both sides)
     gmeta(repo_a_dir.path())
-        .args(["get", "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp", "license"])
+        .args([
+            "get",
+            "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp",
+            "license",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("apache"));
@@ -927,7 +1135,11 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
         .success();
 
     gmeta(repo_a_dir.path())
-        .args(["get", "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp", "testing:user"])
+        .args([
+            "get",
+            "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp",
+            "testing:user",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("tom@example.com"));
@@ -958,10 +1170,270 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
         .success();
 
     gmeta(repo_b_dir.path())
-        .args(["get", "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp", "testing:user"])
+        .args([
+            "get",
+            "change-id:uzytqkxrnstmxlzmvwluqomoynnowolp",
+            "testing:user",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("tom@example.com"));
+}
+
+#[test]
+fn test_materialize_dry_run_does_not_mutate_sqlite_or_ref() {
+    let (dir, sha) = setup_repo();
+    let target = commit_target(&sha);
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "v1"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let first_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    drop(repo);
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "v2"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let second_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    repo.reference("refs/meta/origin", second_oid, true, "test remote")
+        .unwrap();
+    repo.reference("refs/meta/local", first_oid, true, "rollback local")
+        .unwrap();
+    drop(repo);
+
+    // Local DB diverges from remote tree.
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "stale"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["materialize", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry-run: strategy=fast-forward"))
+        .stdout(predicate::str::contains("agent:model"));
+
+    // SQLite should not be updated by dry-run.
+    gmeta(dir.path())
+        .args(["get", &target, "agent:model"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("stale"))
+        .stdout(predicate::str::contains("v2").not());
+
+    // Local metadata ref should not move in dry-run.
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let local_after = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    assert_eq!(local_after, first_oid);
+}
+
+#[test]
+fn test_materialize_dry_run_reports_concurrent_add_conflict_resolution() {
+    let (dir, sha) = setup_repo();
+    let target = commit_target(&sha);
+
+    // Base snapshot without agent:model.
+    gmeta(dir.path())
+        .args(["set", &target, "base:key", "base"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let base_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    drop(repo);
+
+    // Remote branch adds agent:model=remote.
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "remote"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let remote_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    repo.reference("refs/meta/local", base_oid, true, "rollback to base")
+        .unwrap();
+    drop(repo);
+
+    // Local branch adds the same key with a different value.
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "local"])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let local_oid = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    repo.reference("refs/meta/origin", remote_oid, true, "set remote")
+        .unwrap();
+    drop(repo);
+
+    gmeta(dir.path())
+        .args(["materialize", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry-run: strategy=three-way"))
+        .stdout(predicate::str::contains("reason=concurrent-add"))
+        .stdout(predicate::str::contains("agent:model"));
+
+    // Dry-run keeps local state unchanged.
+    gmeta(dir.path())
+        .args(["get", &target, "agent:model"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("local"));
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let local_after = repo
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    assert_eq!(local_after, local_oid);
+}
+
+#[test]
+fn test_materialize_no_common_ancestor_uses_two_way_merge_remote_wins() {
+    let bare_dir = TempDir::new().unwrap();
+    git2::Repository::init_bare(bare_dir.path()).unwrap();
+    let (repo_a_dir, _sha_a) = setup_repo();
+    let (repo_b_dir, _sha_b) = setup_repo();
+
+    // Local side (A)
+    gmeta(repo_a_dir.path())
+        .args(["set", "project", "agent:model", "local"])
+        .assert()
+        .success();
+    gmeta(repo_a_dir.path())
+        .args(["set", "project", "local:only", "keep-me"])
+        .assert()
+        .success();
+    gmeta(repo_a_dir.path()).args(["serialize"]).assert().success();
+
+    let repo_a = git2::Repository::open(repo_a_dir.path()).unwrap();
+    let a_oid = repo_a
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+
+    // Remote side (B), completely independent history
+    gmeta(repo_b_dir.path())
+        .args(["set", "project", "agent:model", "remote"])
+        .assert()
+        .success();
+    gmeta(repo_b_dir.path())
+        .args(["set", "project", "remote:only", "keep-too"])
+        .assert()
+        .success();
+    gmeta(repo_b_dir.path()).args(["serialize"]).assert().success();
+
+    let repo_b = git2::Repository::open(repo_b_dir.path()).unwrap();
+    let b_oid = repo_b
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+
+    // Simulate fetch: B -> bare -> A
+    copy_meta_objects(&repo_b, &bare_dir);
+    git2::Repository::open_bare(bare_dir.path())
+        .unwrap()
+        .reference("refs/meta/local", b_oid, true, "push B")
+        .unwrap();
+    copy_meta_objects_from(&bare_dir, &repo_a);
+    repo_a
+        .reference("refs/meta/origin", b_oid, true, "fetch B into A")
+        .unwrap();
+
+    // No common ancestor should be identified in dry-run.
+    gmeta(repo_a_dir.path())
+        .args(["materialize", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no common ancestor"))
+        .stdout(predicate::str::contains("strategy=two-way-no-common-ancestor"))
+        .stdout(predicate::str::contains("reason=no-common-ancestor-remote-wins"))
+        .stdout(predicate::str::contains("agent:model"));
+
+    // Dry-run should not move local ref.
+    let a_after_dry_run = repo_a
+        .find_reference("refs/meta/local")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id();
+    assert_eq!(a_after_dry_run, a_oid);
+
+    // Real materialize applies two-way merge where remote wins conflicts.
+    gmeta(repo_a_dir.path())
+        .args(["materialize"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("two-way merge"));
+
+    // Conflict key should come from remote.
+    gmeta(repo_a_dir.path())
+        .args(["get", "project", "agent:model"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remote"))
+        .stdout(predicate::str::contains("local").not());
+
+    // Non-conflicting keys from both sides should be preserved.
+    gmeta(repo_a_dir.path())
+        .args(["get", "project", "local:only"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("keep-me"));
+    gmeta(repo_a_dir.path())
+        .args(["get", "project", "remote:only"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("keep-too"));
 }
 
 /// Copy all git objects from src repo into a bare repo (simulates push).
