@@ -1,10 +1,17 @@
 use anyhow::Result;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::time::{Duration, Instant};
 
 use crate::db::Db;
 use crate::git_utils;
+
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const CYAN: &str = "\x1b[36m";
+const YELLOW: &str = "\x1b[33m";
+const GREEN: &str = "\x1b[32m";
+const RED: &str = "\x1b[31m";
+const BLUE: &str = "\x1b[34m";
 
 pub fn run() -> Result<()> {
     let repo = git_utils::discover_repo()?;
@@ -20,14 +27,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("benchmarking {} key reads...", total);
-
-    let tmp_path = std::env::temp_dir().join("gmeta-bench.tmp");
-    let mut tmp_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&tmp_path)?;
+    println!("{}benchmarking {} key reads...{}", BOLD, total, RESET);
 
     let mut durations: Vec<Duration> = Vec::with_capacity(total);
     let mut sizes: Vec<usize> = Vec::with_capacity(total);
@@ -39,7 +39,7 @@ pub fn run() -> Result<()> {
             Ok(Some((value, _vtype, _is_git_ref))) => {
                 let elapsed = t0.elapsed();
                 let bytes = value.len();
-                tmp_file.write_all(value.as_bytes())?;
+                drop(value);
                 durations.push(elapsed);
                 sizes.push(bytes);
             }
@@ -61,20 +61,40 @@ pub fn run() -> Result<()> {
     // Timing stats
     durations.sort_unstable();
     let total_time: Duration = durations.iter().sum();
-    let mean_us = total_time.as_micros() as f64 / n as f64;
-    let p50 = durations[n / 2].as_micros();
-    let p95 = durations[(n * 95) / 100].as_micros();
-    let p99 = durations[(n * 99) / 100].as_micros();
-    let max_us = durations[n - 1].as_micros();
+    let mean_s = total_time.as_secs_f64() / n as f64;
+    let p50 = durations[n / 2].as_secs_f64();
+    let p95 = durations[(n * 95) / 100].as_secs_f64();
+    let p99 = durations[(n * 99) / 100].as_secs_f64();
+    let max_s = durations[n - 1].as_secs_f64();
+    let total_s = total_time.as_secs_f64();
+
+    let err_color = if errors > 0 { RED } else { DIM };
 
     println!();
-    println!("timing ({} reads, {} errors):", n, errors);
-    println!("  mean  {:>8} µs", mean_us.round() as u64);
-    println!("  p50   {:>8} µs", p50);
-    println!("  p95   {:>8} µs", p95);
-    println!("  p99   {:>8} µs", p99);
-    println!("  max   {:>8} µs", max_us);
-    println!("  total {:>8} ms", total_time.as_millis());
+    println!(
+        "{}timing{} ({}{} reads{}, {}{}{}{})",
+        BOLD,
+        RESET,
+        CYAN,
+        n,
+        RESET,
+        err_color,
+        errors,
+        if errors == 1 { " error" } else { " errors" },
+        RESET,
+    );
+    println!(
+        "  {}mean{}  {}{:>10.6} s{}",
+        DIM, RESET, YELLOW, mean_s, RESET
+    );
+    println!("  {}p50{}   {}{:>10.6} s{}", DIM, RESET, GREEN, p50, RESET);
+    println!("  {}p95{}   {}{:>10.6} s{}", DIM, RESET, YELLOW, p95, RESET);
+    println!("  {}p99{}   {}{:>10.6} s{}", DIM, RESET, RED, p99, RESET);
+    println!("  {}max{}   {}{:>10.6} s{}", DIM, RESET, RED, max_s, RESET);
+    println!(
+        "  {}total{} {}{:>10.6} s{}",
+        DIM, RESET, CYAN, total_s, RESET
+    );
 
     // Size histogram
     let boundaries: &[(usize, &str)] = &[
@@ -96,13 +116,16 @@ pub fn run() -> Result<()> {
     }
 
     println!();
-    println!("value sizes:");
+    println!("{}value sizes:{}", BOLD, RESET);
     let max_count = counts.iter().copied().max().unwrap_or(1).max(1);
     let bar_width = 30usize;
     for ((_, label), count) in boundaries.iter().zip(counts.iter()) {
         let filled = ((*count as f64 / max_count as f64) * bar_width as f64).round() as usize;
-        let bar = "#".repeat(filled);
-        println!("  {}  {:30}  {}", label, bar, count);
+        let bar = format!("{}{}{}", BLUE, "#".repeat(filled), RESET);
+        println!(
+            "  {}{}{}  {:<30}  {}{}{}",
+            DIM, label, RESET, bar, CYAN, count, RESET,
+        );
     }
 
     Ok(())
