@@ -1,241 +1,364 @@
-# gmeta spec
+# Git Metadata Project
 
-The `gmeta` tool is a Rust command line application, using Clap, that allows one to add structured metadata to Git data.
+This is the spec and reference implementation for my proposal for a generic metadata system for Git projects. Specifically, to implement for storing metadata in Git projects for the [GitButler](https://gitbutler.com) tool, but there is interest in such a system for Jujutsu and the Git project generally.
 
-It stores this data in SQLite and provide CRUD operations via the command line to add, modify and delete key/value data for commits, change-ids, branch-ids, file paths or the project as a whole.
+This project's goal is to implement, benchmark and exercise a metadata system that is more flexible, scalable and useable than `git notes` that can we implemented by multiple systems.
 
-## SQLite
+## High Level Goals
 
-The SQLite file that contains this data is found or created at `.git/gmeta.sqlite`.
+I think the high level goals of this project were best laid out by Rodrigo Bovendorp's Jujutsu day talk in 2025, [Version-controlling metadata](https://www.youtube.com/watch?v=46bV6KT0SsQ&list=PLOU2XLYxmsILM5cRwAK6yKdtKnCK6Y4Oh&index=4), so here is an overview of what he laid out in that talk:
 
-## Data
+### New Metadata Use Cases
 
-There will be two important data aspects to this. The first is the current value of any key. The second is a log of the mutation of the value of this key, so we can see what it was at any time. This log should have timestamps and an email address of the user who mutated it.
+Types of metadata that would be interesting to be able to attach to Git projects that existing tools in Git can't do well. For example:
 
-Each metadata value will have four parts. The target, the key, the value and the value type.
+- **Trust**: identity, review (who made and reviewed)
+  - SLSA attestations
+- **Provenance**: code generation information (how did this come to be)
+  - prompts, transcripts, etc
+- **Review**: signoffs, comments, PR descriptions
+- **Versions**: previous versions of rebased commits, file movement
+- **Licensing**: parts of files under different license
+- **Testing**: how was this tested, by whom, result
+- **Binary Files**: diff/merge hints, locking
 
-The target consists of two parts - the target type and the target string. This can be one of:
+### Metadata Properties
 
-- 'commit', string is the Git commit SHA
-- 'change-id', string is a UUID
-- 'branch', string is a branch UUID or name
-- 'path', string is a file path in the project
-- 'project', no associated string - it's a global value
+Ok, so those are some things we might like to do with metadata, so what kinds of characteristics and flexibility do we want. Well, there are lots of different types of characteristics that metadata _could_ have.
 
-The key can be any arbitrary string. It can be namespaced with colons, for example 'agent:transcript' or 'agent:model:version'.
+- **Granularity**
+  - what do we associate metadata to, exactly?
+  - project, commit, changeset, blob, path, line, byte?
+- **Mutability**
+  - mutable - locking
+  - appendable - comments
+  - immutable - attestations, provenance
+- **Historical Relevance**
+  - localize - single point in time
+  - propagated - cumulative/mergeable as changes get made
+- **Exchange (push/pull)**
+  - local - only relevant in the current copy
+  - exchanged - relevant to everyone
+  - partially exchanged - only within the org?
 
-The value type can be one of three types (but we can extend this in the future).
+For example, `git notes` (and most existing systems) is: per commit, immutable, localized and (partially) exchanged.
 
-- 'string' : single value
-- 'list': array of strings
+### Problems with existing solutions
 
-This allows us to have a set of simple operations for each value type (ie, 'append' for a list, 'insert' or 'replace' for a hash key)
+The current solutions (commit headers, CODEOWNERS type files, commit message trailers, git notes) have a number of limitations:
 
-The values will be mutated with the command line tool and will both update the log and have the most recent value quickly (O(1)) accessible in the design of the SQLite data system.
+- **No control over properties** (granularity, mutability, etc)
+- **Size limits** (assumed to be small)
+- **Fixed set of fields** (a single note in Git)
+- **Fileset pollution** (CODEOWNERS, CLAUDE.md)
+- **Not scalable** (millions of git notes?)
 
-SQLite storage layout:
+## The gmeta proposal
 
-- `metadata` stores current key rows and string values
-- `list_values` stores list items as one row per entry (`metadata_id`, `timestamp`, `value`)
-- `metadata_log` stores mutation history
-- `metadata_tombstones` stores latest removals
+Ok, so that's the landscape. This project is a proposal and reference implementation for a metadata solution for Git projects that attempts to nicely address most/all of this.
 
-The command line tools will be:
+The overall idea is for a `git notes`-like key value system, but much more flexible.
 
-`gmeta set [-t list] <target> <key> <value>` - if type is not given, assumes a string
-`gmeta get <target> (<key>)` - show key value(s) (if partial key given or no key given, show all key/value pairs)
-`gmeta rm <target> <key>` - remove key
+Every key/value would have a target it is scoped to, which could be nearly anything. The reference implementation supports the following targets:
 
-Where `<target>` is `type:string`, for example, `commit:<SHA>`.
+- Commit (by SHA)
+- Change ID
+- Path (folder or file)
+- Branch
+- Project (global space for the project as a whole)
 
-To set a list of values, `<value>` will be a JSON array and `-t list` must be specified. Otherwise, the value will be a JSON string rather than a list type.
+For a target, you can associate namespaced metadata keys with values, which can be either a single string or a list of strings.
 
-For list values:
+To make one final comparison to `git notes`: with notes, you have a single target type (commit) and can associate one value to it per notes namespace.
 
-`gmeta list:push <target> <key> <value>` - adds to a list
-`gmeta list:pop <target> <key> <value>` - removes from a list
+> [!NOTE]
+> Technically, the target does not need to be a commit, it can be any git object, but associating metadata with a tag, blob or tree tends not to be very useful in practice.
 
-If you push to a value that is a string, it will convert it to a list.
+### Simple Example - Strings
 
-## Exchange
-
-This data should be exchangeable over the Git protocol, meaning that we need to be able to serialize the current values into Git trees and commits and push them as references to any Git host.
-
-We also need to be able to fetch these references from a Git host and materialize them locally into our own SQLite database.
-
-We don't need the entire log to be serialized in the exchange format, only the most recent values.
-
-The serialization format should be in Git tree format, so it can be easily diffed and transferred.
-
-The commit pointing to the new serialized data should be stored under `refs/meta/local`, or something other than `meta` if `meta.namespace` Git config setting is set.
-
-If you fetch from a remote with meta references, it should put that reference into `refs/meta/[remote-name]` (so, for example, `refs/meta/origin`).
-
-### Serialize tree format
-
-The base tree path for any target key should be the target type, then the first 2 char of the target value, then the last 3 char of the target value, then the full target value.
-
-Keys under 3 char would not be valid.
-
-Under this base path, keys are stored in a directory trie under `k/`. Key segments are split on `:` and written as raw directory names.
-
-- String terminal blob name: `__value`
-- List terminal directory name: `__list`
-- Tombstone root directory name: `__tombstones`
-
-This avoids Git blob/tree path collisions such as `agent` vs `agent:model`.
-
-To keep the layout unambiguous, keys are strictly validated:
-
-- key cannot be empty
-- segments cannot be empty
-- segments cannot be `.` or `..`
-- segments cannot contain `/` or null bytes
-- segments cannot equal reserved names `k`, `__value`, or `__list`
-
-The `k/` root leaves room for future target-level metadata files without colliding with user key paths. Plausible future files/directories include:
-
-- `__format` or `__schema` for target subtree versioning
-- `__updated_at` for coarse target-level freshness metadata
-- `__authorship` for compact target-level provenance
-- `__merge_policy` for per-target merge strategy hints
-- `__tombstones/` for explicit deletion markers
-- `__signature` or `__digest` for integrity/provenance checks
-
-### String values
-
-For string values, write the string as a blob at `[base]/k/<key segments>/__value`.
-
-So for example, if you run `gmeta set commit:13a7d29cde8f8557b54fd6474f547a56822180ae agent:model claude-4.6`, and serialize the data, you would get a Git tree:
+So, for example, you could set a property called `agent:model` on a specific commit:
 
 ```
-❯ git ls-tree -r refs/meta/local
-100644 blob a76e08d661b081b4e618e7e61066c879056c8f18 commit/13/0ae/13a7d29cde8f8557b54fd6474f547a56822180ae/k/agent/model/__value
+❯ gmeta set commit:314e7f0fa7 agent:model "claude-opus-4-6[1m]"
 ```
 
-If you `git cat-file -p a76e08d661b081b4e618e7e61066c879056c8f18` you would get the string `claude-4.6`.
-
-The commit message of the serialization would have no commit message body, but would simply be used for the tree pointer and author/date information.
-
-### List values
-
-For list values, we store entries under `[base]/k/<key segments>/__list/` with `timestamp-hash` blob names so we can generally merge them while keeping order.
-
-So, if we run: `gmeta set -t list branch:sc-branch-1-deadbeef agent:chat ["how's it going", "pretty good"]`
-
-Our serialized tree will look like this:
+And then get it back out:
 
 ```
-❯ git ls-tree -r refs/meta/local
-100644 blob b4e618e7e61066c879056c8f18a76e08d661b081 branch/sc/eef/sc-branch-1-deadbeef/k/agent/chat/__list/1771232450203-23c0f
-100644 blob 066c879056c8f1b4e618e7e618a76e08d661b081 branch/sc/eef/sc-branch-1-deadbeef/k/agent/chat/__list/1771232450204-0d5f2
+❯ gmeta get commit:314e7f0fa7 agent:model
+agent:model  claude-opus-4-6[1m]
 ```
 
-The `23c0f` are the first five chars of the SHA-256 hash of the message being stored, so messages at the same general time will almost certainly not collide from a merge of the same list of different users.
+The key can be simple like 'author' or it could be deeply namespaced like `agent:claude:session-id`, etc.
 
-You can also notice that the second message is 1 millisecond from the first. We take the ms epoch timestamp of when the `set` command is run and if we're inserting multiple values, we increment the ms by 1 for each value so they're still in order.
-
-### Removal tombstones
-
-A remove operation records a tombstone in SQLite (`metadata_tombstones`) and serializes it into the Git tree.
-
-Tombstone path format:
-
-`[base]/__tombstones/k/<key segments>/__deleted`
-
-The tombstone blob stores JSON with `timestamp` and `email`.
-
-Example:
+Which is nice because then you can easily get all the subkey values for a top level key namespace, like:
 
 ```
-❯ git ls-tree -r refs/meta/local
-100644 blob 6f31... commit/13/0ae/13a7d29cde8f8557b54fd6474f547a56822180ae/__tombstones/k/agent/model/__deleted
-```
-
-When a key is set again (`set`, `list:push`, `list:pop`), its tombstone is cleared in SQLite and no tombstone is emitted on the next serialize.
-
-### Commands
-
-The commands to serialize and materialize the data are:
-
-`gmeta serialize` - write a new head to `refs/meta/local`
-`gmeta materialize (<remote>)` - read from `refs/meta/remotes/*`, find anything not in local, make local sqlite data consistent. the `(remote)` is optional, otherwise we will look through all the heads under `refs/meta/remotes` and materialize all of them.
-
-### Merging
-
-When we `materialize` a remote meta head, we need to do four things.
-
-1. merge that head into our `refs/meta/local`
-2. resolve any merging conflicts
-3. update our local sqlite database with all new values
-4. record when we last materialized successfully
-
-When we serialize again, we should look in our log for anything that has been modified since the last materialization, and only update the tree with those new values or mutations.
-
-The `list` values should almost always cleanly merge. If there is an overlap of two tree entries with different shas, just drop one (it's almost impossible, since it's a timestamp _and_ partial content hash).
-
-The `string` values can conflict if two users modified the same key. In this case, simply take the one with the later commit timestamp as the new value by default. In the future, we could add different merge strategies.
-
-#### No Common Ancestor Merge
-
-If `refs/<namespace>/local` and a remote metadata ref have no common ancestor (for example, two users initialized metadata histories independently), materialize uses a **two-way merge** instead of three-way merge.
-
-Two-way merge policy:
-
-1. Union keys from local and remote.
-2. For overlapping keys (including value vs tombstone), **remote wins**.
-3. Non-conflicting keys from both sides are kept.
-
-`gmeta materialize --dry-run` reports this explicitly with `strategy=two-way-no-common-ancestor` and prints key-level conflict decisions.
-
-#### Merging Removals
-
-If you remove a key, materialize applies tombstones by deleting the key locally and recording the tombstone in SQLite.
-
-If one side removed a key and the other modified it, choose the modified value (value wins over tombstone).
-
-During fast-forward materialization, we also detect keys that existed in the previous local tree but are missing from the incoming value tree and remove them locally (legacy compatibility for trees that predate tombstones).
-
-### Showing Values
-
-There are several ways to show values. The `gmeta get` command can take only a target, a target and a key, or a target and a partial key. It can also take a `--json` argument to return the data in json format.
-
-An example human output would be:
-
-```
-❯ gmeta get commit:13a7d29cde8f8557b54fd6474f547a56822180ae
-agent:model  claude-4.6
+❯ gmeta get commit:314e7f0fa7 agent
+agent:model  claude-opus-4-6[1m]
 agent:provider  anthropic
+agent:prompt  Make me a sandwich
+agent:transcript  ...
 ```
 
-Or json:
+Attaching metadata to a commit is somewhat familiar, but there are other target types. For example, you could use a `path` target to associate a code owner to a subdirectory (rather than using a CODEOWNERS file):
 
 ```
-❯ gmeta get --json commit:13a7d29cde8f8557b54fd6474f547a56822180ae
-{
-	'agent': {
-		'model': 'claude-4.6',
-		'provider': 'anthropic'
-	}
-}
+❯ gmeta set path:src/metrics owner schacon
 ```
 
-With json, you can also add `--with-authorship` to add the commit timestamp and email address of when each entry was last modified and by whom.
+And see all the path owner values:
 
 ```
-❯ gmeta get --json --with-authorship commit:13a7d29cde8f8557b54fd6474f547a56822180ae
-{
-	'agent': {
-		'model': {
-			'value': 'claude-4.6',
-			'author': 'schacon@gmail.com',
-			'timestamp': 1771232450000
-		}
-		'provider': {
-			'value': 'anthropic',
-			'author': 'schacon@gmail.com',
-			'timestamp': 1771232450000
-		}
-	}
-}
+❯ gmeta get path:src owner
+src/git;owner schacon
+src/observability;owner caleb
+src/metrics;owner kiril
 ```
+
+### Simple Example - Lists
+
+The other value type is a list, for cases like code owners or maybe comments - where you would be maintaining a list of values for the key (multiple code owners, a growing list of comments):
+
+```
+❯ gmeta list:push path:src/metrics owners schacon
+
+❯ gmeta list:push path:src/metrics owners caleb
+
+❯ gmeta list:push path:src/metrics owners kiril
+
+❯ gmeta get path:src/metrics owners
+owners ["schacon", "caleb", "kiril"]
+```
+
+### Data storage
+
+For normal reading and writing of values, in this reference implementation, everything is kept in a SQLite database in the `.git` directory. Any large values are kept in Git as blobs and referenced from the values table. Small values are simply stored in the database.
+
+This ensures relatively fast reading and writing of data in a fairly standardized and well supported format.
+
+Actually, very technically from an implementation standpoint, it doesn't really matter what the local storage format/engine is - it could be implemented in any way that stores and mutates `(target, key, value)` tuples that works best in the local environment.
+
+What is important is the exchange format.
+
+### Data transfer
+
+So, this is where it gets more interesting.
+
+We want this data to be transferable over existing Git protocols and parallel local writes (for example, two teammates adding metadata simultaneously on two different machines) to become eventually consistent among multiple contributors.
+
+The reason we want to use the Git format and transfer protocols is so that we don't have a new data transport format to support. We can use literally any Git server running v2 protocol (introduced almost a decade ago) to exchange this data with no new functionality needed.
+
+However, we don't want to use Git as the direct data storage mechanism (ie, read and write directly to the Git object database) for several reasons. One is speed to read and write values. The other is that not every value will want to be transmitted.
+
+So, we're thinking about this sort of like the local tuple database is an "index" or "workding directory"-like concept where data is manipulated, and then we "commit" (serialize) the data to Git when we want to transmit it. Then another user can fetch that Git data down and "check it out" (materialize) into their local working data store, merging it with any changes they've made.
+
+The way we propose to do this is by "serializing" the values you want to share into a Git tree and creating a commit that points to that tree.
+
+It saves that new commit to `refs/meta/local` so it can be pushed. Other collaborators can fetch that head (into `refs/meta/remotes/origin`) and "materialize" the data - adding any new or updated values into their working database and so on.
+
+#### Serializing
+
+Serializing the data takes the targets, keys and values from SQLite and put them into a Git tree, generally of the format:
+
+`{target-type}/{target-value-w-fanout}/{key-segments}/__value`
+
+So, for example, setting `agent:model` to 'claude' on commit `13a7d29` would serialize roughly to this:
+
+```
+❯ git ls-tree -r refs/meta/local
+100644 blob a76e08d661b081b4e618e7e61066c879056c8f18 commit/13/a7d29cde8f8557b54fd6474f547a56822180ae/agent/model/__value
+
+❯ git cat-file -p a76e08d66
+claude
+```
+
+Key segments cannot start with `__`, so we can differentiate keys from other values.
+
+Lists are handled slightly differently. Instead of `__value` as a blob at the termination of a key sequence, it is a tree called `__list` that has timestamped, hashed entries. So, for example, if you added two code owners to a path:
+
+```
+❯ gmeta list:push path:src/metrics owners schacon
+❯ gmeta list:push path:src/metrics owners caleb
+```
+
+The serialized data might look like this:
+
+```
+❯ git ls-tree -r refs/meta/local
+100644 blob b4e618e7e61066c879056c8f18a76e08d661b081 path/src/metrics/owners/__list/1771232450203-23c0f
+100644 blob 066c879056c8f1b4e618e7e618a76e08d661b081 path/src/metrics/owners/__list/1771232450204-0d5f2
+```
+
+And the two blobs are the strings 'schacon' and 'caleb'. The reasoning for this is so that if multiple entries are added to a list from two different people, the trees will merge cleanly.
+
+This can also help chunk things like agentic transcripts, so instead of one large blob that may not work with github's 100M object limit, you can chunk it up, jsonl style or similar.
+
+#### Materializing
+
+So, the general workflow would be that you would add metadata to your project's commits, changesets, paths or global scope and then when you push the code, you would simultaneously serialize the metadata and push that as well - either to the same repository or a seperate meta repository. This could be configured with a pushspec, similar to normal Git branch usage.
+
+Once this is pushed, there are four different scenarios of getting new upstream data to materialize.
+
+1. You have no metadata, it's your initial sync of an existing metadata ref.
+2. You have started a metadata database, but someone else has too and pushed first.
+3. You were up to date, you got more data (it's a metadata ref fast forward)
+4. You have added local data and someone has pushed remote data
+
+##### 1. Initial Sync
+
+This is pretty simple. We walk the tree pointed to by the head ref (`refs/meta/remotes/origin` for example) and put all those tuples in our local database. We don't need to walk any farther in the commit history of the metadata.
+
+##### 2. Multiple Start Points
+
+If you have data and go to push your serialized data and find that there is already a reference existing, then we would serialize our tree and do a baseless 2-way merge, favoring the remote values on any conficts. Then we would write a new commit with the result of that which has the upstread head as it's parent and do a fast-forward push. If someone has pushed more data in the meantime, we take our already serialized tree and repeat the process until our fast-forward push succeeds.
+
+##### 3. Pull New Data
+
+Perhaps you pulled in metadata from the remote and haven't added anything and now someone else has pushed new code and metadata. You can pull the new commits and also pull the new metadata that may reference them.
+
+In this case, we would look at the last metadata commit you had materialized, see the difference in trees from that one to the new one and add or update any values.
+
+One of the nice parts about this format is that even if you had millions of values and added or updated a few dozen or hundreds, the difference calculation would still be very fast (my benchmarks on a test ref with metadata on 1M commits finding 1k new values on an update took less than 1 second). We also don't need to look at every commit (if you were offline for a while), just the tree you had and the tree that is the latest.
+
+##### 4. Both sides mutated data
+
+This is one of the more common and interesting cases. What happens when you add data and someone else adds data? Well, roughly the same thing that happens when you add code and someone else adds code. Often it merges just fine, other times there are conflicts and we apply a merge strategy.
+
+This is one of the ways that `git notes` is not great as a generalized metadata solution. If you want multiple key/values on a commit, you may put json or structured data into the note. If two people mutate that, now you need to have a json data merge strategy.
+
+Keeping the values as tree entries greatly simplifies this and allows us to use builtin git content merging strategies. If you both add values to different keys on the same target, Git will simply merge the trees as though you had both added new files. If you both modify the value of the same key, we simply use the "theirs" strategy to favor the remote value.
+
+Because of the nature of the keys and namespacing, most values will probably not be modified very often. If it's something to append to (comments or something), you can use a list value and the additions should cleanly become the union of what both sides added.
+
+So, if the remote ref has updated and you have mutated data locally, the strategy is to serialize your data and merge the remote tree into it.
+
+You do this in memory and write the merged tree out as a new commit, so the metadata history is linear. Just like Git, if someone else has pushed since then, you repeat the strategy.
+
+#### Metadata history
+
+Unlike normal Git commits for code, we don't really care too much about branching and merging history, just new data. We're not serializing with meaningful context in commit messages we need to keep or have long running branches, so there is no point in having merged metadata commits. We can just keep trying to merge our updated values into the upstream tree until a successful fast-forward push and maintain a linear history.
+
+#### Deleting data
+
+As we'll see later, we will not assume that missing data means it should be deleted. One of our design decisions is to assume that purposeful removal of data is fairly rare and orphaned local data (data that is there but should not be) is not generally problematic. If we explicitly want to delete a value that has been propogated, we will have tombstone entries that inform the materialization process to remove a value if it exists in the local database.
+
+### Large Data
+
+One of the main driving points of this problem set is keeping prompts and transcripts for agentic work. As many solutions have already started finding out, this data adds up fast.
+
+I've already seen projects trying to keep agentic transcript metadata where in less than 3 months, a codebase of 400 files and 2k commits with an entire Git code history clone of 14Mb has already accrued over 2.5Gb of transcripts data. A clone with the metadata expands from a 5Mb packfile without to a 500Mb packfile with.
+
+So, how do we deal with the problem of large amounts of metadata in Git?
+
+This project proposes two solutions, though only the first will probably generally be needed.
+
+#### Pruning checkpoints and blobless fetches
+
+Getting every transcript for every commit in your entire codebase is probably not what you generally need. What you probably _generally_ want locally is recent transcripts and global or project wide data (codeowners, etc).
+
+One of the cool things about recent (well, for almost a decade now - [2.19](https://github.blog/open-source/git/highlights-from-git-2-19/#user-content-partial-clones)?) versions of Git is that we can do blobless history clones and get just the blobs we actually want on demand with promisor remotes. This means that instead of downloading all of the values for a large history or a history with many large blobs, we can just get all the commits/trees and then ask for a subset of blobs that we think we may need soonish (which we can store as the tree of the latest commit).
+
+Interestingly, as a benchmark for what that means, for the previous example of 500mb of compressed transcript data over 2k commits, a blobless clone would have been less than 2mb. The commits and trees are not the problem for a long, long while.
+
+However, if the problem is the blobs, how do we get the blobs we probably need soon while being able to request the ones we want, on demand, after the fact?
+
+There are a few different ways we could practically do this:
+
+- Save the full tree of every value in the latest commit _and_ a list of blobs we think we may need in same said metadata to initially fetch from as a first working set.
+- Occasionally prune the tree itself to only be the first working set based on project settings and then do a full history walk to recreate a list of all the keys we've ever seen.
+
+Our proposed solution is the second - to occasionally prune the tree that the head commit tree contains to a subset of data that is likely to be needed shortly. These "prune" commits will have a special commit message trailer that informs the system that there was a pruning action so if we're trying to calcuate the existance of older values, we can skip it.
+
+In practice, this means having a ruleset where after a certain size of subtrees, the system could automatically prune the tree to a much smaller set and push that as the new head. If it's a non-fast-forward and in the new range there is another pruned commit, then we recalucate and don't do another prune.
+
+This means that we would constantly have a range of acceptable amounts of data that is a starting set, with a history that would be able to reconstruct the full dataset if we really wanted it, and we could always ask for only the subsets of data that we need to do specific operations, since the Git server protocol has supported fetching a list of specific blobs for some time now.
+
+However, what if we want a value for some older target/key? Maybe we're doing a file blame and want to see which transcripts are available for all the last commits touching the file?
+
+It is really pretty simple with this scheme to construct a list of every `target, key, value-blob` tuple in even quite extensive histories. We can simply walk the commit history and do a diff of every non-prune commit to construct a list of all the tree entries we've seen introduced or modified at any point.
+
+As a benchmark, I created a test history of metadata in a gmeta format that was 10k commits long, containing metadata for nearly 550k commits. The tip only contained data for around 4k commits and it was pruned 120 times in it's history.
+
+I was able to reconstruct the entire list of 550k commit shas that contained metadata in about 15 seconds.
+
+```
+generating 10000 commits…
+generation complete
+  normal commits  9880
+  prune commits   120
+  unique SHAs     549932  (ground truth)
+  live at tip     4332
+
+walk results
+  commits visited        10000
+  prune commits seen     120
+  SHAs recovered         549932
+  correctness            ✓ exact match (549932 SHAs)
+
+$ time git log --stat 054630093092 > /dev/null
+git log --stat 054630093092 > /dev/null  15.84s user 0.26s system 99% cpu 16.134 total
+```
+
+This is a dumb algorithm that will not skip the prune commits, so in reality it should be slightly faster.
+
+So let's say we do a fast blobless fetch on initialization and then fetch a "working set" of data so most reasonable queries would be quite fast, even on large history sets on large and long-lived codebases.
+
+On initialization, we could kick of a background job that goes through said history and compiles a comprehensive list of target/values and blob-shas that we _don't_ have if there have been pruning events. When we need one or many of those values, we can use the promisor remote feature to fetch groups of them on demand, rather efficiently.
+
+In my benchmarks, this should prove to be a solution that works fast and effiently even for very large, long metadata histories.
+
+### Branch Metadata
+
+There is an interesting sidepoint which is what about branch metadata? In theory, it would be best to only store metadata about commits that _exist_ in the current history, but it will clearly be neccesary (and arguably most helpful) to exchange data about branches in flight that have not landed yet.
+
+In this scheme, I think it works best to push all metadata on any push to the associated remote. So metadata on a commit or range of commits that end up for some reason not being merged would still be in the history. However, if a branch is deleted, one could remove those entries from the next tree pushed so new sparse clones don't get the unneeded data. In the long run, the data would still take up space on the server but would in practicality never be fetched via promisor.
+
+### Force Pushing
+
+Let say you _did_ want to hard delete values. This could be because secrets were accidentally introduced, or perhaps even the blobless clone is getting too large for some reason.
+
+The mechnism for resolving contention when two people push first versions of a metadata history would apply the same way in this case. One person would rewrite the history in some way and force push, the second would see that they don't have a merge base, do a two way merge if they've diverged, write a new head and push a fast-forward. If they have not diverged (written no new values locally since the last fetch), they simply fetch the new blobless history, replace the local head and see if there are any values in the new head working set they don't yet have.
+
+### Partial Exchanges
+
+One of the reasons that we don't delete missing data and require explicit tombstone entries is so the pruning commits don't imply deletion, but also so that we can assume that a single branch tree is not neccesarily all of the data.
+
+In this system, we could have multiple heads on a metadata remote, or more likely, multiple remotes with a metadata head.
+
+If you add a second metadata source, the local database becomes essentially the union of the data present in both.
+
+There are a few interesting practical use cases.
+
+One is to have private metadata accessible differently from public metadata. Perhaps your transcripts for a corporate open source project are in a private repository that only your employees can access, but everything else is in a public reference.
+
+Another is the ability to split up very, very long histories. Perhaps every year, you split the metadata history so even the blobless clone is smaller but can expand it with other accessible refs if you _really_ want to.
+
+A third is to have data that is just for _you_ and not for your team or the public. Perahps you're not comfortable sharing your prompts and transcripts, but you _do_ want to back them up or access them on other machines.
+
+The difficulty is not really in reading the union of values from multiple refs into one database, the difficulty is knowing which new values should be written to refs bound for which remote reference.
+
+If I add a transcript to a commit, how do I tell the system that this data is for my 'public', 'corporate' or 'personal' metadata source?
+
+Honestly, this is an implementation detail, not an exchange format problem and would likely not be something kept in the exchnage data.
+
+Most likely, an implementation would have a ruleset filter for writing that says keys that match a specific rule or regex go into destination A or B on serialize. From a reading perspective, I can't think of a situation where it would matter which source a metadata value came from, so I don't think the filter would be there.
+
+I feel like the simplest solution would be to have the tuple database source/destination agnostic and have some match filter that keys are compared against on serialization.
+
+When there are multiple metadata remotes, the local heads would be kept under references like `refs/meta/local/corporate`, `refs/meta/local/public`. If `refs/meta/local` is a ref, there is only one. If it's a directory, there are multiple.
+
+With multiple remotes, the meta refs structure might look like this:
+
+```
+❯ tree .git/refs/meta
+.git/meta
+├── local
+│   ├── public
+│   └── private
+└─── remotes
+    ├── public
+    └── private
+```
+
+## Benchmarking

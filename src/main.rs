@@ -62,9 +62,11 @@ fn main() -> Result<()> {
             metadata_only,
         } => commands::log::run(start_ref.as_deref(), count, metadata_only),
 
-        Commands::Bench => commands::bench::run(),
+        Commands::Bench => commands::bench::db_bench::run(),
 
-        Commands::FanoutBench { objects } => commands::fanout_bench::run(objects),
+        Commands::FanoutBench { objects } => commands::bench::fanout_bench::run(objects),
+
+        Commands::HistoryWalker { commits } => commands::bench::history_walker::run(commits),
 
         Commands::Teardown => commands::teardown::run(),
     }

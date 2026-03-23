@@ -137,6 +137,13 @@ pub enum Commands {
         objects: usize,
     },
 
+    /// Benchmark history generation and full-history walk on a synthetic meta commit chain
+    HistoryWalker {
+        /// Number of meta commits to generate (default: 500)
+        #[arg(long, default_value = "500")]
+        commits: usize,
+    },
+
     /// Remove the gmeta database and all meta refs
     Teardown,
 }

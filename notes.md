@@ -1,8 +1,9 @@
 ## Notes
 
-~ offload larger blobs to git references in sqlite (remove from sqlite file)
-- git-ai import
-
+- remove k/ and just use \_\_ prefix for non-key values
+- serialize and materialize debugging output
+- delete specific list entries (by value?)
+- partial path reads (gmeta get path:src owner)
 - namespaces (local, shared, internal, etc - push targets (none, remote)
   - materialize targets too
   - on conflicts, which wins?
