@@ -46,27 +46,28 @@
         </header>
         <article class="doc-content">
           <p>This document defines what metadata can be attached to and how keys are structured.</p>
+<p>At it&#x27;s core, every piece of metadata is a tuple of <code>(target, key, value)</code>. The target is something like a single commit, changeset or path. This is something you can attach metadata to. Then for each target there is series of key/value pairs scoped to that target.</p>
+<p>In this specification, the key can be namespaced (such as <code>source:issue:github:id</code>) where a query may be interested at data under level of the key namespace.</p>
+<p>The value can furthermore be of various types of simple data primatives, such as a simple string, a list or an unordered set.</p>
 <h2 id="target-model">Target model</h2>
 <p>Every metadata value is scoped to a target.</p>
 <p>A target has two conceptual parts:</p>
 <ul><li><code>target_type</code></li><li><code>target_value</code></li></ul>
 <p>Supported target types:</p>
 <ul><li><code>commit</code> — target value is a Git commit SHA</li><li><code>change-id</code> — target value is a UUID</li><li><code>branch</code> — target value is a branch UUID or name</li><li><code>path</code> — target value is a file or directory path in the project</li><li><code>project</code> — global project scope; no associated target value in the user-facing model</li></ul>
-<p>CLI syntax uses:</p>
-<ul><li><code>&lt;type&gt;:&lt;value&gt;</code> for targets with a value, for example <code>commit:13a7d29...</code></li><li><code>project</code> for the global target</li></ul>
+<p>The spec is written in such a way that new target types should be relatively easy to add in future spec versions.</p>
 <h2 id="keys">Keys</h2>
 <p>Keys are arbitrary strings with optional namespace structure.</p>
 <p>Examples:</p>
 <ul><li><code>owner</code></li><li><code>agent:model</code></li><li><code>agent:provider</code></li><li><code>agent:claude:session-id</code></li></ul>
-<p>Keys are split on <code>:</code> into path segments during serialization.</p>
+<p>Keys are split on <code>:</code> into path segments during serialization and so cannot contain a &#x27;:&#x27; in the key segment itself.</p>
 <h2 id="key-validation">Key validation</h2>
 <p>To keep the exchange tree layout unambiguous, keys are strictly validated.</p>
 <p>Rules:</p>
 <ul><li>key cannot be empty</li><li>key segments cannot be empty</li><li>key segments cannot be <code>.</code> or <code>..</code></li><li>key segments cannot contain <code>/</code> or null bytes</li><li>key segments cannot start with <code>__</code></li></ul>
-<p>The last rule reserves all <code>__*</code> path components for gmeta structural metadata.</p>
+<p>The last rule reserves all <code>__*</code> path components for gmeta structural metadata. If they are needed (for example, file paths), they can be escaped.</p>
 <h2 id="key-path-reservation">Key path reservation</h2>
 <p>Keys are serialized directly under the target base path.</p>
-<p>There is no dedicated <code>k/</code> subtree.</p>
 <p>Any path component beginning with <code>__</code> is reserved for gmeta structural paths such as:</p>
 <ul><li><code>__value</code></li><li><code>__list</code></li><li><code>__set</code></li><li><code>__tombstones</code></li><li><code>__target__</code> (used only as the separator inside serialized <code>path</code> targets)</li></ul>
 <p>This means user keys occupy normal path segments and metadata structure begins when a reserved <code>__*</code> path component is encountered.</p>
