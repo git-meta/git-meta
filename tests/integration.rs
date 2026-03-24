@@ -185,6 +185,41 @@ fn test_partial_key_matching() {
 }
 
 #[test]
+fn test_partial_key_matching_commit_namespace_example() {
+    let (dir, sha) = setup_repo();
+    let target = commit_target(&sha);
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "claude-opus-4-6"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:provider", "anthropic"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:prompt", "Make me a sandwich"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["set", &target, "agent:transcript", "..."])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["get", &target, "agent"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("agent:model  claude-opus-4-6"))
+        .stdout(predicate::str::contains("agent:provider  anthropic"))
+        .stdout(predicate::str::contains("agent:prompt  Make me a sandwich"))
+        .stdout(predicate::str::contains("agent:transcript  ..."));
+}
+
+#[test]
 fn test_rm_removes_value() {
     let (dir, sha) = setup_repo();
     let target = commit_target(&sha);
@@ -495,8 +530,38 @@ fn test_path_target() {
         .args(["get", "path:src/main.rs"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("review:status"))
-        .stdout(predicate::str::contains("approved"));
+        .stdout(predicate::str::contains("src/main.rs;review:status approved"));
+}
+
+#[test]
+fn test_path_target_tree_lookup() {
+    let (dir, _sha) = setup_repo();
+
+    gmeta(dir.path())
+        .args(["set", "path:src/git", "owner", "schacon"])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["set", "path:src/observability", "owner", "caleb"])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["set", "path:src/metrics", "owner", "kiril"])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["set", "path:srcx/metrics", "owner", "nope"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["get", "path:src", "owner"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("src/git;owner schacon"))
+        .stdout(predicate::str::contains("src/observability;owner caleb"))
+        .stdout(predicate::str::contains("src/metrics;owner kiril"))
+        .stdout(predicate::str::contains("srcx/metrics;owner").not());
 }
 
 #[test]

@@ -392,12 +392,31 @@ impl Db {
         target_value: &str,
         key_prefix: Option<&str>,
     ) -> Result<Vec<(String, String, String, bool)>> {
-        let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match key_prefix {
-            Some(prefix) => (
-                "SELECT rowid, key, value, value_type, is_git_ref FROM metadata
+        Ok(self
+            .get_all_with_target_prefix(target_type, target_value, false, key_prefix)?
+            .into_iter()
+            .map(|(_, key, value, value_type, is_git_ref)| (key, value, value_type, is_git_ref))
+            .collect())
+    }
+
+    /// Get all key/value pairs for a target or subtree, optionally filtered by key prefix.
+    /// Returns (target_value, key, value, value_type, is_git_ref).
+    pub fn get_all_with_target_prefix(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        include_target_subtree: bool,
+        key_prefix: Option<&str>,
+    ) -> Result<Vec<(String, String, String, String, bool)>> {
+        let escaped_target = escape_like_pattern(target_value);
+        let target_like = format!("{}/%", escaped_target);
+
+        let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match (include_target_subtree, key_prefix) {
+            (false, Some(prefix)) => (
+                "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2
                  AND (key = ?3 OR key LIKE ?4 ESCAPE '\\')
-                 ORDER BY key",
+                 ORDER BY target_value, key",
                 vec![
                     Box::new(target_type.to_string()),
                     Box::new(target_value.to_string()),
@@ -405,13 +424,36 @@ impl Db {
                     Box::new(format!("{}:%", escape_like_pattern(prefix))),
                 ],
             ),
-            None => (
-                "SELECT rowid, key, value, value_type, is_git_ref FROM metadata
+            (false, None) => (
+                "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2
-                 ORDER BY key",
+                 ORDER BY target_value, key",
                 vec![
                     Box::new(target_type.to_string()),
                     Box::new(target_value.to_string()),
+                ],
+            ),
+            (true, Some(prefix)) => (
+                "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
+                 WHERE target_type = ?1 AND (target_value = ?2 OR target_value LIKE ?3 ESCAPE '\\')
+                 AND (key = ?4 OR key LIKE ?5 ESCAPE '\\')
+                 ORDER BY target_value, key",
+                vec![
+                    Box::new(target_type.to_string()),
+                    Box::new(target_value.to_string()),
+                    Box::new(target_like),
+                    Box::new(prefix.to_string()),
+                    Box::new(format!("{}:%", escape_like_pattern(prefix))),
+                ],
+            ),
+            (true, None) => (
+                "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
+                 WHERE target_type = ?1 AND (target_value = ?2 OR target_value LIKE ?3 ESCAPE '\\')
+                 ORDER BY target_value, key",
+                vec![
+                    Box::new(target_type.to_string()),
+                    Box::new(target_value.to_string()),
+                    Box::new(target_like),
                 ],
             ),
         };
@@ -425,26 +467,27 @@ impl Db {
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
-                row.get::<_, bool>(4)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, bool>(5)?,
             ))
         })?;
 
         let mut results = Vec::new();
         for row in rows {
-            let (metadata_id, key, value, value_type, is_git_ref) = row?;
+            let (metadata_id, target_value, key, value, value_type, is_git_ref) = row?;
             if value_type == "list" {
                 let encoded = encode_list_entries_by_metadata_id(
                     &self.conn,
                     self.repo.as_ref(),
                     metadata_id,
                 )?;
-                results.push((key, encoded, value_type, false));
+                results.push((target_value, key, encoded, value_type, false));
             } else if value_type == "set" {
                 let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-                results.push((key, encoded, value_type, false));
+                results.push((target_value, key, encoded, value_type, false));
             } else {
                 let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
-                results.push((key, resolved, value_type, is_git_ref));
+                results.push((target_value, key, resolved, value_type, is_git_ref));
             }
         }
         Ok(results)
@@ -1612,6 +1655,64 @@ mod tests {
         let results = db.get_all("commit", "abc123", Some(r"agent\name")).unwrap();
         let keys: Vec<String> = results.into_iter().map(|r| r.0).collect();
         assert_eq!(keys, vec![r"agent\name:model".to_string()]);
+    }
+
+    #[test]
+    fn test_get_all_with_target_prefix_for_paths() {
+        let db = Db::open_in_memory().unwrap();
+        db.set(
+            "path",
+            "src/git",
+            "owner",
+            "\"schacon\"",
+            "string",
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.set(
+            "path",
+            "src/metrics",
+            "owner",
+            "\"kiril\"",
+            "string",
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.set(
+            "path",
+            "src/observability",
+            "owner",
+            "\"caleb\"",
+            "string",
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.set(
+            "path",
+            "srcx/metrics",
+            "owner",
+            "\"should-not-match\"",
+            "string",
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+
+        let results = db
+            .get_all_with_target_prefix("path", "src", true, Some("owner"))
+            .unwrap();
+        let rows: Vec<(String, String)> = results.into_iter().map(|r| (r.0, r.1)).collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("src/git".to_string(), "owner".to_string()),
+                ("src/metrics".to_string(), "owner".to_string()),
+                ("src/observability".to_string(), "owner".to_string()),
+            ]
+        );
     }
 
     #[test]

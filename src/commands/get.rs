@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 use crate::db::Db;
 use crate::git_utils;
 use crate::list_value::list_values_from_json;
-use crate::types::Target;
+use crate::types::{Target, TargetType};
 
 const NODE_VALUE_KEY: &str = "__value";
 
@@ -22,23 +22,29 @@ pub fn run(
     let db_path = git_utils::db_path(&repo)?;
     let db = Db::open(&db_path)?;
 
-    let entries = db.get_all(target.type_str(), target.value_str(), key)?;
+    let include_target_subtree = target.target_type == TargetType::Path;
+    let entries = db.get_all_with_target_prefix(
+        target.type_str(),
+        target.value_str(),
+        include_target_subtree,
+        key,
+    )?;
 
     if entries.is_empty() {
         return Ok(());
     }
 
     // Resolve git refs to actual values
-    let resolved: Vec<(String, String, String)> = entries
+    let resolved: Vec<(String, String, String, String)> = entries
         .into_iter()
-        .map(|(key, value, value_type, is_git_ref)| {
+        .map(|(entry_target_value, key, value, value_type, is_git_ref)| {
             if is_git_ref {
                 let resolved_value = resolve_git_ref(&repo, &value)?;
                 // JSON-encode the resolved content to match normal string format
                 let json_value = serde_json::to_string(&resolved_value)?;
-                Ok((key, json_value, value_type))
+                Ok((entry_target_value, key, json_value, value_type))
             } else {
-                Ok((key, value, value_type))
+                Ok((entry_target_value, key, value, value_type))
             }
         })
         .collect::<Result<Vec<_>>>()?;
@@ -46,7 +52,7 @@ pub fn run(
     if json_output {
         print_json(&db, &target, &resolved, with_authorship)?;
     } else {
-        print_plain(&resolved)?;
+        print_plain(&target, &resolved)?;
     }
 
     Ok(())
@@ -63,10 +69,14 @@ fn resolve_git_ref(repo: &Repository, sha: &str) -> Result<String> {
     Ok(content.to_string())
 }
 
-fn print_plain(entries: &[(String, String, String)]) -> Result<()> {
-    for (key, value, value_type) in entries {
+fn print_plain(target: &Target, entries: &[(String, String, String, String)]) -> Result<()> {
+    for (target_value, key, value, value_type) in entries {
         let display_value = format_value(value, value_type)?;
-        println!("{}  {}", key, display_value);
+        if target.target_type == TargetType::Path {
+            println!("{};{} {}", target_value, key, display_value);
+        } else {
+            println!("{}  {}", key, display_value);
+        }
     }
     Ok(())
 }
@@ -94,16 +104,16 @@ fn format_value(value: &str, value_type: &str) -> Result<String> {
 fn print_json(
     db: &Db,
     target: &Target,
-    entries: &[(String, String, String)],
+    entries: &[(String, String, String, String)],
     with_authorship: bool,
 ) -> Result<()> {
     let mut root = Map::new();
 
-    for (key, value, value_type) in entries {
+    for (entry_target_value, key, value, value_type) in entries {
         let parsed_value = parse_stored_value(value, value_type)?;
 
         let leaf_value = if with_authorship {
-            let authorship = db.get_authorship(target.type_str(), target.value_str(), key)?;
+            let authorship = db.get_authorship(target.type_str(), entry_target_value, key)?;
             let (author, timestamp) = authorship.unwrap_or_else(|| ("unknown".to_string(), 0));
             json!({
                 "value": parsed_value,
@@ -114,9 +124,12 @@ fn print_json(
             parsed_value
         };
 
-        // Split key by ':' and nest into JSON object
-        let parts: Vec<&str> = key.split(':').collect();
-        insert_nested(&mut root, &parts, leaf_value);
+        if target.target_type == TargetType::Path {
+            insert_nested(&mut root, &[entry_target_value.as_str(), key.as_str()], leaf_value);
+        } else {
+            let parts: Vec<&str> = key.split(':').collect();
+            insert_nested(&mut root, &parts, leaf_value);
+        }
     }
 
     let output = serde_json::to_string_pretty(&Value::Object(root))?;

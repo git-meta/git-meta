@@ -111,7 +111,9 @@ agent:transcript  ...
 Attaching metadata to a commit is somewhat familiar, but there are other target types. For example, you could use a `path` target to associate a code owner to a subdirectory (rather than using a CODEOWNERS file):
 
 ```
-❯ gmeta set path:src/metrics owner schacon
+❯ gmeta set path:src/git owner schacon
+❯ gmeta set path:src/observability owner caleb
+❯ gmeta set path:src/metrics owner kiril
 ```
 
 And see all the path owner values:
