@@ -52,51 +52,24 @@
 <h2 id="purpose">Purpose</h2>
 <p>SQLite is the local read/write store for metadata.</p>
 <p>It is responsible for:</p>
-<ul>
-<li>fast current-value lookup</li>
-<li>local mutation operations</li>
-<li>mutation history / provenance tracking</li>
-<li>tombstone tracking</li>
-<li>preparing data for serialization</li>
-<li>recording materialization state</li>
-</ul>
+<ul><li>fast current-value lookup</li><li>local mutation operations</li><li>mutation history / provenance tracking</li><li>tombstone tracking</li><li>preparing data for serialization</li><li>recording materialization state</li></ul>
 <p>The exchange format is Git trees and commits, not SQLite.</p>
 <h2 id="current-state-and-history">Current state and history</h2>
 <p>There are two important local data views:</p>
-<ol>
-<li>the current materialized value for a <code>(target, key)</code></li>
-<li>a mutation log showing how that value changed over time</li>
-</ol>
+<ol><li>the current materialized value for a <code>(target, key)</code></li><li>a mutation log showing how that value changed over time</li></ol>
 <p>Mutation history should retain at least:</p>
-<ul>
-<li>timestamp</li>
-<li>author email</li>
-<li>mutation type</li>
-</ul>
+<ul><li>timestamp</li><li>author email</li><li>mutation type</li></ul>
 <h2 id="current-reference-schema-direction">Current reference schema direction</h2>
 <p>The original project-level spec described these tables:</p>
-<ul>
-<li><code>metadata</code> — current key rows and string values</li>
-<li><code>list_values</code> — list items as one row per entry</li>
-<li><code>metadata_log</code> — mutation history</li>
-<li><code>metadata_tombstones</code> — latest removals</li>
-</ul>
+<ul><li><code>metadata</code> — current key rows and string values</li><li><code>list_values</code> — list items as one row per entry</li><li><code>metadata_log</code> — mutation history</li><li><code>metadata_tombstones</code> — latest removals</li></ul>
 <p>As new value types are added, the exact schema may evolve, but the local storage must still support:</p>
-<ul>
-<li>O(1)-ish access to current value state</li>
-<li>efficient append/member mutation for collection types</li>
-<li>enough provenance to resolve merge decisions during materialization</li>
-</ul>
+<ul><li>O(1)-ish access to current value state</li><li>efficient append/member mutation for collection types</li><li>enough provenance to resolve merge decisions during materialization</li></ul>
 <h2 id="large-values">Large values</h2>
 <p>Implementations may choose to keep some large values in Git blobs and store references locally rather than storing all payload bytes directly in SQLite.</p>
 <p>That is a local implementation detail, not an exchange-format requirement.</p>
 <h2 id="materialization-bookkeeping">Materialization bookkeeping</h2>
 <p>Local storage should also record enough state to support incremental materialization and serialization, including:</p>
-<ul>
-<li>the last metadata commit successfully materialized per source ref</li>
-<li>which local values changed since last materialization / serialization</li>
-<li>any tombstones that still need to be emitted on serialize</li>
-</ul>
+<ul><li>the last metadata commit successfully materialized per source ref</li><li>which local values changed since last materialization / serialization</li><li>any tombstones that still need to be emitted on serialize</li></ul>
 <p>These are local optimization and correctness concerns and need not be fully represented in the exchange tree.</p>
         </article>
       </main>

@@ -51,38 +51,22 @@
 <p>For exchange, values are serialized into Git tree entries so they can be pushed, fetched, diffed, and merged using normal Git object and tree mechanics.</p>
 <h2 id="2-current-state-and-mutation-history">2. Current state and mutation history</h2>
 <p>The local database may track both:</p>
-<ul>
-<li>current materialized value state</li>
-<li>mutation history / provenance</li>
-</ul>
+<ul><li>current materialized value state</li><li>mutation history / provenance</li></ul>
 <p>The exchange format only needs to represent the latest shareable state needed to reconstruct current values.</p>
 <h2 id="3-deletion-is-explicit">3. Deletion is explicit</h2>
 <p>Missing data in a tree should generally <strong>not</strong> be interpreted as deletion.</p>
 <p>This is important because:</p>
-<ul>
-<li>sparse or pruned trees may omit data</li>
-<li>different metadata refs may contain different subsets</li>
-<li>exchange should not make absence ambiguous</li>
-</ul>
+<ul><li>sparse or pruned trees may omit data</li><li>different metadata refs may contain different subsets</li><li>exchange should not make absence ambiguous</li></ul>
 <p>If a value or collection member is intentionally removed, that removal should be represented explicitly with a tombstone-like entry.</p>
 <h2 id="4-key-path-reservation">4. Key path reservation</h2>
 <p>Keys are serialized directly under the target base path; there is no dedicated <code>k/</code> subtree.</p>
 <p>To keep the tree layout unambiguous, key segments must not start with <code>__</code>. Any path component beginning with <code>__</code> is reserved for gmeta structural metadata such as:</p>
-<ul>
-<li><code>__value</code></li>
-<li><code>__list</code></li>
-<li><code>__set</code></li>
-<li><code>__tombstones</code></li>
-</ul>
+<ul><li><code>__value</code></li><li><code>__list</code></li><li><code>__set</code></li><li><code>__tombstones</code></li></ul>
 <p>This means user keys can safely occupy normal path segments while gmeta can still recognize where value metadata begins.</p>
 <h2 id="5-merge-by-independently-addressable-units">5. Merge by independently addressable units</h2>
 <p>The main design strategy is to avoid large monolithic blobs for values that may be concurrently mutated.</p>
 <p>In practice:</p>
-<ul>
-<li>strings merge at the whole-value level</li>
-<li>lists merge at the entry level</li>
-<li>sets merge at the member level</li>
-</ul>
+<ul><li>strings merge at the whole-value level</li><li>lists merge at the entry level</li><li>sets merge at the member level</li></ul>
 <p>This preserves Git&#x27;s strength at merging trees with many small paths rather than requiring custom blob-level merge algorithms for structured documents.</p>
 <h2 id="6-materialize-is-deterministic">6. Materialize is deterministic</h2>
 <p>Given one or more metadata refs, materialization should deterministically compute the local current value from the serialized tree plus merge rules for the value type.</p>

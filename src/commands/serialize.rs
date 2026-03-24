@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::db::Db;
 use crate::git_utils;
 use crate::list_value::{make_entry_name, parse_entries};
-use crate::types::{build_list_tree_dir_path, build_tombstone_tree_path, build_tree_path, Target};
+use crate::types::{
+    build_list_tree_dir_path, build_set_member_tombstone_tree_path, build_set_tree_dir_path,
+    build_tombstone_tree_path, build_tree_path, Target,
+};
 
 #[derive(serde::Serialize)]
 struct TombstoneBlob<'a> {
@@ -45,6 +48,7 @@ pub fn run() -> Result<()> {
         db.get_all_metadata()?
     };
     let tombstone_entries = db.get_all_tombstones()?;
+    let set_tombstone_entries = db.get_all_set_tombstones()?;
 
     if metadata_entries.is_empty() && tombstone_entries.is_empty() {
         println!("no metadata to serialize");
@@ -55,6 +59,7 @@ pub fn run() -> Result<()> {
     let mut targets: BTreeSet<String> = BTreeSet::new();
     let mut string_count = 0u64;
     let mut list_count = 0u64;
+    let mut set_count = 0u64;
     for (target_type, target_value, _key, _value, value_type, _ts, _is_git_ref) in &metadata_entries
     {
         let label = if target_type == "project" {
@@ -70,20 +75,28 @@ pub fn run() -> Result<()> {
         match value_type.as_str() {
             "string" => string_count += 1,
             "list" => list_count += 1,
+            "set" => set_count += 1,
             _ => {}
         }
     }
     eprintln!(
-        "Serializing {} keys ({} string, {} list) across {} targets, {} tombstones",
+        "Serializing {} keys ({} string, {} list, {} set) across {} targets, {} tombstones, {} set tombstones",
         metadata_entries.len(),
         string_count,
         list_count,
+        set_count,
         targets.len(),
         tombstone_entries.len(),
+        set_tombstone_entries.len(),
     );
 
     eprintln!("Building git tree...");
-    let tree_oid = build_tree(&repo, &metadata_entries, &tombstone_entries)?;
+    let tree_oid = build_tree(
+        &repo,
+        &metadata_entries,
+        &tombstone_entries,
+        &set_tombstone_entries,
+    )?;
 
     // Create commit
     let name = git_utils::get_name(&repo)?;
@@ -120,6 +133,7 @@ fn build_tree(
     repo: &git2::Repository,
     metadata_entries: &[(String, String, String, String, String, i64, bool)],
     tombstone_entries: &[(String, String, String, i64, String)],
+    set_tombstone_entries: &[(String, String, String, String, i64, String)],
 ) -> Result<git2::Oid> {
     // Collect all file paths -> blob content
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -166,6 +180,16 @@ fn build_tree(
                     files.insert(full_path, entry.value.into_bytes());
                 }
             }
+            "set" => {
+                let members: Vec<String> =
+                    serde_json::from_str(value).context("failed to decode set value")?;
+                let set_dir_path = build_set_tree_dir_path(&target, key)?;
+                for member in members {
+                    let member_id = crate::types::set_member_id(&member);
+                    let full_path = format!("{}/{}/__value", set_dir_path, member_id);
+                    files.insert(full_path, member.into_bytes());
+                }
+            }
             _ => {}
         }
     }
@@ -178,6 +202,21 @@ fn build_tree(
         };
 
         let full_path = build_tombstone_tree_path(&target, key)?;
+        let payload = serde_json::to_vec(&TombstoneBlob {
+            timestamp: *timestamp,
+            email,
+        })?;
+        files.insert(full_path, payload);
+    }
+
+    for (target_type, target_value, key, member_id, timestamp, email) in set_tombstone_entries {
+        let target = if target_type == "project" {
+            Target::parse("project")?
+        } else {
+            Target::parse(&format!("{}:{}", target_type, target_value))?
+        };
+
+        let full_path = build_set_member_tombstone_tree_path(&target, key, member_id)?;
         let payload = serde_json::to_vec(&TombstoneBlob {
             timestamp: *timestamp,
             email,

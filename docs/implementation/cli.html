@@ -57,11 +57,7 @@ gmeta set -t set path:src/metrics owners &#x27;[&quot;schacon&quot;, &quot;caleb
 <h3 id="get-values">Get values</h3>
 <pre><code>gmeta get &lt;target&gt; [&lt;key&gt;]</code></pre>
 <p>Behavior:</p>
-<ul>
-<li>with only <code>&lt;target&gt;</code>, show all keys for the target</li>
-<li>with <code>&lt;target&gt; &lt;key&gt;</code>, show the exact key if present</li>
-<li>with <code>&lt;target&gt; &lt;partial-key&gt;</code>, show matching subkeys</li>
-</ul>
+<ul><li>with only <code>&lt;target&gt;</code>, show all keys for the target</li><li>with <code>&lt;target&gt; &lt;key&gt;</code>, show the exact key if present</li><li>with <code>&lt;target&gt; &lt;partial-key&gt;</code>, show matching subkeys</li></ul>
 <h3 id="remove-a-key">Remove a key</h3>
 <pre><code>gmeta rm &lt;target&gt; &lt;key&gt;</code></pre>
 <p>This removes the logical key and records a whole-key tombstone.</p>
@@ -69,15 +65,12 @@ gmeta set -t set path:src/metrics owners &#x27;[&quot;schacon&quot;, &quot;caleb
 <pre><code>gmeta list:push &lt;target&gt; &lt;key&gt; &lt;value&gt;
 gmeta list:pop &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
 <p>Notes:</p>
-<ul>
-<li><code>list:push</code> appends a new list entry</li>
-<li><code>list:pop</code> requires explicit exchange semantics before implementation is finalized; see <a href="../exchange-format/lists.html">Lists</a></li>
-<li>if a string key is pushed to as a list, the implementation may convert it to a list</li>
-</ul>
+<ul><li><code>list:push</code> appends a new list entry</li><li><code>list:pop</code> requires explicit exchange semantics before implementation is finalized; see <a href="../exchange-format/lists.html">Lists</a></li><li>if a string key is pushed to as a list, the implementation may convert it to a list</li></ul>
 <h2 id="set-operations">Set operations</h2>
-<p>These are not yet implemented, but are the natural command shape if sets are adopted:</p>
 <pre><code>gmeta set:add &lt;target&gt; &lt;key&gt; &lt;value&gt;
 gmeta set:rm &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
+<p>Notes:</p>
+<ul><li><code>set:add</code> creates the set if it does not already exist</li><li><code>set:add</code> is idempotent for an existing member</li><li><code>set:rm</code> removes a single member and records a member tombstone</li></ul>
 <h2 id="exchange-commands">Exchange commands</h2>
 <h3 id="serialize">Serialize</h3>
 <pre><code>gmeta serialize</code></pre>
@@ -85,10 +78,7 @@ gmeta set:rm &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
 <h3 id="materialize">Materialize</h3>
 <pre><code>gmeta materialize [&lt;remote&gt;]</code></pre>
 <p>Behavior:</p>
-<ul>
-<li>if <code>&lt;remote&gt;</code> is given, materialize from that remote metadata ref</li>
-<li>if omitted, inspect all known metadata remotes and materialize them</li>
-</ul>
+<ul><li>if <code>&lt;remote&gt;</code> is given, materialize from that remote metadata ref</li><li>if omitted, inspect all known metadata remotes and materialize them</li></ul>
 <h3 id="dry-run-materialize">Dry-run materialize</h3>
 <pre><code>gmeta materialize --dry-run [&lt;remote&gt;]</code></pre>
 <p>Useful for reporting the merge strategy and conflict decisions without applying them.</p>
@@ -109,11 +99,7 @@ project</code></pre>
 <p>For <code>-t set</code>, <code>&lt;value&gt;</code> should be a JSON array of unique strings.</p>
 <h2 id="output-modes">Output modes</h2>
 <p><code>gmeta get</code> may support:</p>
-<ul>
-<li>human-readable tabular output</li>
-<li><code>--json</code></li>
-<li><code>--with-authorship</code> for author/timestamp metadata in JSON mode</li>
-</ul>
+<ul><li>human-readable tabular output</li><li><code>--json</code></li><li><code>--with-authorship</code> for author/timestamp metadata in JSON mode</li></ul>
 <p>The output model is documented in <a href="output.html">Output</a>.</p>
         </article>
       </main>

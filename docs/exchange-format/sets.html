@@ -47,38 +47,21 @@
         <article class="doc-content">
           <p>Sets are unordered collections of unique string members.</p>
 <p>Unlike lists:</p>
-<ul>
-<li>order does not matter</li>
-<li>duplicates collapse to one logical member</li>
-<li>add/remove operations should merge at the member level</li>
-</ul>
+<ul><li>order does not matter</li><li>duplicates collapse to one logical member</li><li>add/remove operations should merge at the member level</li></ul>
 <p>Examples:</p>
-<ul>
-<li>reviewers</li>
-<li>labels</li>
-<li>code owners when uniqueness matters</li>
-<li>capabilities or feature flags</li>
-</ul>
+<ul><li>reviewers</li><li>labels</li><li>code owners when uniqueness matters</li><li>capabilities or feature flags</li></ul>
 <h2 id="recommended-model">Recommended model</h2>
 <p>This draft recommends a <strong>member-addressed set with explicit member tombstones</strong>.</p>
 <p>This is intentionally simpler than a full CRDT OR-Set, while still matching the project&#x27;s explicit-deletion philosophy.</p>
 <p>Semantically, each member behaves like a tiny string-valued presence record inside the set.</p>
 <h2 id="summary">Summary</h2>
-<ul>
-<li>Each member is serialized independently</li>
-<li>Membership is keyed by normalized member value</li>
-<li>Removal is explicit per member</li>
-<li>Concurrent adds of different members union cleanly</li>
-<li>Concurrent add/remove of the same member resolves by recency</li>
-</ul>
+<ul><li>Each member is serialized independently</li><li>Membership is keyed by normalized member value</li><li>Removal is explicit per member</li><li>Concurrent adds of different members union cleanly</li><li>Concurrent add/remove of the same member resolves by recency</li></ul>
 <h2 id="serialized-tree-shape">Serialized tree shape</h2>
 <p>For a set key, store members under:</p>
 <p><code>[base]/&lt;key segments&gt;/__set/&lt;member-id&gt;/__value</code></p>
 <p>Where <code>&lt;member-id&gt;</code> is a stable identifier derived from the member string.</p>
 <p>Recommended:</p>
-<ul>
-<li><code>member-id = sha256(member-string)</code></li>
-</ul>
+<ul><li><code>member-id = sha256(member-string)</code></li></ul>
 <p>The <code>__value</code> blob contains the raw original string member.</p>
 <p>Example:</p>
 <p><code>path/83/src/metrics/owners/__set/8f14e45fceea167a5a36dedd4bea2543.../__value</code></p>
@@ -99,37 +82,18 @@
 <p>This deletes the logical collection itself, not just one member.</p>
 <h2 id="local-materialized-meaning">Local materialized meaning</h2>
 <p>To compute the visible set for a <code>(target, key)</code>:</p>
-<ol>
-<li>collect all member <code>__value</code> entries</li>
-<li>collect all member tombstones</li>
-<li>for each member id:</li>
-</ol>
-<ul>
-<li>if only value exists, member is present</li>
-<li>if only tombstone exists, member is absent</li>
-<li>if both exist, newer of value vs tombstone wins</li>
-</ul>
-<ol>
-<li>if a whole-key tombstone is newer than all visible members, the set key is absent</li>
-<li>otherwise return the unique surviving member strings in deterministic order for display</li>
-</ol>
+<ol><li>collect all member <code>__value</code> entries</li><li>collect all member tombstones</li><li>for each member id:</li></ol>
+<ul><li>if only value exists, member is present</li><li>if only tombstone exists, member is absent</li><li>if both exist, newer of value vs tombstone wins</li></ul>
+<ol><li>if a whole-key tombstone is newer than all visible members, the set key is absent</li><li>otherwise return the unique surviving member strings in deterministic order for display</li></ol>
 <p>Because sets are unordered semantically, display order should be normalized, for example lexical sort of member string.</p>
 <h2 id="materialization-scenarios">Materialization scenarios</h2>
 <h3 id="initial-materialization">Initial materialization</h3>
 <p>Walk:</p>
-<ul>
-<li>all <code>__set/*/__value</code> entries</li>
-<li>all <code>__tombstones/*/__deleted</code> child entries</li>
-<li>any whole-key tombstone</li>
-</ul>
+<ul><li>all <code>__set/*/__value</code> entries</li><li>all <code>__tombstones/*/__deleted</code> child entries</li><li>any whole-key tombstone</li></ul>
 <p>Then compute visible members using the recency rule.</p>
 <h3 id="fast-forward-update">Fast-forward update</h3>
 <p>Diff old tree vs new tree:</p>
-<ul>
-<li>new member paths add members</li>
-<li>new member tombstones remove members if newer</li>
-<li>new whole-key tombstones remove the collection if newer than surviving member writes</li>
-</ul>
+<ul><li>new member paths add members</li><li>new member tombstones remove members if newer</li><li>new whole-key tombstones remove the collection if newer than surviving member writes</li></ul>
 <h3 id="multiple-metadata-sources">Multiple metadata sources</h3>
 <p>Union all member values and member tombstones observed across refs, then derive the current set deterministically.</p>
 <h2 id="merge-semantics">Merge semantics</h2>
@@ -137,77 +101,42 @@
 <p>This is the main reason to model them separately from strings or JSON arrays.</p>
 <h3 id="concurrent-add-of-different-members">Concurrent add of different members</h3>
 <p>If two users add different members concurrently:</p>
-<ul>
-<li>both members remain in the final set</li>
-</ul>
+<ul><li>both members remain in the final set</li></ul>
 <h3 id="concurrent-add-of-same-member">Concurrent add of same member</h3>
 <p>If two users add the same member concurrently:</p>
-<ul>
-<li>the final set still contains only one logical member</li>
-<li>if metadata differs, newer metadata wins</li>
-</ul>
+<ul><li>the final set still contains only one logical member</li><li>if metadata differs, newer metadata wins</li></ul>
 <p>Because membership is keyed by normalized member value, this is naturally deduplicated.</p>
 <h3 id="concurrent-remove-of-different-members">Concurrent remove of different members</h3>
 <p>If two users remove different members concurrently:</p>
-<ul>
-<li>both removals apply</li>
-</ul>
+<ul><li>both removals apply</li></ul>
 <h3 id="concurrent-add-vs-remove-of-same-member">Concurrent add vs remove of same member</h3>
 <p>If one user adds a member and another removes that same member concurrently:</p>
-<ul>
-<li>newer of member value vs member tombstone wins</li>
-</ul>
+<ul><li>newer of member value vs member tombstone wins</li></ul>
 <p>This is a last-writer-wins set policy.</p>
 <p>It is simpler than an OR-Set and likely good enough for the project&#x27;s intended metadata use cases.</p>
 <h3 id="whole-set-delete-vs-member-add">Whole-set delete vs member add</h3>
 <p>If one side deletes the whole set key and the other adds a member:</p>
-<ul>
-<li>newer of whole-key tombstone vs member add activity wins</li>
-</ul>
+<ul><li>newer of whole-key tombstone vs member add activity wins</li></ul>
 <h3 id="no-common-ancestor">No common ancestor</h3>
 <p>For a baseless two-way merge:</p>
-<ul>
-<li>union all member values from both trees</li>
-<li>union all member tombstones from both trees</li>
-<li>for overlapping member ids, remote wins</li>
-<li>compute visible membership from the resulting union</li>
-</ul>
+<ul><li>union all member values from both trees</li><li>union all member tombstones from both trees</li><li>for overlapping member ids, remote wins</li><li>compute visible membership from the resulting union</li></ul>
 <p>This preserves the project&#x27;s existing no-common-ancestor behavior while still allowing non-conflicting members to union cleanly.</p>
 <h2 id="why-not-store-sets-as-json-arrays">Why not store sets as JSON arrays?</h2>
 <p>A JSON array would create whole-value conflicts for what should be independent member-level operations.</p>
 <p>Example:</p>
-<ul>
-<li>one user adds <code>schacon</code></li>
-<li>another adds <code>caleb</code></li>
-</ul>
+<ul><li>one user adds <code>schacon</code></li><li>another adds <code>caleb</code></li></ul>
 <p>With a JSON array blob, both modified the same file and require custom merge logic. With a member-addressed set, both just added different tree entries and Git can merge them structurally.</p>
 <h2 id="why-not-use-a-full-or-set-yet">Why not use a full OR-Set yet?</h2>
 <p>A full OR-Set would model adds and removes as operation tags and gives more formal semantics for concurrent add/remove races.</p>
 <p>However, it is significantly more complex:</p>
-<ul>
-<li>more paths</li>
-<li>more replay logic</li>
-<li>more storage growth</li>
-<li>likely a need for periodic compaction</li>
-</ul>
+<ul><li>more paths</li><li>more replay logic</li><li>more storage growth</li><li>likely a need for periodic compaction</li></ul>
 <p>For gmeta&#x27;s current goals, a member-level last-writer-wins set is a better first design point.</p>
 <p>If later use cases need stronger replicated-set guarantees, this format could evolve or a new set variant could be added.</p>
 <h2 id="good-fits-for-sets">Good fits for sets</h2>
 <p>Sets are good for:</p>
-<ul>
-<li>unique owners</li>
-<li>reviewers</li>
-<li>labels</li>
-<li>policy flags</li>
-<li>membership-like metadata</li>
-</ul>
+<ul><li>unique owners</li><li>reviewers</li><li>labels</li><li>policy flags</li><li>membership-like metadata</li></ul>
 <p>Sets are not good for:</p>
-<ul>
-<li>preserving insertion order</li>
-<li>preserving duplicates</li>
-<li>transcript-like logs</li>
-<li>arbitrary ranking or reordering</li>
-</ul>
+<ul><li>preserving insertion order</li><li>preserving duplicates</li><li>transcript-like logs</li><li>arbitrary ranking or reordering</li></ul>
         </article>
       </main>
     </div>

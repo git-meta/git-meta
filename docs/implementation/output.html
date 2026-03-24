@@ -53,11 +53,7 @@
 gmeta get &lt;target&gt; &lt;key&gt;
 gmeta get &lt;target&gt; &lt;partial-key&gt;</code></pre>
 <p>Behavior:</p>
-<ul>
-<li>with only a target, return all visible keys for that target</li>
-<li>with an exact key, return that key if present</li>
-<li>with a partial key, return matching keys in that namespace subtree</li>
-</ul>
+<ul><li>with only a target, return all visible keys for that target</li><li>with an exact key, return that key if present</li><li>with a partial key, return matching keys in that namespace subtree</li></ul>
 <h2 id="human-readable-output">Human-readable output</h2>
 <p>Example:</p>
 <pre><code>❯ gmeta get commit:13a7d29cde8f8557b54fd6474f547a56822180ae
@@ -94,16 +90,9 @@ agent:provider  anthropic</code></pre>
 }</code></pre>
 <h2 id="collection-output">Collection output</h2>
 <p>Type-specific JSON output should be unsurprising:</p>
-<ul>
-<li>strings render as strings, or as <code>{ value, author, timestamp }</code> with authorship</li>
-<li>lists render as arrays in visible list order</li>
-<li>sets render as arrays in deterministic display order</li>
-</ul>
+<ul><li>strings render as strings, or as <code>{ value, author, timestamp }</code> with authorship</li><li>lists render as arrays in visible list order</li><li>sets render as arrays in deterministic display order</li></ul>
 <p>The exact JSON envelope may evolve, but two rules should hold:</p>
-<ol>
-<li>output should preserve enough structure to distinguish namespaces</li>
-<li>collection ordering in output should be deterministic</li>
-</ol>
+<ol><li>output should preserve enough structure to distinguish namespaces</li><li>collection ordering in output should be deterministic</li></ol>
         </article>
       </main>
     </div>

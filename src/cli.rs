@@ -81,6 +81,32 @@ pub enum Commands {
         value: String,
     },
 
+    /// Add a member to a set
+    #[command(name = "set:add")]
+    SetAdd {
+        /// Target in type:value format
+        target: String,
+
+        /// Key
+        key: String,
+
+        /// Value to add
+        value: String,
+    },
+
+    /// Remove a member from a set
+    #[command(name = "set:rm")]
+    SetRm {
+        /// Target in type:value format
+        target: String,
+
+        /// Key
+        key: String,
+
+        /// Value to remove
+        value: String,
+    },
+
     /// Serialize metadata to Git ref
     Serialize,
 

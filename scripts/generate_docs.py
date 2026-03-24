@@ -56,6 +56,8 @@ STYLE_CSS = """
 :root {
   color-scheme: light dark;
   --max: 920px;
+  --doc-max: 1264px;
+  --aside-width: 320px;
   --sidebar-width: 300px;
 }
 
@@ -235,7 +237,9 @@ body.sidebar-collapsed {
 .sidebar.collapsed .collapse-icon {
   transform: rotate(180deg);
 }
-.doc-content { max-width: var(--max); }
+.doc-content {
+  max-width: var(--doc-max);
+}
 .doc-content h1, .doc-content h2, .doc-content h3, .doc-content h4 {
   line-height: 1.25;
   margin-top: 1.7em;
@@ -274,6 +278,17 @@ body.sidebar-collapsed {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
+@media (min-width: 1100px) {
+  .doc-content.has-aside {
+    padding-right: calc(var(--aside-width) + 24px);
+  }
+  .callout.callout-aside {
+    clear: right;
+    float: right;
+    width: var(--aside-width);
+    margin: 0 calc(-1 * (var(--aside-width) + 24px)) 1rem 24px;
+  }
+}
 @media (max-width: 960px) {
   body.sidebar-collapsed {
     --sidebar-width: 1fr;
@@ -335,15 +350,16 @@ def inline_format(text: str, page_map: dict[str, str], current_page: Page) -> st
     return text
 
 
-def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page: Page) -> tuple[str, str]:
+def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page: Page) -> tuple[str, str, bool]:
     lines = markdown_text.splitlines()
     out: list[str] = []
     in_code = False
     code_lines: list[str] = []
-    in_ul = False
-    in_ol = False
+    ul_items: list[str] = []
+    ol_items: list[str] = []
     paragraph: list[str] = []
     title = "Untitled"
+    has_callout = False
 
     def flush_paragraph() -> None:
         nonlocal paragraph
@@ -352,13 +368,13 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
             paragraph = []
 
     def flush_lists() -> None:
-        nonlocal in_ul, in_ol
-        if in_ul:
-            out.append("</ul>")
-            in_ul = False
-        if in_ol:
-            out.append("</ol>")
-            in_ol = False
+        nonlocal ul_items, ol_items
+        if ul_items:
+            out.append("<ul>" + "".join(ul_items) + "</ul>")
+            ul_items = []
+        if ol_items:
+            out.append("<ol>" + "".join(ol_items) + "</ol>")
+            ol_items = []
 
     i = 0
     while i < len(lines):
@@ -421,7 +437,8 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
                 kind = re.match(r"\[!([A-Z]+)\]", quote_lines[0]).group(1).title()
                 body = quote_lines[1:] if len(quote_lines) > 1 else []
                 body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
-                out.append(f'<div class="callout"><div class="callout-title">{kind}</div>{body_html}</div>')
+                has_callout = True
+                out.append(f'<div class="callout callout-aside"><div class="callout-title">{kind}</div>{body_html}</div>')
             else:
                 body = " ".join(quote_lines)
                 out.append(f"<blockquote><p>{inline_format(body, page_map, current_page)}</p></blockquote>")
@@ -429,25 +446,17 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
 
         if re.match(r"^[-*]\s+", stripped):
             flush_paragraph()
-            if in_ol:
-                out.append("</ol>")
-                in_ol = False
-            if not in_ul:
-                out.append("<ul>")
-                in_ul = True
-            out.append(f"<li>{inline_format(re.sub(r'^[-*]\s+', '', stripped), page_map, current_page)}</li>")
+            if ol_items:
+                flush_lists()
+            ul_items.append(f"<li>{inline_format(re.sub(r'^[-*]\s+', '', stripped), page_map, current_page)}</li>")
             i += 1
             continue
 
         if re.match(r"^\d+\.\s+", stripped):
             flush_paragraph()
-            if in_ul:
-                out.append("</ul>")
-                in_ul = False
-            if not in_ol:
-                out.append("<ol>")
-                in_ol = True
-            out.append(f"<li>{inline_format(re.sub(r'^\d+\.\s+', '', stripped), page_map, current_page)}</li>")
+            if ul_items:
+                flush_lists()
+            ol_items.append(f"<li>{inline_format(re.sub(r'^\d+\.\s+', '', stripped), page_map, current_page)}</li>")
             i += 1
             continue
 
@@ -458,7 +467,7 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
     flush_lists()
     if in_code:
         out.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
-    return "\n".join(out), title
+    return "\n".join(out), title, has_callout
 
 
 def read_title(path: Path) -> str:
@@ -517,14 +526,16 @@ def main() -> None:
 
     for page in pages:
         markdown_text = page.source_path.read_text()
-        content, detected_title = markdown_to_html(markdown_text, page_map, page)
+        content, detected_title, has_callout = markdown_to_html(markdown_text, page_map, page)
         title = detected_title or page.title
         nav = build_nav(pages, page)
         root = root_prefix(page)
+        content_class = " has-aside" if has_callout else ""
         rendered = (
             template.replace("{{title}}", html.escape(title))
             .replace("{{nav}}", nav)
             .replace("{{content}}", content)
+            .replace("{{content_class}}", content_class)
             .replace("{{root}}", root)
         )
         page.output_path.parent.mkdir(parents=True, exist_ok=True)

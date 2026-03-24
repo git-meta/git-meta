@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>gmeta spec · gmeta</title>
+    <title>git metadata project · gmeta</title>
     <meta name="description" content="gmeta project documentation generated from the canonical spec markdown files.">
     <link rel="stylesheet" href="assets/style.css">
     <script>
@@ -41,73 +41,32 @@
         <header class="page-header">
           <div class="page-header-main">
             <div class="eyebrow">Generated from <a href="https://github.com/schacon/gmeta/tree/main/spec"><code>spec/*.md</code></a></div>
-            <h1>gmeta spec</h1>
+            <h1>git metadata project</h1>
           </div>
         </header>
-        <article class="doc-content">
-          <p>This directory breaks the project spec into smaller documents so we can evolve the design before or alongside implementation.</p>
+        <article class="doc-content has-aside">
+          <p>This is a proposed specification for a new standardized way to attach and exchange arbitrary metadata for Git projects.</p>
+<div class="callout callout-aside"><div class="callout-title">Note</div><p>Test callout: on wide screens, generated docs should render this in a right-hand column instead of inline.</p></div>
 <h2 id="why-this-project-exists">Why this project exists</h2>
-<p>gmeta is trying to provide a more flexible and scalable metadata system for Git projects than the tools Git commonly uses today, especially <code>git notes</code>, commit headers, trailers, or checked-in helper files like <code>CODEOWNERS</code>.</p>
+<p>This is a proposal to provide a more flexible and scalable metadata system for Git projects than the tools Git commonly uses today such as <code>git notes</code>, commit headers, message trailers, and checked-in helper files like <code>CODEOWNERS</code>.</p>
 <p>Those existing approaches tend to have some important limitations:</p>
-<ul>
-<li>limited control over metadata granularity and mutability</li>
-<li>poor support for many independently addressable fields on the same object</li>
-<li>awkward merge behavior for structured data</li>
-<li>file pollution when metadata has to live in the working tree</li>
-<li>poor scaling characteristics for very large metadata sets</li>
-</ul>
+<ul><li>limited control over metadata granularity and mutability</li><li>poor support for many independently addressable fields on the same object</li><li>awkward merge behavior for structured data</li><li>file pollution when metadata has to live in the working tree</li><li>poor scaling characteristics for very large metadata sets</li></ul>
 <p>The project is motivated by metadata use cases such as:</p>
-<ul>
-<li>trust and review information</li>
-<li>provenance for generated code, prompts, and transcripts</li>
-<li>comments and review discussions</li>
-<li>testing results and attestations</li>
-<li>path- or project-scoped metadata like ownership or policy hints</li>
-</ul>
-<p>The core idea is:</p>
-<ul>
-<li>store metadata locally in a format that is fast to query and mutate</li>
-<li>exchange metadata using normal Git trees, commits, refs, and transport</li>
-<li>model mergeable data as many small tree entries instead of one large structured blob</li>
-</ul>
+<ul><li>trust and review information</li><li>provenance for generated code, prompts, and transcripts</li><li>comments and review discussions</li><li>testing results and attestations</li><li>path- or project-scoped metadata like ownership or policy hints</li></ul>
+<p>The core idea is to:</p>
+<ul><li>store metadata locally in a format that is fast to query and mutate</li><li>exchange metadata using normal Git trees, commits, refs, and transport mechanisms</li><li>model mergeable data as many small tree entries instead of one large structured blob</li></ul>
 <p>That combination is meant to make metadata:</p>
-<ul>
-<li>easy to read and write locally</li>
-<li>exchangeable over existing Git hosting infrastructure</li>
-<li>eventually consistent across collaborators</li>
-<li>practical even when metadata grows large</li>
-</ul>
+<ul><li>easy to read and write locally</li><li>exchangeable over existing Git hosting infrastructure</li><li>eventually consistent across collaborators</li><li>practical even when metadata grows large</li></ul>
 <h2 id="exchange-format">Exchange format</h2>
-<ul>
-<li><a href="exchange-format/principles.html">Shared principles</a></li>
-<li><a href="exchange-format/targets.html">Targets and keys</a></li>
-<li><a href="exchange-format/exchange.html">Exchange format and refs</a></li>
-<li><a href="exchange-format/materialization.html">Materialization and merge workflow</a></li>
-</ul>
+<ul><li><a href="exchange-format/principles.html">Shared principles</a></li><li><a href="exchange-format/targets.html">Targets and keys</a></li><li><a href="exchange-format/exchange.html">Exchange format and refs</a></li><li><a href="exchange-format/materialization.html">Materialization and merge workflow</a></li></ul>
 <h3 id="value-types">Value types</h3>
-<ul>
-<li><a href="exchange-format/strings.html">Strings</a></li>
-<li><a href="exchange-format/lists.html">Lists</a></li>
-<li><a href="exchange-format/sets.html">Sets</a></li>
-</ul>
+<ul><li><a href="exchange-format/strings.html">Strings</a></li><li><a href="exchange-format/lists.html">Lists</a></li><li><a href="exchange-format/sets.html">Sets</a></li></ul>
 <p>Ordered lists are intentionally not covered yet.</p>
 <h2 id="implementation">Implementation</h2>
-<ul>
-<li><a href="implementation/storage.html">Local storage</a></li>
-<li><a href="implementation/standard-keys.html">Standard keys</a></li>
-<li><a href="implementation/cli.html">CLI surface</a></li>
-<li><a href="implementation/output.html">Output and query semantics</a></li>
-<li><a href="implementation/workflow.html">Workflow</a></li>
-</ul>
+<ul><li><a href="implementation/storage.html">Local storage</a></li><li><a href="implementation/standard-keys.html">Standard keys</a></li><li><a href="implementation/cli.html">CLI surface</a></li><li><a href="implementation/output.html">Output and query semantics</a></li><li><a href="implementation/workflow.html">Workflow</a></li></ul>
 <h2 id="design-status">Design status</h2>
 <p>These documents are proposal drafts. They are intended to answer:</p>
-<ul>
-<li>what is the serialized tree shape?</li>
-<li>what is the current value derived from that shape?</li>
-<li>how do conflicts resolve?</li>
-<li>what happens in no-common-ancestor scenarios?</li>
-<li>what tombstones are needed?</li>
-</ul>
+<ul><li>what is the serialized tree shape?</li><li>what is the current value derived from that shape?</li><li>how do conflicts resolve?</li><li>what happens in no-common-ancestor scenarios?</li><li>what tombstones are needed?</li></ul>
 <p>They are not yet implementation docs.</p>
         </article>
       </main>

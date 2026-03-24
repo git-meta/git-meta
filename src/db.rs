@@ -58,6 +58,24 @@ impl Db {
                 is_git_ref INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS set_values (
+                metadata_id INTEGER NOT NULL,
+                member_id TEXT NOT NULL,
+                value TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                UNIQUE(metadata_id, member_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS set_tombstones (
+                target_type TEXT NOT NULL,
+                target_value TEXT NOT NULL,
+                key TEXT NOT NULL,
+                member_id TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                email TEXT NOT NULL,
+                UNIQUE(target_type, target_value, key, member_id)
+            );
+
             CREATE TABLE IF NOT EXISTS metadata_log (
                 target_type TEXT NOT NULL,
                 target_value TEXT NOT NULL,
@@ -183,6 +201,14 @@ impl Db {
                     "DELETE FROM list_values WHERE metadata_id = ?1",
                     params![metadata_id],
                 )?;
+                tx.execute(
+                    "DELETE FROM set_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+                    params![target_type, target_value, key],
+                )?;
             }
             "list" => {
                 tx.execute(
@@ -203,6 +229,14 @@ impl Db {
                     "DELETE FROM list_values WHERE metadata_id = ?1",
                     params![metadata_id],
                 )?;
+                tx.execute(
+                    "DELETE FROM set_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+                    params![target_type, target_value, key],
+                )?;
 
                 for entry in parse_entries(value)? {
                     let (stored_value, item_is_git_ref) = blob_if_large(repo, &entry.value)?;
@@ -216,6 +250,67 @@ impl Db {
                             item_is_git_ref as i64
                         ],
                     )?;
+                }
+            }
+            "set" => {
+                tx.execute(
+                    "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
+                     VALUES (?1, ?2, ?3, '[]', 'set', ?4, 0)
+                     ON CONFLICT(target_type, target_value, key) DO UPDATE
+                     SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp, is_git_ref = 0",
+                    params![target_type, target_value, key, timestamp],
+                )?;
+
+                let metadata_id: i64 = tx.query_row(
+                    "SELECT rowid FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+                    params![target_type, target_value, key],
+                    |row| row.get(0),
+                )?;
+
+                let existing_members = load_set_values_by_metadata_id_tx(&tx, metadata_id)?;
+                let new_members = normalize_set_values(value)?;
+                let new_member_ids: std::collections::BTreeSet<String> = new_members
+                    .iter()
+                    .map(|member| crate::types::set_member_id(member))
+                    .collect();
+
+                tx.execute(
+                    "DELETE FROM list_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+
+                for member in &new_members {
+                    let member_id = crate::types::set_member_id(member);
+                    let member_timestamp = existing_members
+                        .get(&member_id)
+                        .map(|(_, ts)| *ts)
+                        .unwrap_or(timestamp);
+                    tx.execute(
+                        "INSERT INTO set_values (metadata_id, member_id, value, timestamp)
+                         VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT(metadata_id, member_id) DO UPDATE SET value = excluded.value, timestamp = excluded.timestamp",
+                        params![metadata_id, member_id, member, member_timestamp],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND member_id = ?4",
+                        params![target_type, target_value, key, crate::types::set_member_id(member)],
+                    )?;
+                }
+
+                for member_id in existing_members.keys() {
+                    if !new_member_ids.contains(member_id) {
+                        tx.execute(
+                            "DELETE FROM set_values WHERE metadata_id = ?1 AND member_id = ?2",
+                            params![metadata_id, member_id],
+                        )?;
+                        tx.execute(
+                            "INSERT INTO set_tombstones (target_type, target_value, key, member_id, timestamp, email)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                             ON CONFLICT(target_type, target_value, key, member_id) DO UPDATE
+                             SET timestamp = excluded.timestamp, email = excluded.email",
+                            params![target_type, target_value, key, member_id, timestamp, email],
+                        )?;
+                    }
                 }
             }
             _ => bail!("unknown value type: {}", value_type),
@@ -270,6 +365,13 @@ impl Db {
                         self.repo.as_ref(),
                         metadata_id,
                     )?,
+                    value_type,
+                    false,
+                )))
+            }
+            Some((metadata_id, _value, value_type, _is_git_ref)) if value_type == "set" => {
+                Ok(Some((
+                    encode_set_values_by_metadata_id(&self.conn, metadata_id)?,
                     value_type,
                     false,
                 )))
@@ -337,6 +439,9 @@ impl Db {
                     metadata_id,
                 )?;
                 results.push((key, encoded, value_type, false));
+            } else if value_type == "set" {
+                let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
+                results.push((key, encoded, value_type, false));
             } else {
                 let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
                 results.push((key, resolved, value_type, is_git_ref));
@@ -390,6 +495,10 @@ impl Db {
         let deleted = if let Some(metadata_id) = metadata_id {
             tx.execute(
                 "DELETE FROM list_values WHERE metadata_id = ?1",
+                params![metadata_id],
+            )?;
+            tx.execute(
+                "DELETE FROM set_values WHERE metadata_id = ?1",
                 params![metadata_id],
             )?;
             tx.execute(
@@ -627,6 +736,160 @@ impl Db {
         }
     }
 
+    /// Remove a member from a set.
+    pub fn set_rm(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        key: &str,
+        value: &str,
+        email: &str,
+        timestamp: i64,
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let existing = {
+            let mut stmt = tx.prepare(
+                "SELECT rowid, value_type FROM metadata
+                 WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+            )?;
+
+            stmt.query_row(params![target_type, target_value, key], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .optional()?
+        };
+
+        match existing {
+            Some((metadata_id, current_type)) => {
+                if current_type != "set" {
+                    bail!("key '{}' is not a set", key);
+                }
+
+                let member_id = crate::types::set_member_id(value);
+                let deleted = tx.execute(
+                    "DELETE FROM set_values WHERE metadata_id = ?1 AND member_id = ?2",
+                    params![metadata_id, member_id],
+                )?;
+
+                if deleted == 0 {
+                    bail!("value '{}' not found in set", value);
+                }
+
+                tx.execute(
+                    "UPDATE metadata
+                     SET value = '[]', value_type = 'set', last_timestamp = ?1
+                     WHERE rowid = ?2",
+                    params![timestamp, metadata_id],
+                )?;
+
+                tx.execute(
+                    "INSERT INTO set_tombstones (target_type, target_value, key, member_id, timestamp, email)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(target_type, target_value, key, member_id) DO UPDATE
+                     SET timestamp = excluded.timestamp, email = excluded.email",
+                    params![target_type, target_value, key, member_id, timestamp, email],
+                )?;
+
+                let new_value = encode_set_values_by_metadata_id(&tx, metadata_id)?;
+
+                tx.execute(
+                    "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
+                     VALUES (?1, ?2, ?3, ?4, 'set', 'set:rm', ?5, ?6)",
+                    params![target_type, target_value, key, &new_value, email, timestamp],
+                )?;
+
+                tx.execute(
+                    "DELETE FROM metadata_tombstones
+                     WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+                    params![target_type, target_value, key],
+                )?;
+
+                tx.commit()?;
+                Ok(())
+            }
+            None => bail!("key '{}' not found", key),
+        }
+    }
+
+    /// Add a member to a set.
+    pub fn set_add(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        key: &str,
+        value: &str,
+        email: &str,
+        timestamp: i64,
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let existing = {
+            let mut stmt = tx.prepare(
+                "SELECT rowid, value_type FROM metadata
+                 WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+            )?;
+
+            stmt.query_row(params![target_type, target_value, key], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .optional()?
+        };
+
+        let metadata_id = match existing {
+            Some((metadata_id, current_type)) => {
+                if current_type != "set" {
+                    bail!("key '{}' is not a set", key);
+                }
+
+                tx.execute(
+                    "UPDATE metadata
+                     SET value = '[]', value_type = 'set', last_timestamp = ?1
+                     WHERE rowid = ?2",
+                    params![timestamp, metadata_id],
+                )?;
+                metadata_id
+            }
+            None => {
+                tx.execute(
+                    "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp)
+                     VALUES (?1, ?2, ?3, '[]', 'set', ?4)",
+                    params![target_type, target_value, key, timestamp],
+                )?;
+                tx.last_insert_rowid()
+            }
+        };
+
+        let member_id = crate::types::set_member_id(value);
+        tx.execute(
+            "INSERT INTO set_values (metadata_id, member_id, value, timestamp)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(metadata_id, member_id) DO UPDATE
+             SET value = excluded.value, timestamp = excluded.timestamp",
+            params![metadata_id, member_id, value, timestamp],
+        )?;
+
+        tx.execute(
+            "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND member_id = ?4",
+            params![target_type, target_value, key, member_id],
+        )?;
+
+        let new_value = encode_set_values_by_metadata_id(&tx, metadata_id)?;
+
+        tx.execute(
+            "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
+             VALUES (?1, ?2, ?3, ?4, 'set', 'set:add', ?5, ?6)",
+            params![target_type, target_value, key, &new_value, email, timestamp],
+        )?;
+
+        tx.execute(
+            "DELETE FROM metadata_tombstones
+             WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+            params![target_type, target_value, key],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Apply a tombstone from exchange data:
     /// remove current value (if any), record tombstone, and log the operation.
     pub fn apply_tombstone(
@@ -653,10 +916,18 @@ impl Db {
                 params![metadata_id],
             )?;
             tx.execute(
+                "DELETE FROM set_values WHERE metadata_id = ?1",
+                params![metadata_id],
+            )?;
+            tx.execute(
                 "DELETE FROM metadata WHERE rowid = ?1",
                 params![metadata_id],
             )?;
         }
+        tx.execute(
+            "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+            params![target_type, target_value, key],
+        )?;
 
         tx.execute(
             "INSERT INTO metadata_tombstones (target_type, target_value, key, timestamp, email)
@@ -727,6 +998,17 @@ impl Db {
                     last_timestamp,
                     false,
                 ));
+            } else if value_type == "set" {
+                let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
+                results.push((
+                    target_type,
+                    target_value,
+                    key,
+                    encoded,
+                    value_type,
+                    last_timestamp,
+                    false,
+                ));
             } else {
                 results.push((
                     target_type,
@@ -758,6 +1040,35 @@ impl Db {
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
                 row.get::<_, String>(4)?,
+            ))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Get all set member tombstones for serialization.
+    /// Returns (target_type, target_value, key, member_id, timestamp, email).
+    pub fn get_all_set_tombstones(
+        &self,
+    ) -> Result<Vec<(String, String, String, String, i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT target_type, target_value, key, member_id, timestamp, email
+             FROM set_tombstones
+             ORDER BY target_type, target_value, key, member_id",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })?;
 
@@ -1062,6 +1373,48 @@ fn encode_list_entries_by_metadata_id(
 ) -> Result<String> {
     let entries = load_list_entries_by_metadata_id(conn, repo, metadata_id)?;
     Ok(encode_entries(&entries)?)
+}
+
+fn load_set_values_by_metadata_id_tx(
+    tx: &rusqlite::Transaction<'_>,
+    metadata_id: i64,
+) -> Result<std::collections::BTreeMap<String, (String, i64)>> {
+    let mut stmt = tx.prepare(
+        "SELECT member_id, value, timestamp FROM set_values WHERE metadata_id = ?1 ORDER BY member_id",
+    )?;
+    let rows = stmt.query_map(params![metadata_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    let mut result = std::collections::BTreeMap::new();
+    for row in rows {
+        let (member_id, value, timestamp) = row?;
+        result.insert(member_id, (value, timestamp));
+    }
+    Ok(result)
+}
+
+fn encode_set_values_by_metadata_id(conn: &Connection, metadata_id: i64) -> Result<String> {
+    let mut stmt =
+        conn.prepare("SELECT value FROM set_values WHERE metadata_id = ?1 ORDER BY value")?;
+    let rows = stmt.query_map(params![metadata_id], |row| row.get::<_, String>(0))?;
+    let mut values = Vec::new();
+    for row in rows {
+        values.push(row?);
+    }
+    Ok(serde_json::to_string(&values)?)
+}
+
+fn normalize_set_values(raw: &str) -> Result<Vec<String>> {
+    let values: Vec<String> = serde_json::from_str(raw)?;
+    let mut set = std::collections::BTreeSet::new();
+    for value in values {
+        set.insert(value);
+    }
+    Ok(set.into_iter().collect())
 }
 
 /// Store `value` as a git blob if it exceeds GIT_REF_THRESHOLD, otherwise return as-is.

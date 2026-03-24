@@ -7,6 +7,32 @@ use crate::git_utils;
 use crate::list_value::{encode_entries, parse_entries};
 use crate::types::{validate_key, Target, ValueType, GIT_REF_THRESHOLD};
 
+struct CommandContext {
+    target: Target,
+    db: Db,
+    email: String,
+    timestamp: i64,
+}
+
+fn open_context(target_str: &str, key: &str) -> Result<CommandContext> {
+    let mut target = Target::parse(target_str)?;
+    validate_key(key)?;
+
+    let repo = git_utils::discover_repo()?;
+    target.resolve(&repo)?;
+    let db_path = git_utils::db_path(&repo)?;
+    let email = git_utils::get_email(&repo)?;
+    let timestamp = Utc::now().timestamp_millis();
+    let db = Db::open(&db_path)?;
+
+    Ok(CommandContext {
+        target,
+        db,
+        email,
+        timestamp,
+    })
+}
+
 pub fn run(
     target_str: &str,
     key: &str,
@@ -14,8 +40,7 @@ pub fn run(
     file: Option<&str>,
     value_type_str: &str,
 ) -> Result<()> {
-    let mut target = Target::parse(target_str)?;
-    validate_key(key)?;
+    let ctx = open_context(target_str, key)?;
     let value_type = ValueType::from_str(value_type_str)?;
 
     let from_file = file.is_some();
@@ -28,53 +53,73 @@ pub fn run(
         }
     };
 
-    let repo = git_utils::discover_repo()?;
-    target.resolve(&repo)?;
-    let db_path = git_utils::db_path(&repo)?;
-    let email = git_utils::get_email(&repo)?;
-    let timestamp = Utc::now().timestamp_millis();
-
-    let db = Db::open(&db_path)?;
-
     // For large file imports (>1KB via -F), store as a git blob reference
     let use_git_ref =
         from_file && matches!(value_type, ValueType::String) && raw_value.len() > GIT_REF_THRESHOLD;
 
     if use_git_ref {
+        let repo = git_utils::discover_repo()?;
         let blob_oid = repo.blob(raw_value.as_bytes())?;
-        db.set_with_git_ref(
+        ctx.db.set_with_git_ref(
             None,
-            target.type_str(),
-            target.value_str(),
+            ctx.target.type_str(),
+            ctx.target.value_str(),
             key,
             &blob_oid.to_string(),
             value_type.as_str(),
-            &email,
-            timestamp,
+            &ctx.email,
+            ctx.timestamp,
             true,
         )?;
     } else {
         let stored_value = match value_type {
-            ValueType::String => {
-                // Store as JSON-encoded string
-                serde_json::to_string(&raw_value)?
-            }
+            ValueType::String => serde_json::to_string(&raw_value)?,
             ValueType::List => {
                 let entries = parse_entries(&raw_value)?;
                 encode_entries(&entries)?
             }
+            ValueType::Set => {
+                let values: Vec<String> = serde_json::from_str(&raw_value)?;
+                serde_json::to_string(&values)?
+            }
         };
 
-        db.set(
-            target.type_str(),
-            target.value_str(),
+        ctx.db.set(
+            ctx.target.type_str(),
+            ctx.target.value_str(),
             key,
             &stored_value,
             value_type.as_str(),
-            &email,
-            timestamp,
+            &ctx.email,
+            ctx.timestamp,
         )?;
     }
 
+    Ok(())
+}
+
+pub fn run_add(target_str: &str, key: &str, value: &str) -> Result<()> {
+    let ctx = open_context(target_str, key)?;
+    ctx.db.set_add(
+        ctx.target.type_str(),
+        ctx.target.value_str(),
+        key,
+        value,
+        &ctx.email,
+        ctx.timestamp,
+    )?;
+    Ok(())
+}
+
+pub fn run_rm(target_str: &str, key: &str, value: &str) -> Result<()> {
+    let ctx = open_context(target_str, key)?;
+    ctx.db.set_rm(
+        ctx.target.type_str(),
+        ctx.target.value_str(),
+        key,
+        value,
+        &ctx.email,
+        ctx.timestamp,
+    )?;
     Ok(())
 }

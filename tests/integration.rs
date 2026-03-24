@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use sha1::{Digest, Sha1};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -33,6 +34,13 @@ fn gmeta(dir: &Path) -> Command {
 /// Helper to build a commit target string from a full SHA.
 fn commit_target(sha: &str) -> String {
     format!("commit:{}", sha)
+}
+
+fn target_fanout(value: &str) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(value.as_bytes());
+    let hash = format!("{:x}", hasher.finalize());
+    hash[..2].to_string()
 }
 
 #[test]
@@ -322,7 +330,7 @@ fn test_serialize_creates_ref() {
 
     // Build the expected path from the full SHA
     let first2 = &sha[..2];
-    let expected_path = format!("commit/{}/{}/k/agent/model/__value", first2, sha);
+    let expected_path = format!("commit/{}/{}/agent/model/__value", first2, sha);
 
     // Walk the tree and verify structure
     let mut found = false;
@@ -405,9 +413,13 @@ fn test_serialize_list_values() {
     let tree = commit.tree().unwrap();
 
     let mut list_entries = Vec::new();
+    let fanout = target_fanout("sc-branch-1-deadbeef");
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         let full_path = format!("{}{}", root, entry.name().unwrap_or(""));
-        if full_path.starts_with("branch/d6/sc-branch-1-deadbeef/k/agent/chat/__list/") {
+        if full_path.starts_with(&format!(
+            "branch/{}/sc-branch-1-deadbeef/agent/chat/__list/",
+            fanout
+        )) {
             if entry.kind() == Some(git2::ObjectType::Blob) {
                 list_entries.push(full_path);
             }
@@ -583,9 +595,9 @@ fn test_serialize_rm_writes_tombstone_blob() {
     let tree = commit.tree().unwrap();
 
     let first2 = &sha[..2];
-    let value_path = format!("commit/{}/{}/k/agent/model/__value", first2, sha);
+    let value_path = format!("commit/{}/{}/agent/model/__value", first2, sha);
     let tombstone_path = format!(
-        "commit/{}/{}/__tombstones/k/agent/model/__deleted",
+        "commit/{}/{}/__tombstones/agent/model/__deleted",
         first2, sha
     );
 
@@ -752,10 +764,13 @@ fn collect_list_entry_names(repo: &git2::Repository) -> Vec<String> {
     let tree = commit.tree().unwrap();
 
     let mut entries = Vec::new();
+    let fanout = target_fanout("sc-branch-1-deadbeef");
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         let full_path = format!("{}{}", root, entry.name().unwrap_or(""));
-        if full_path.starts_with("branch/d6/sc-branch-1-deadbeef/k/agent/chat/__list/")
-            && entry.kind() == Some(git2::ObjectType::Blob)
+        if full_path.starts_with(&format!(
+            "branch/{}/sc-branch-1-deadbeef/agent/chat/__list/",
+            fanout
+        )) && entry.kind() == Some(git2::ObjectType::Blob)
         {
             let name = entry.name().unwrap().to_string();
             entries.push(name);
@@ -766,6 +781,112 @@ fn collect_list_entry_names(repo: &git2::Repository) -> Vec<String> {
 
     entries.sort();
     entries
+}
+
+#[test]
+fn test_set_add_and_rm() {
+    let (dir, _sha) = setup_repo();
+    let target = "branch:sc-branch-1-deadbeef";
+
+    gmeta(dir.path())
+        .args(["set:add", target, "reviewer", "alice@example.com"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["set:add", target, "reviewer", "bob@example.com"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["get", target, "reviewer"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alice@example.com"))
+        .stdout(predicate::str::contains("bob@example.com"));
+
+    gmeta(dir.path())
+        .args(["set:rm", target, "reviewer", "alice@example.com"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["get", target, "reviewer"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bob@example.com"))
+        .stdout(predicate::str::contains("alice@example.com").not());
+}
+
+#[test]
+fn test_set_add_deduplicates_members() {
+    let (dir, _sha) = setup_repo();
+    let target = "branch:sc-branch-1-deadbeef";
+
+    gmeta(dir.path())
+        .args(["set:add", target, "reviewer", "alice@example.com"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["set:add", target, "reviewer", "alice@example.com"])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["get", target, "reviewer"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alice@example.com").count(1));
+}
+
+#[test]
+fn test_set_type_round_trips_and_serializes_members() {
+    let (dir, _sha) = setup_repo();
+
+    gmeta(dir.path())
+        .args([
+            "set",
+            "-t",
+            "set",
+            "branch:sc-branch-1-deadbeef",
+            "reviewer",
+            r#"["alice@example.com","bob@example.com","alice@example.com"]"#,
+        ])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["get", "branch:sc-branch-1-deadbeef", "reviewer"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alice@example.com"))
+        .stdout(predicate::str::contains("bob@example.com"));
+
+    gmeta(dir.path()).args(["serialize"]).assert().success();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let commit = reference.peel_to_commit().unwrap();
+    let tree = commit.tree().unwrap();
+    let fanout = target_fanout("sc-branch-1-deadbeef");
+
+    let mut set_members = Vec::new();
+    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        let full_path = format!("{}{}", root, entry.name().unwrap_or(""));
+        if full_path.starts_with(&format!(
+            "branch/{}/sc-branch-1-deadbeef/reviewer/__set/",
+            fanout
+        )) && full_path.ends_with("/__value")
+            && entry.kind() == Some(git2::ObjectType::Blob)
+        {
+            set_members.push(full_path);
+        }
+        git2::TreeWalkResult::Ok
+    })
+    .unwrap();
+
+    assert_eq!(set_members.len(), 2);
 }
 
 #[test]

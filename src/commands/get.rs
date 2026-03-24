@@ -82,6 +82,11 @@ fn format_value(value: &str, value_type: &str) -> Result<String> {
             let list = list_values_from_json(value)?;
             Ok(format!("{:?}", list))
         }
+        "set" => {
+            let mut set: Vec<String> = serde_json::from_str(value)?;
+            set.sort();
+            Ok(format!("{:?}", set))
+        }
         _ => Ok(value.to_string()),
     }
 }
@@ -128,6 +133,11 @@ fn parse_stored_value(value: &str, value_type: &str) -> Result<Value> {
         "list" => {
             let list = list_values_from_json(value)?;
             Ok(Value::Array(list.into_iter().map(Value::String).collect()))
+        }
+        "set" => {
+            let mut set: Vec<String> = serde_json::from_str(value)?;
+            set.sort();
+            Ok(Value::Array(set.into_iter().map(Value::String).collect()))
         }
         _ => Ok(serde_json::from_str(value)?),
     }

@@ -48,99 +48,53 @@
           <p>This document describes how gmeta serializes metadata into Git and where it is stored.</p>
 <h2 id="goals">Goals</h2>
 <p>The exchange format should:</p>
-<ul>
-<li>work over existing Git transport</li>
-<li>use Git trees and commits directly</li>
-<li>diff efficiently</li>
-<li>merge structurally where possible</li>
-<li>reconstruct current shareable state during materialization</li>
-</ul>
+<ul><li>work over existing Git transport</li><li>use Git trees and commits directly</li><li>diff efficiently</li><li>merge structurally where possible</li><li>reconstruct current shareable state during materialization</li></ul>
 <p>Only the latest shareable state needs to be serialized. Full local mutation history does not.</p>
 <h2 id="refs">Refs</h2>
 <p>Local serialized metadata head:</p>
-<ul>
-<li><code>refs/meta/local</code></li>
-</ul>
+<ul><li><code>refs/meta/local</code></li></ul>
 <p>If <code>meta.namespace</code> Git config is set, that namespace should be used instead of <code>meta</code>.</p>
 <p>Fetched remote metadata heads should be stored under a remote-specific namespace, for example:</p>
-<ul>
-<li><code>refs/meta/remotes/origin</code></li>
-</ul>
+<ul><li><code>refs/meta/remotes/origin</code></li></ul>
 <p>If multiple local metadata destinations are supported later, the local layout may expand to directory-shaped refs such as:</p>
-<ul>
-<li><code>refs/meta/local/public</code></li>
-<li><code>refs/meta/local/private</code></li>
-</ul>
+<ul><li><code>refs/meta/local/public</code></li><li><code>refs/meta/local/private</code></li></ul>
 <h2 id="commit-model">Commit model</h2>
 <p>Serialization writes a Git commit whose tree contains the current shareable metadata state.</p>
 <p>The commit message is not semantically important; the commit is mainly used for:</p>
-<ul>
-<li>tree pointer</li>
-<li>author identity</li>
-<li>author date / commit date</li>
-<li>ancestry for incremental materialization and merging</li>
-</ul>
+<ul><li>tree pointer</li><li>author identity</li><li>author date / commit date</li><li>ancestry for incremental materialization and merging</li></ul>
 <h2 id="tree-root-layout">Tree root layout</h2>
 <p>The base tree path for a target is:</p>
 <p><code>&lt;target-type&gt;/&lt;fanout&gt;/&lt;full-target-value&gt;</code></p>
 <p>Fanout is target-type dependent:</p>
-<ul>
-<li>for <code>commit</code>, use the first 2 characters of the commit SHA</li>
-<li>for all other target types with a target value, use the first 2 hexadecimal characters of the SHA-1 hash of the target value</li>
-</ul>
+<ul><li>for <code>commit</code>, use the first 2 characters of the commit SHA</li><li>for all other target types with a target value, use the first 2 hexadecimal characters of the SHA-1 hash of the target value</li></ul>
 <p>Examples:</p>
-<ul>
-<li><code>commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/...</code></li>
-<li><code>branch/06/sc-branch-1-deadbeef/...</code></li>
-</ul>
+<ul><li><code>commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/...</code></li><li><code>branch/06/sc-branch-1-deadbeef/...</code></li></ul>
 <p>This keeps commit paths readable and naturally distributed by object id prefix, while still avoiding oversized top-level directories for arbitrary branch, path, or change-id targets.</p>
 <p><code>project</code> may be represented as a special well-known subtree because it has no user-facing target value.</p>
 <h2 id="key-path-layout">Key path layout</h2>
 <p>Under the target base path, key segments are serialized directly as path components.</p>
 <p>Metadata structure begins when a reserved <code>__*</code> component is encountered.</p>
 <p>Examples:</p>
-<ul>
-<li>string: <code>&lt;base&gt;/agent/model/__value</code></li>
-<li>list: <code>&lt;base&gt;/agent/chat/__list/&lt;entry-id&gt;</code></li>
-<li>whole-key tombstone: <code>&lt;base&gt;/__tombstones/agent/model/__deleted</code></li>
-</ul>
+<ul><li>string: <code>&lt;base&gt;/agent/model/__value</code></li><li>list: <code>&lt;base&gt;/agent/chat/__list/&lt;entry-id&gt;</code></li><li>whole-key tombstone: <code>&lt;base&gt;/__tombstones/agent/model/__deleted</code></li></ul>
 <h2 id="per-type-layouts">Per-type layouts</h2>
 <p>Per-type layouts are defined in:</p>
-<ul>
-<li><a href="strings.html">Strings</a></li>
-<li><a href="lists.html">Lists</a></li>
-<li><a href="sets.html">Sets</a></li>
-</ul>
+<ul><li><a href="strings.html">Strings</a></li><li><a href="lists.html">Lists</a></li><li><a href="sets.html">Sets</a></li></ul>
 <h2 id="serialization-policy">Serialization policy</h2>
 <p>Serialization takes local current state and writes a new Git tree/commit representing the latest shareable metadata view.</p>
 <p>A later optimization may serialize only values changed since the last successful materialization or serialize by reusing unchanged subtrees.</p>
 <h2 id="why-trees-instead-of-structured-blobs">Why trees instead of structured blobs</h2>
 <p>The exchange format prefers many independently addressable paths over one large JSON blob because:</p>
-<ul>
-<li>Git diffs trees efficiently</li>
-<li>Git merges non-overlapping paths naturally</li>
-<li>list entries and set members can merge as unions instead of blob conflicts</li>
-<li>large append-only data can be chunked</li>
-</ul>
+<ul><li>Git diffs trees efficiently</li><li>Git merges non-overlapping paths naturally</li><li>list entries and set members can merge as unions instead of blob conflicts</li><li>large append-only data can be chunked</li></ul>
 <h2 id="explicit-deletion">Explicit deletion</h2>
 <p>Exchange must not assume that missing paths mean deletion.</p>
 <p>Reasons:</p>
-<ul>
-<li>sparse or pruned trees may omit data</li>
-<li>multiple metadata refs may represent different subsets</li>
-<li>absence should not be ambiguous</li>
-</ul>
+<ul><li>sparse or pruned trees may omit data</li><li>multiple metadata refs may represent different subsets</li><li>absence should not be ambiguous</li></ul>
 <p>Intentional deletion is represented by explicit tombstones.</p>
 <p>A single reserved <code>__tombstones</code> namespace is used for both whole-key and child-level deletions. Child tombstones are interpreted relative to the current key type. Serialize and materialize must ignore incompatible child tombstones for the current type rather than treating them as errors or as deletions for another collection model.</p>
 <h2 id="large-data-considerations">Large-data considerations</h2>
 <p>This format is intended to work with blobless / partial clone workflows.</p>
 <p>Large metadata histories can remain practical because:</p>
-<ul>
-<li>trees and commits are relatively small</li>
-<li>blobs can be fetched on demand</li>
-<li>recent or important working sets can be prioritized</li>
-<li>pruning strategies can reduce tip tree size without losing reconstructability of older introduced metadata</li>
-</ul>
+<ul><li>trees and commits are relatively small</li><li>blobs can be fetched on demand</li><li>recent or important working sets can be prioritized</li><li>pruning strategies can reduce tip tree size without losing reconstructability of older introduced metadata</li></ul>
 <p>A future pruning/checkpoint scheme may periodically shrink the visible tip tree while retaining enough history to reconstruct older metadata when needed.</p>
         </article>
       </main>

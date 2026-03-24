@@ -55,12 +55,16 @@ Notes:
 
 ## Set operations
 
-These are not yet implemented, but are the natural command shape if sets are adopted:
-
 ```bash
 gmeta set:add <target> <key> <value>
 gmeta set:rm <target> <key> <value>
 ```
+
+Notes:
+
+- `set:add` creates the set if it does not already exist
+- `set:add` is idempotent for an existing member
+- `set:rm` removes a single member and records a member tombstone
 
 ## Exchange commands
 

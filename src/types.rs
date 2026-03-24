@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha1::{Digest, Sha1};
+use sha2::Sha256;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TargetType {
@@ -98,35 +98,20 @@ impl Target {
     ///
     /// Scheme per target type:
     ///   commit    → commit/{first2_of_sha}/{full_sha}
-    ///               SHA is already uniform; one prefix level is enough.
-    ///   change-id → change-id/{first2_of_id}/{full_id}
-    ///               Change IDs are opaque hex; already uniform.
-    ///   branch    → branch/{first2_of_hash(name)}/{name}
-    ///               Branch names cluster on prefixes (feature/, fix/, …);
-    ///               hashing guarantees uniform shard distribution.
-    ///   path      → path/{path}
-    ///               The path itself is already hierarchical; git's tree
-    ///               structure provides natural directory-level fanout for free.
-    ///   project   → project   (singleton, no sharding)
+    ///   others    → type/{first2_of_sha1(target_value)}/{full_target_value}
+    ///   project   → project
     pub fn tree_base_path(&self) -> String {
         match self.target_type {
             TargetType::Project => "project".to_string(),
-
-            TargetType::Commit | TargetType::ChangeId => {
+            TargetType::Commit => {
                 let v = self.value.as_deref().unwrap_or("");
                 let first2 = &v[..2];
                 format!("{}/{}/{}", self.type_str(), first2, v)
             }
-
-            TargetType::Branch => {
+            _ => {
                 let v = self.value.as_deref().unwrap_or("");
-                let first2 = branch_shard_prefix(v);
+                let first2 = value_shard_prefix(v);
                 format!("{}/{}/{}", self.type_str(), first2, v)
-            }
-
-            TargetType::Path => {
-                let v = self.value.as_deref().unwrap_or("");
-                format!("{}/{}", self.type_str(), v)
             }
         }
     }
@@ -136,6 +121,7 @@ impl Target {
 pub enum ValueType {
     String,
     List,
+    Set,
 }
 
 impl ValueType {
@@ -143,6 +129,7 @@ impl ValueType {
         match self {
             ValueType::String => "string",
             ValueType::List => "list",
+            ValueType::Set => "set",
         }
     }
 
@@ -150,6 +137,7 @@ impl ValueType {
         match s {
             "string" => Ok(ValueType::String),
             "list" => Ok(ValueType::List),
+            "set" => Ok(ValueType::Set),
             _ => bail!("unknown value type: {}", s),
         }
     }
@@ -158,14 +146,14 @@ impl ValueType {
 /// Size threshold (in bytes) above which file values are stored as git blob references.
 pub const GIT_REF_THRESHOLD: usize = 1024;
 
-/// Root directory used to store key segments in serialized trees.
-pub const KEY_TREE_ROOT: &str = "k";
-
 /// Reserved filename for string terminal values.
 pub const STRING_VALUE_BLOB: &str = "__value";
 
 /// Reserved directory name for list terminal values.
 pub const LIST_VALUE_DIR: &str = "__list";
+
+/// Reserved directory name for set terminal values.
+pub const SET_VALUE_DIR: &str = "__set";
 
 /// Reserved directory for tombstone entries.
 pub const TOMBSTONE_ROOT: &str = "__tombstones";
@@ -173,14 +161,18 @@ pub const TOMBSTONE_ROOT: &str = "__tombstones";
 /// Reserved filename for tombstone blobs.
 pub const TOMBSTONE_BLOB: &str = "__deleted";
 
-/// Compute a stable 2-char hex shard prefix for a branch name by hashing it.
-/// Branch names cluster on their textual prefix (feature/, fix/, sc-, …) so
-/// we hash first to get a uniform distribution across the 256 buckets.
-fn branch_shard_prefix(name: &str) -> String {
-    let mut h = DefaultHasher::new();
-    name.hash(&mut h);
-    let n = h.finish();
-    format!("{:02x}", (n & 0xff) as u8)
+/// Compute a stable 2-char hex shard prefix from the SHA-1 of the target value.
+fn value_shard_prefix(value: &str) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(value.as_bytes());
+    let hash = format!("{:x}", hasher.finalize());
+    hash[..2].to_string()
+}
+
+pub fn set_member_id(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn validate_key_segment(segment: &str) -> Result<()> {
@@ -196,7 +188,11 @@ fn validate_key_segment(segment: &str) -> Result<()> {
     if segment.contains('\0') {
         bail!("key segment '{}' must not contain null byte", segment);
     }
-    if segment == KEY_TREE_ROOT || segment == STRING_VALUE_BLOB || segment == LIST_VALUE_DIR {
+    if segment.starts_with("__")
+        || segment == STRING_VALUE_BLOB
+        || segment == LIST_VALUE_DIR
+        || segment == SET_VALUE_DIR
+    {
         bail!("key segment '{}' is reserved", segment);
     }
     Ok(())
@@ -233,12 +229,12 @@ pub fn decode_key_path_segments(segments: &[&str]) -> Result<String> {
     Ok(decoded.join(":"))
 }
 
-/// Build the common tree path prefix for any key (string or list).
+/// Build the common tree path prefix for any key.
 pub fn build_key_tree_path(target: &Target, key: &str) -> Result<String> {
     validate_key(key)?;
     let base = target.tree_base_path();
     let segments = key_to_path_segments(key).join("/");
-    Ok(format!("{}/{}/{}", base, KEY_TREE_ROOT, segments))
+    Ok(format!("{}/{}", base, segments))
 }
 
 /// Build the full tree path for a string value.
@@ -262,8 +258,25 @@ pub fn build_tombstone_tree_path(target: &Target, key: &str) -> Result<String> {
     let base = target.tree_base_path();
     let segments = key_to_path_segments(key).join("/");
     Ok(format!(
-        "{}/{}/{}/{}/{}",
-        base, TOMBSTONE_ROOT, KEY_TREE_ROOT, segments, TOMBSTONE_BLOB
+        "{}/{}/{}/{}",
+        base, TOMBSTONE_ROOT, segments, TOMBSTONE_BLOB
+    ))
+}
+
+pub fn build_set_tree_dir_path(target: &Target, key: &str) -> Result<String> {
+    let key_path = build_key_tree_path(target, key)?;
+    Ok(format!("{}/{}", key_path, SET_VALUE_DIR))
+}
+
+pub fn build_set_member_tombstone_tree_path(
+    target: &Target,
+    key: &str,
+    member_id: &str,
+) -> Result<String> {
+    let key_path = build_key_tree_path(target, key)?;
+    Ok(format!(
+        "{}/{}/{}/{}",
+        key_path, TOMBSTONE_ROOT, member_id, TOMBSTONE_BLOB
     ))
 }
 
@@ -326,7 +339,7 @@ mod tests {
         let path = build_tree_path(&t, "agent:model").unwrap();
         assert_eq!(
             path,
-            "commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/k/agent/model/__value"
+            "commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/agent/model/__value"
         );
     }
 
@@ -340,6 +353,7 @@ mod tests {
     fn test_value_type_roundtrip() {
         assert_eq!(ValueType::from_str("string").unwrap(), ValueType::String);
         assert_eq!(ValueType::from_str("list").unwrap(), ValueType::List);
+        assert_eq!(ValueType::from_str("set").unwrap(), ValueType::Set);
         assert!(ValueType::from_str("hash").is_err());
     }
 
@@ -353,11 +367,20 @@ mod tests {
     #[test]
     fn test_tree_base_path_branch() {
         let t = Target::parse("branch:sc-branch-1-deadbeef").unwrap();
-        // shard prefix is hash("sc-branch-1-deadbeef") & 0xff, formatted as 2-char hex
-        let expected_prefix = super::branch_shard_prefix("sc-branch-1-deadbeef");
+        let expected_prefix = super::value_shard_prefix("sc-branch-1-deadbeef");
         assert_eq!(
             t.tree_base_path(),
             format!("branch/{}/sc-branch-1-deadbeef", expected_prefix)
+        );
+    }
+
+    #[test]
+    fn test_tree_base_path_path_uses_sha1_fanout() {
+        let t = Target::parse("path:src/main.rs").unwrap();
+        let expected_prefix = super::value_shard_prefix("src/main.rs");
+        assert_eq!(
+            t.tree_base_path(),
+            format!("path/{}/src/main.rs", expected_prefix)
         );
     }
 
@@ -371,7 +394,7 @@ mod tests {
     fn test_validate_key_rejects_reserved_segments() {
         assert!(super::validate_key("agent:__value").is_err());
         assert!(super::validate_key("__list:chat").is_err());
-        assert!(super::validate_key("k:model").is_err());
+        assert!(super::validate_key("__custom:model").is_err());
     }
 
     #[test]
@@ -393,7 +416,7 @@ mod tests {
         let path = super::build_list_tree_dir_path(&t, "agent:chat").unwrap();
         assert_eq!(
             path,
-            "commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/k/agent/chat/__list"
+            "commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/agent/chat/__list"
         );
     }
 
@@ -403,7 +426,7 @@ mod tests {
         let path = super::build_tombstone_tree_path(&t, "agent:chat").unwrap();
         assert_eq!(
             path,
-            "commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/__tombstones/k/agent/chat/__deleted"
+            "commit/13/13a7d29cde8f8557b54fd6474f547a56822180ae/__tombstones/agent/chat/__deleted"
         );
     }
 }

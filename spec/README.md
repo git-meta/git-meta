@@ -1,10 +1,13 @@
-# gmeta spec
+# git metadata project
 
-This directory breaks the project spec into smaller documents so we can evolve the design before or alongside implementation.
+This is a proposed specification for a new standardized way to attach and exchange arbitrary metadata for Git projects.
+
+> [!NOTE]
+> Test callout: on wide screens, generated docs should render this in a right-hand column instead of inline.
 
 ## Why this project exists
 
-gmeta is trying to provide a more flexible and scalable metadata system for Git projects than the tools Git commonly uses today, especially `git notes`, commit headers, trailers, or checked-in helper files like `CODEOWNERS`.
+This is a proposal to provide a more flexible and scalable metadata system for Git projects than the tools Git commonly uses today such as `git notes`, commit headers, message trailers, and checked-in helper files like `CODEOWNERS`.
 
 Those existing approaches tend to have some important limitations:
 
@@ -22,10 +25,10 @@ The project is motivated by metadata use cases such as:
 - testing results and attestations
 - path- or project-scoped metadata like ownership or policy hints
 
-The core idea is:
+The core idea is to:
 
 - store metadata locally in a format that is fast to query and mutate
-- exchange metadata using normal Git trees, commits, refs, and transport
+- exchange metadata using normal Git trees, commits, refs, and transport mechanisms
 - model mergeable data as many small tree entries instead of one large structured blob
 
 That combination is meant to make metadata:

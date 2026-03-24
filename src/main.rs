@@ -42,6 +42,10 @@ fn main() -> Result<()> {
 
         Commands::ListPop { target, key, value } => commands::list::run_pop(&target, &key, &value),
 
+        Commands::SetAdd { target, key, value } => commands::set::run_add(&target, &key, &value),
+
+        Commands::SetRm { target, key, value } => commands::set::run_rm(&target, &key, &value),
+
         Commands::Serialize => commands::serialize::run(),
 
         Commands::Materialize { remote, dry_run } => {

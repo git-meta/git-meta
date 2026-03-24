@@ -49,76 +49,36 @@
 <p>For higher-level coordination with a version control system&#x27;s push and pull operations, see <a href="../implementation/workflow.html">Workflow</a>.</p>
 <h2 id="materialize-responsibilities">Materialize responsibilities</h2>
 <p>When materializing a remote metadata head, gmeta must:</p>
-<ol>
-<li>merge that head into local metadata history</li>
-<li>resolve merge conflicts according to value-type semantics</li>
-<li>update the local SQLite database with newly visible values and tombstones</li>
-<li>record when materialization succeeded</li>
-</ol>
+<ol><li>merge that head into local metadata history</li><li>resolve merge conflicts according to value-type semantics</li><li>update the local SQLite database with newly visible values and tombstones</li><li>record when materialization succeeded</li></ol>
 <p>Per-type conflict rules are defined in:</p>
-<ul>
-<li><a href="strings.html">Strings</a></li>
-<li><a href="lists.html">Lists</a></li>
-<li><a href="sets.html">Sets</a></li>
-</ul>
+<ul><li><a href="strings.html">Strings</a></li><li><a href="lists.html">Lists</a></li><li><a href="sets.html">Sets</a></li></ul>
 <h2 id="high-level-scenarios">High-level scenarios</h2>
 <h3 id="1-initial-sync">1. Initial sync</h3>
 <p>If the local system has no metadata yet:</p>
-<ul>
-<li>walk the tree at the incoming metadata head</li>
-<li>materialize all visible values into SQLite</li>
-<li>record that metadata commit as materialized</li>
-</ul>
+<ul><li>walk the tree at the incoming metadata head</li><li>materialize all visible values into SQLite</li><li>record that metadata commit as materialized</li></ul>
 <p>No metadata history walk is required beyond the current tree.</p>
 <h3 id="2-multiple-start-points">2. Multiple start points</h3>
 <p>If local metadata exists and someone else already pushed an independently initialized metadata history:</p>
-<ul>
-<li>serialize local shareable state</li>
-<li>perform a baseless two-way merge with the remote tree</li>
-<li>for overlapping keys, remote wins</li>
-<li>write a new metadata commit with the remote head as parent</li>
-<li>retry if the remote advanced before push completed</li>
-</ul>
+<ul><li>serialize local shareable state</li><li>perform a baseless two-way merge with the remote tree</li><li>for overlapping keys, remote wins</li><li>write a new metadata commit with the remote head as parent</li><li>retry if the remote advanced before push completed</li></ul>
 <p>This allows eventual convergence while keeping history linear.</p>
 <h3 id="3-fast-forward-update">3. Fast-forward update</h3>
 <p>If the incoming metadata ref is a fast-forward from the last materialized point:</p>
-<ul>
-<li>diff the old materialized tree against the new tree</li>
-<li>apply only changed paths to SQLite</li>
-<li>add or update visible values</li>
-<li>apply tombstones</li>
-<li>record the new materialized commit</li>
-</ul>
+<ul><li>diff the old materialized tree against the new tree</li><li>apply only changed paths to SQLite</li><li>add or update visible values</li><li>apply tombstones</li><li>record the new materialized commit</li></ul>
 <p>This is the common efficient update path.</p>
 <h3 id="4-both-sides-mutated-data">4. Both sides mutated data</h3>
 <p>If local data changed and remote data also changed:</p>
-<ul>
-<li>serialize local current shareable state</li>
-<li>merge the remote tree into it</li>
-<li>resolve conflicts according to per-type semantics</li>
-<li>write a new metadata commit from the merged tree</li>
-<li>retry against newer remote heads until a fast-forward push succeeds</li>
-</ul>
+<ul><li>serialize local current shareable state</li><li>merge the remote tree into it</li><li>resolve conflicts according to per-type semantics</li><li>write a new metadata commit from the merged tree</li><li>retry against newer remote heads until a fast-forward push succeeds</li></ul>
 <h2 id="no-common-ancestor-merge">No common ancestor merge</h2>
 <p>If local and remote metadata histories have no common ancestor, materialize uses a two-way merge instead of a three-way merge.</p>
 <p>Policy:</p>
-<ol>
-<li>union non-conflicting keys from both sides</li>
-<li>for overlapping keys or value-vs-tombstone conflicts, remote wins</li>
-<li>retain non-overlapping keys from both sides</li>
-</ol>
+<ol><li>union non-conflicting keys from both sides</li><li>for overlapping keys or value-vs-tombstone conflicts, remote wins</li><li>retain non-overlapping keys from both sides</li></ol>
 <p><code>gmeta materialize --dry-run</code> should report this explicitly, for example:</p>
-<ul>
-<li><code>strategy=two-way-no-common-ancestor</code></li>
-</ul>
+<ul><li><code>strategy=two-way-no-common-ancestor</code></li></ul>
 <p>and should print key-level conflict decisions.</p>
 <h2 id="removal-handling">Removal handling</h2>
 <p>Deletion is explicit.</p>
 <p>During materialization:</p>
-<ul>
-<li>whole-key tombstones remove keys locally and are recorded in SQLite</li>
-<li>per-entry or per-member tombstones are applied according to the collection type</li>
-</ul>
+<ul><li>whole-key tombstones remove keys locally and are recorded in SQLite</li><li>per-entry or per-member tombstones are applied according to the collection type</li></ul>
 <h3 id="legacy-compatibility">Legacy compatibility</h3>
 <p>During fast-forward materialization, implementations may also detect keys that existed in the previous local tree but are missing from the incoming tree and remove them locally for compatibility with old metadata histories that predate tombstones.</p>
 <p>This should be treated as a compatibility bridge, not the long-term deletion model.</p>
@@ -128,11 +88,7 @@
 <h2 id="metadata-history-shape">Metadata history shape</h2>
 <p>Unlike source-code history, metadata history does not need rich branch/merge topology.</p>
 <p>The preferred shape is linear history created by repeatedly:</p>
-<ul>
-<li>merging in memory</li>
-<li>writing a new commit</li>
-<li>fast-forward pushing</li>
-</ul>
+<ul><li>merging in memory</li><li>writing a new commit</li><li>fast-forward pushing</li></ul>
 <p>The main goal is convergence on current metadata state, not preserving meaningful branch structure.</p>
         </article>
       </main>

@@ -48,18 +48,9 @@
           <p>Strings are the simplest gmeta value type.</p>
 <p>A string represents one current scalar value for a <code>(target, key)</code> pair.</p>
 <p>Examples:</p>
-<ul>
-<li><code>agent:model = claude-4.6</code></li>
-<li><code>owner = schacon</code></li>
-<li><code>review:status = approved</code></li>
-</ul>
+<ul><li><code>agent:model = claude-4.6</code></li><li><code>owner = schacon</code></li><li><code>review:status = approved</code></li></ul>
 <h2 id="summary">Summary</h2>
-<ul>
-<li>One current value per key</li>
-<li>Serialized as a single terminal blob</li>
-<li>Removal uses a key tombstone</li>
-<li>Concurrent updates resolve by last-writer-wins</li>
-</ul>
+<ul><li>One current value per key</li><li>Serialized as a single terminal blob</li><li>Removal uses a key tombstone</li><li>Concurrent updates resolve by last-writer-wins</li></ul>
 <h2 id="serialized-tree-shape">Serialized tree shape</h2>
 <p>For a string value, write the string to:</p>
 <p><code>[base]/&lt;key segments&gt;/__value</code></p>
@@ -77,33 +68,16 @@
 <p>When a string is set again after deletion, the tombstone is cleared locally and omitted from the next serialization.</p>
 <h2 id="local-materialized-meaning">Local materialized meaning</h2>
 <p>For a given <code>(target, key)</code>, the current string state is derived as follows:</p>
-<ol>
-<li>If there is a value and no tombstone, the current state is that string.</li>
-<li>If there is a tombstone and no value, the current state is deleted / absent.</li>
-<li>If both are present, compare timestamps:</li>
-</ol>
-<ul>
-<li>if the value is newer, the string is present</li>
-<li>if the tombstone is newer, the key is absent</li>
-</ul>
+<ol><li>If there is a value and no tombstone, the current state is that string.</li><li>If there is a tombstone and no value, the current state is deleted / absent.</li><li>If both are present, compare timestamps:</li></ol>
+<ul><li>if the value is newer, the string is present</li><li>if the tombstone is newer, the key is absent</li></ul>
 <p>This means deletion is explicit and can compete with a concurrent write.</p>
 <h2 id="materialization-scenarios">Materialization scenarios</h2>
 <h3 id="initial-materialization">Initial materialization</h3>
 <p>If there is no local state, walk the incoming tree:</p>
-<ul>
-<li>create local rows for all <code>__value</code> blobs</li>
-<li>create local tombstones for all <code>__deleted</code> blobs</li>
-<li>compute current state using the recency rule above</li>
-</ul>
+<ul><li>create local rows for all <code>__value</code> blobs</li><li>create local tombstones for all <code>__deleted</code> blobs</li><li>compute current state using the recency rule above</li></ul>
 <h3 id="fast-forward-update">Fast-forward update</h3>
 <p>If a previous materialized metadata tree exists locally:</p>
-<ul>
-<li>diff old tree vs new tree</li>
-<li>update any changed string values</li>
-<li>add new keys</li>
-<li>apply newly introduced tombstones</li>
-<li>for keys that changed from value to tombstone or vice versa, use the newer timestamp</li>
-</ul>
+<ul><li>diff old tree vs new tree</li><li>update any changed string values</li><li>add new keys</li><li>apply newly introduced tombstones</li><li>for keys that changed from value to tombstone or vice versa, use the newer timestamp</li></ul>
 <h3 id="multiple-metadata-sources">Multiple metadata sources</h3>
 <p>If multiple refs are materialized into one local database, the current string is the result of applying the same recency rule across all observed value and tombstone records for that <code>(target, key)</code>.</p>
 <h2 id="merge-semantics">Merge semantics</h2>
@@ -111,69 +85,30 @@
 <p>If two users update the same string key concurrently, this is a real conflict and should resolve predictably.</p>
 <h3 id="three-way-merge-with-common-ancestor">Three-way merge with common ancestor</h3>
 <p>Cases:</p>
-<ol>
-<li>Only one side changed from the base:</li>
-</ol>
-<ul>
-<li>take the changed side</li>
-</ul>
-<ol>
-<li>Both sides changed to the same value:</li>
-</ol>
-<ul>
-<li>take that value</li>
-</ul>
-<ol>
-<li>Both sides changed to different values:</li>
-</ol>
-<ul>
-<li>newer value wins</li>
-</ul>
-<ol>
-<li>One side deleted, the other kept base unchanged:</li>
-</ol>
-<ul>
-<li>delete wins if newer than existing value metadata</li>
-</ul>
-<ol>
-<li>One side deleted, the other modified:</li>
-</ol>
-<ul>
-<li>newer of tombstone vs value wins</li>
-</ul>
+<ol><li>Only one side changed from the base:</li></ol>
+<ul><li>take the changed side</li></ul>
+<ol><li>Both sides changed to the same value:</li></ol>
+<ul><li>take that value</li></ul>
+<ol><li>Both sides changed to different values:</li></ol>
+<ul><li>newer value wins</li></ul>
+<ol><li>One side deleted, the other kept base unchanged:</li></ol>
+<ul><li>delete wins if newer than existing value metadata</li></ul>
+<ol><li>One side deleted, the other modified:</li></ol>
+<ul><li>newer of tombstone vs value wins</li></ul>
 <p>Recommended tie-breaker order:</p>
-<ol>
-<li>greater timestamp</li>
-<li>if timestamps equal, prefer remote during materialize / pull</li>
-<li>if still needed, stable lexical compare of commit id or blob id</li>
-</ol>
+<ol><li>greater timestamp</li><li>if timestamps equal, prefer remote during materialize / pull</li><li>if still needed, stable lexical compare of commit id or blob id</li></ol>
 <h3 id="no-common-ancestor">No common ancestor</h3>
 <p>If local and remote metadata histories were initialized independently:</p>
-<ul>
-<li>union all keys from both trees</li>
-<li>for overlapping string keys, remote wins</li>
-<li>if overlap is value vs tombstone, remote wins</li>
-</ul>
+<ul><li>union all keys from both trees</li><li>for overlapping string keys, remote wins</li><li>if overlap is value vs tombstone, remote wins</li></ul>
 <p>This preserves the existing project-level policy for baseless two-way merges.</p>
 <h2 id="why-strings-are-simple">Why strings are simple</h2>
 <p>Strings are stored as a single blob because they are expected to behave like a scalar setting, not a collaborative collection.</p>
 <p>If users need concurrent append or union behavior, they should use a list or set instead.</p>
 <h2 id="practical-implications">Practical implications</h2>
 <p>Strings are a good fit for:</p>
-<ul>
-<li>status values</li>
-<li>model names</li>
-<li>owners when there is only one logical owner</li>
-<li>configuration knobs</li>
-<li>identifiers</li>
-</ul>
+<ul><li>status values</li><li>model names</li><li>owners when there is only one logical owner</li><li>configuration knobs</li><li>identifiers</li></ul>
 <p>Strings are a poor fit for:</p>
-<ul>
-<li>comments</li>
-<li>transcripts</li>
-<li>reviewers where multiple users may add values concurrently</li>
-<li>anything that requires union semantics</li>
-</ul>
+<ul><li>comments</li><li>transcripts</li><li>reviewers where multiple users may add values concurrently</li><li>anything that requires union semantics</li></ul>
         </article>
       </main>
     </div>

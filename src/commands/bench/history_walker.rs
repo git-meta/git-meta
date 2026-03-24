@@ -231,10 +231,10 @@ fn apply_incremental_subtree(
 }
 
 /// Tree path for a commit-SHA target's metadata blob.
-/// Layout mirrors the real gmeta serialization: commit/{first2}/{sha}/k/bench/__value
+/// Layout mirrors the real gmeta serialization: commit/{first2}/{sha}/bench/__value
 /// The commit SHA is encoded in the path; the blob holds arbitrary metadata.
 fn value_path(commit_sha: &str) -> String {
-    format!("commit/{}/{}/k/bench/__value", &commit_sha[..2], commit_sha)
+    format!("commit/{}/{}/bench/__value", &commit_sha[..2], commit_sha)
 }
 
 /// Write a commit object (no ref update — caller tracks the OID).

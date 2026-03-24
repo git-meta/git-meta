@@ -48,26 +48,12 @@
           <p>Lists in gmeta are append-friendly multi-value collections.</p>
 <p>They are best thought of as an <strong>ordered append log of string entries</strong>, not as a general-purpose mutable array.</p>
 <p>Examples:</p>
-<ul>
-<li>transcript chunks</li>
-<li>comments</li>
-<li>multiple owners where duplicates are acceptable</li>
-<li>a sequence of notes appended over time</li>
-</ul>
+<ul><li>transcript chunks</li><li>comments</li><li>multiple owners where duplicates are acceptable</li><li>a sequence of notes appended over time</li></ul>
 <h2 id="summary">Summary</h2>
-<ul>
-<li>A list is a sequence of entries</li>
-<li>Each entry is serialized independently</li>
-<li>Order is derived from entry names / timestamps</li>
-<li>Concurrent appends merge by union</li>
-<li>Removal of the entire key uses a key tombstone</li>
-<li>Optional removal of individual entries is possible, but should be explicit if supported</li>
-</ul>
+<ul><li>A list is a sequence of entries</li><li>Each entry is serialized independently</li><li>Order is derived from entry names / timestamps</li><li>Concurrent appends merge by union</li><li>Removal of the entire key uses a key tombstone</li><li>Optional removal of individual entries is possible, but should be explicit if supported</li></ul>
 <h2 id="intended-semantics">Intended semantics</h2>
 <p>The current list design is optimized for the most common concurrent operation:</p>
-<ul>
-<li>one or more users append new values to the same logical list</li>
-</ul>
+<ul><li>one or more users append new values to the same logical list</li></ul>
 <p>This is why lists serialize as many small blobs rather than one JSON array blob.</p>
 <p>This lets Git merge tree entries structurally and avoids array-level conflicts.</p>
 <h2 id="serialized-tree-shape">Serialized tree shape</h2>
@@ -81,10 +67,7 @@
 <p>If multiple values are inserted in one command, start from one base millisecond timestamp and increment by 1 for each additional entry so local order is preserved.</p>
 <h2 id="ordering">Ordering</h2>
 <p>List order is defined by sorting <code>&lt;entry-id&gt;</code> lexically, which is equivalent to sorting by:</p>
-<ol>
-<li>timestamp ascending</li>
-<li>hash suffix as a stable tie-breaker</li>
-</ol>
+<ol><li>timestamp ascending</li><li>hash suffix as a stable tie-breaker</li></ol>
 <p>This gives deterministic ordering after merges.</p>
 <h2 id="duplicate-values">Duplicate values</h2>
 <p>Lists allow duplicate string values.</p>
@@ -98,21 +81,10 @@
 <h3 id="entry-removal">Entry removal</h3>
 <p>The current project spec has <code>list:pop</code>, but its exact exchange semantics should be explicit before implementation.</p>
 <p>Two viable options exist:</p>
-<ol>
-<li><strong>No per-entry serialized tombstones</strong></li>
-</ol>
-<ul>
-<li>only the current list state is serialized</li>
-<li>removed entries simply do not appear in the next tree</li>
-<li>simple, but deletion is ambiguous under sparse or partial exchange</li>
-</ul>
-<ol>
-<li><strong>Per-entry tombstones</strong></li>
-</ol>
-<ul>
-<li>serialize removals of individual list entries explicitly</li>
-<li>unambiguous, and consistent with the project&#x27;s deletion philosophy</li>
-</ul>
+<ol><li><strong>No per-entry serialized tombstones</strong></li></ol>
+<ul><li>only the current list state is serialized</li><li>removed entries simply do not appear in the next tree</li><li>simple, but deletion is ambiguous under sparse or partial exchange</li></ul>
+<ol><li><strong>Per-entry tombstones</strong></li></ol>
+<ul><li>serialize removals of individual list entries explicitly</li><li>unambiguous, and consistent with the project&#x27;s deletion philosophy</li></ul>
 <p>For now, this draft recommends <strong>per-entry tombstones</strong> if <code>list:pop</code> remains part of the model.</p>
 <p>Suggested path:</p>
 <p><code>[base]/&lt;key segments&gt;/__tombstones/&lt;entry-id&gt;/__deleted</code></p>
@@ -125,29 +97,15 @@
 <p>Because <code>__tombstones</code> is shared across collection types, serialize and materialize must ignore incompatible child tombstones for the current key type. For example, if a key currently materializes as a list, only tombstones that are valid list entry identifiers should affect the visible list state; incompatible child tombstones should be preserved but ignored for list semantics.</p>
 <h2 id="local-materialized-meaning">Local materialized meaning</h2>
 <p>A list&#x27;s current value is produced by:</p>
-<ol>
-<li>collecting all serialized list entries for the key</li>
-<li>removing any entry whose tombstone is newer than the entry itself</li>
-<li>if a whole-key tombstone is newer than all surviving entries, the key is absent</li>
-<li>otherwise sort surviving entries by entry id and return their blob contents</li>
-</ol>
+<ol><li>collecting all serialized list entries for the key</li><li>removing any entry whose tombstone is newer than the entry itself</li><li>if a whole-key tombstone is newer than all surviving entries, the key is absent</li><li>otherwise sort surviving entries by entry id and return their blob contents</li></ol>
 <p>If the implementation decides not to support per-entry tombstones, then <code>list:pop</code> needs narrower semantics and should likely be treated as a local-only mutation until a safe exchange story is defined.</p>
 <h2 id="materialization-scenarios">Materialization scenarios</h2>
 <h3 id="initial-materialization">Initial materialization</h3>
 <p>Walk all <code>__list/<em></code> entries and optional <code>__tombstones/</em></code> child entries:</p>
-<ul>
-<li>insert all entry rows into SQLite</li>
-<li>insert any entry tombstones</li>
-<li>insert any whole-key tombstone</li>
-<li>compute the current list by filtering tombstoned entries and sorting the survivors</li>
-</ul>
+<ul><li>insert all entry rows into SQLite</li><li>insert any entry tombstones</li><li>insert any whole-key tombstone</li><li>compute the current list by filtering tombstoned entries and sorting the survivors</li></ul>
 <h3 id="fast-forward-update">Fast-forward update</h3>
 <p>Diff old tree vs new tree:</p>
-<ul>
-<li>new <code>__list/*</code> paths become appended entries</li>
-<li>new entry tombstones remove prior entries if newer</li>
-<li>whole-key tombstones delete the logical key if newer than the current visible list state</li>
-</ul>
+<ul><li>new <code>__list/*</code> paths become appended entries</li><li>new entry tombstones remove prior entries if newer</li><li>whole-key tombstones delete the logical key if newer than the current visible list state</li></ul>
 <p>This is efficient because only changed paths need to be examined.</p>
 <h3 id="multiple-metadata-sources">Multiple metadata sources</h3>
 <p>Union all entries and tombstones seen across refs for the same <code>(target, key)</code> and compute the visible list deterministically using the same filtering rules.</p>
@@ -155,66 +113,34 @@
 <p>Lists should merge structurally by entry identity, not as a single blob.</p>
 <h3 id="concurrent-append">Concurrent append</h3>
 <p>If two users append different entries concurrently:</p>
-<ul>
-<li>both entries are kept</li>
-<li>final order is by entry id sort</li>
-</ul>
+<ul><li>both entries are kept</li><li>final order is by entry id sort</li></ul>
 <p>This is the main reason for the format.</p>
 <h3 id="rare-entry-id-collision">Rare entry-id collision</h3>
 <p>If two entries somehow produce the exact same path but different blob ids:</p>
-<ul>
-<li>treat as a collision</li>
-<li>prefer one deterministically, likely remote during materialize</li>
-</ul>
+<ul><li>treat as a collision</li><li>prefer one deterministically, likely remote during materialize</li></ul>
 <p>In practice this should be extremely rare because the path includes timestamp and content hash prefix.</p>
 <p>A stricter implementation could simply lengthen the hash suffix until collisions are negligible.</p>
 <h3 id="concurrent-append-of-identical-value-text">Concurrent append of identical value text</h3>
 <p>If two users append the same string text at slightly different times:</p>
-<ul>
-<li>both entries remain if entry ids differ</li>
-<li>the list contains duplicates</li>
-</ul>
+<ul><li>both entries remain if entry ids differ</li><li>the list contains duplicates</li></ul>
 <h3 id="concurrent-remove-vs-append-of-same-entry">Concurrent remove vs append of same entry</h3>
 <p>If per-entry tombstones are supported and one side removes an entry while the other adds a new different entry:</p>
-<ul>
-<li>keep the new entry</li>
-<li>remove the tombstoned one if the tombstone is newer than that entry</li>
-</ul>
+<ul><li>keep the new entry</li><li>remove the tombstoned one if the tombstone is newer than that entry</li></ul>
 <p>If one side removes a specific entry and the other side also still has that same entry unchanged:</p>
-<ul>
-<li>tombstone wins for that entry if newer than the entry metadata</li>
-</ul>
+<ul><li>tombstone wins for that entry if newer than the entry metadata</li></ul>
 <h3 id="whole-list-delete-vs-append">Whole-list delete vs append</h3>
 <p>If one side removes the whole list key and the other appends entries:</p>
-<ul>
-<li>newer of whole-key tombstone vs surviving entry activity wins</li>
-</ul>
+<ul><li>newer of whole-key tombstone vs surviving entry activity wins</li></ul>
 <p>This mirrors string behavior at the collection level.</p>
 <h3 id="no-common-ancestor">No common ancestor</h3>
 <p>For a baseless two-way merge:</p>
-<ul>
-<li>union all list entries from both sides</li>
-<li>union all tombstones from both sides</li>
-<li>for overlapping entry ids, remote wins</li>
-<li>compute visible state from the resulting union</li>
-</ul>
+<ul><li>union all list entries from both sides</li><li>union all tombstones from both sides</li><li>for overlapping entry ids, remote wins</li><li>compute visible state from the resulting union</li></ul>
 <p>This gives append-friendly behavior even when histories started independently.</p>
 <h2 id="what-lists-are-and-are-not">What lists are and are not</h2>
 <p>Lists are good for:</p>
-<ul>
-<li>append-only or mostly-append data</li>
-<li>log-like metadata</li>
-<li>comments</li>
-<li>transcript chunks</li>
-<li>preserving duplicates</li>
-</ul>
+<ul><li>append-only or mostly-append data</li><li>log-like metadata</li><li>comments</li><li>transcript chunks</li><li>preserving duplicates</li></ul>
 <p>Lists are not a good fit for:</p>
-<ul>
-<li>enforcing uniqueness</li>
-<li>arbitrary insertion into the middle</li>
-<li>stable item identity for later moves</li>
-<li>heavy delete/reorder semantics</li>
-</ul>
+<ul><li>enforcing uniqueness</li><li>arbitrary insertion into the middle</li><li>stable item identity for later moves</li><li>heavy delete/reorder semantics</li></ul>
 <p>Those should use other value types.</p>
         </article>
       </main>

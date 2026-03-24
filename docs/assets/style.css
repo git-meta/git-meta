@@ -1,6 +1,8 @@
 :root {
   color-scheme: light dark;
   --max: 920px;
+  --doc-max: 1264px;
+  --aside-width: 320px;
   --sidebar-width: 300px;
 }
 
@@ -180,7 +182,9 @@ body.sidebar-collapsed {
 .sidebar.collapsed .collapse-icon {
   transform: rotate(180deg);
 }
-.doc-content { max-width: var(--max); }
+.doc-content {
+  max-width: var(--doc-max);
+}
 .doc-content h1, .doc-content h2, .doc-content h3, .doc-content h4 {
   line-height: 1.25;
   margin-top: 1.7em;
@@ -219,6 +223,17 @@ body.sidebar-collapsed {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
+@media (min-width: 1100px) {
+  .doc-content.has-aside {
+    padding-right: calc(var(--aside-width) + 24px);
+  }
+  .callout.callout-aside {
+    clear: right;
+    float: right;
+    width: var(--aside-width);
+    margin: 0 calc(-1 * (var(--aside-width) + 24px)) 1rem 24px;
+  }
+}
 @media (max-width: 960px) {
   body.sidebar-collapsed {
     --sidebar-width: 1fr;
