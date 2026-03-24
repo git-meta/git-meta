@@ -59,8 +59,8 @@ STYLE_CSS = """
   color-scheme: light dark;
   --max: 920px;
   --doc-max: 1264px;
-  --aside-width: 320px;
-  --sidebar-width: 300px;
+  --aside-width: 260px;
+  --sidebar-width: 260px;
 }
 
 :root,
@@ -74,8 +74,8 @@ STYLE_CSS = """
   --border: #27304f;
   --code: #0b1228;
   --accent: #7dd3fc;
-  --callout: #12203b;
-  --callout-border: #335b94;
+  --callout: color-mix(in srgb, #12203b 72%, transparent);
+  --callout-border: color-mix(in srgb, #335b94 70%, transparent);
   --button-bg: transparent;
   --button-hover: rgba(255,255,255,0.04);
   --button-active: rgba(255,255,255,0.06);
@@ -91,8 +91,8 @@ STYLE_CSS = """
   --border: #cbd5e1;
   --code: #f1f5f9;
   --accent: #0369a1;
-  --callout: #eff6ff;
-  --callout-border: #60a5fa;
+  --callout: color-mix(in srgb, #eff6ff 78%, white);
+  --callout-border: color-mix(in srgb, #60a5fa 58%, transparent);
   --button-bg: transparent;
   --button-hover: rgba(15,23,42,0.05);
   --button-active: rgba(15,23,42,0.08);
@@ -109,8 +109,8 @@ STYLE_CSS = """
     --border: #cbd5e1;
     --code: #f1f5f9;
     --accent: #0369a1;
-    --callout: #eff6ff;
-    --callout-border: #60a5fa;
+    --callout: color-mix(in srgb, #eff6ff 78%, white);
+    --callout-border: color-mix(in srgb, #60a5fa 58%, transparent);
     --button-bg: rgba(15,23,42,0.03);
     --button-hover: rgba(15,23,42,0.05);
     --button-active: rgba(15,23,42,0.07);
@@ -141,7 +141,7 @@ body.sidebar-collapsed {
   min-height: 0;
   overflow-y: auto;
 }
-.brand { font-size: 1.4rem; font-weight: 800; color: var(--text); display: inline-block; margin-bottom: 16px; }
+.brand { font-size: 1.2rem; font-weight: 800; color: var(--text); display: inline-block; margin-bottom: 14px; }
 .tagline { display: none; }
 .sidebar-footer {
   margin-top: auto;
@@ -208,7 +208,7 @@ body.sidebar-collapsed {
 }
 .nav-group { margin-bottom: 22px; }
 .nav-group h2 {
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -216,9 +216,10 @@ body.sidebar-collapsed {
 }
 .nav a {
   display: block;
-  padding: 7px 10px;
+  padding: 6px 9px;
   border-radius: 8px;
   color: var(--text);
+  font-size: 0.92rem;
 }
 .nav a.active {
   background: var(--button-active);
@@ -270,12 +271,54 @@ body.sidebar-collapsed {
 .doc-content pre code { background: transparent; padding: 0; }
 .doc-content blockquote,
 .callout {
-  border-left: 4px solid var(--callout-border);
+  border-left: 3px solid var(--callout-border);
   background: var(--callout);
-  padding: 14px 16px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
-.callout-title { font-weight: 700; margin-bottom: 0.4rem; }
+.callout-title {
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+}
+.callout p {
+  margin-bottom: 0.7rem;
+}
+.callout-youtube-link {
+  display: block;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+.callout-youtube-thumb {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  display: block;
+  object-fit: cover;
+}
+.callout-youtube-play {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.78);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.22);
+}
+.callout-youtube-caption {
+  margin-top: 0.7rem;
+  color: var(--muted);
+  font-size: 0.9em;
+}
 .doc-content hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
@@ -296,18 +339,7 @@ body.sidebar-collapsed {
     --sidebar-width: 1fr;
   }
   .layout { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
-  .sidebar.collapsed .sidebar-main {
-    display: block;
-  }
-  .sidebar.collapsed .theme-control {
-    display: inline-flex;
-  }
-  .sidebar.collapsed .sidebar-footer {
-    border-top: 1px solid var(--border);
-    padding-top: 16px;
-    justify-content: space-between;
-  }
+  .sidebar { display: none; }
   .content { padding: 24px 18px 48px; }
 }
 """
@@ -326,6 +358,23 @@ def slugify(text: str) -> str:
     text = re.sub(r"[^a-z0-9\s-]", "", text)
     text = re.sub(r"\s+", "-", text)
     return text or "section"
+
+
+def youtube_video_id(url: str) -> str | None:
+    url = url.strip()
+    if not url:
+        return None
+
+    patterns = [
+        r"(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([A-Za-z0-9_-]{11})",
+        r"(?:https?://)?(?:www\.)?youtu\.be/([A-Za-z0-9_-]{11})",
+        r"(?:https?://)?(?:www\.)?youtube\.com/embed/([A-Za-z0-9_-]{11})",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, url)
+        if match:
+            return match.group(1)
+    return None
 
 
 def inline_format(text: str, page_map: dict[str, str], current_page: Page) -> str:
@@ -436,11 +485,31 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
                 quote_lines.append(lines[i].strip()[1:].lstrip())
                 i += 1
             if quote_lines and re.match(r"\[![A-Z]+\]", quote_lines[0]):
-                kind = re.match(r"\[!([A-Z]+)\]", quote_lines[0]).group(1).title()
+                kind_match = re.match(r"\[!([A-Z]+)\]", quote_lines[0])
+                kind_key = kind_match.group(1)
+                kind = kind_key.title()
                 body = quote_lines[1:] if len(quote_lines) > 1 else []
-                body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
                 has_callout = True
-                out.append(f'<div class="callout callout-aside"><div class="callout-title">{kind}</div>{body_html}</div>')
+                if kind_key == "YOUTUBE":
+                    video_id = youtube_video_id(body[0] if body else "")
+                    caption_lines = body[1:] if len(body) > 1 else []
+                    if video_id:
+                        caption_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in caption_lines if x)
+                        if caption_html:
+                            caption_html = f'<div class="callout-youtube-caption">{caption_html}</div>'
+                        body_html = (
+                            f'<a class="callout-youtube-link" href="https://www.youtube.com/watch?v={html.escape(video_id)}" target="_blank" rel="noopener noreferrer">'
+                            f'<img class="callout-youtube-thumb" src="https://i.ytimg.com/vi/{html.escape(video_id)}/hqdefault.jpg" alt="YouTube video thumbnail" loading="lazy">'
+                            '<span class="callout-youtube-play" aria-hidden="true">▶</span>'
+                            '</a>'
+                            f'{caption_html}'
+                        )
+                    else:
+                        body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
+                    out.append(f'<div class="callout callout-aside">{body_html}</div>')
+                else:
+                    body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
+                    out.append(f'<div class="callout callout-aside"><div class="callout-title">{kind}</div>{body_html}</div>')
             else:
                 body = " ".join(quote_lines)
                 out.append(f"<blockquote><p>{inline_format(body, page_map, current_page)}</p></blockquote>")
