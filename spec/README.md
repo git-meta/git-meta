@@ -2,21 +2,17 @@
 
 This is a proposed specification for a new standardized way to attach and exchange arbitrary metadata for Git projects.
 
-> [!NOTE]
-> Test callout: on wide screens, generated docs should render this in a right-hand column instead of inline.
-
 ## Why this project exists
-
-This is a proposal to provide a more flexible and scalable metadata system for Git projects than the tools Git commonly uses today such as `git notes`, commit headers, message trailers, and checked-in helper files like `CODEOWNERS`.
 
 > [!YOUTUBE]
 > https://www.youtube.com/watch?v=46bV6KT0SsQ&list=PLOU2XLYxmsILM5cRwAK6yKdtKnCK6Y4Oh&index=4
-> Optional caption text goes here.
+> Rodrigo Bovendorp's metadata talk at JJCon 2025, outlining the overall problem set this project is meant to address.
 
-Those existing approaches tend to have some important limitations:
+This is a proposal to provide a more flexible and scalable metadata system for Git projects than the tools Git commonly uses today such as `git notes`, commit headers, message trailers, and checked-in helper files like `CODEOWNERS`.
 
-> [!NOTE]
-> Test callout 3: on wide screens, generated docs should render this in a right-hand column instead of inline.
+### Limitations of Current Solutions
+
+These existing approaches tend to have some important limitations:
 
 - limited control over metadata granularity and mutability
 - poor support for many independently addressable fields on the same object
@@ -24,7 +20,9 @@ Those existing approaches tend to have some important limitations:
 - file pollution when metadata has to live in the working tree
 - poor scaling characteristics for very large metadata sets
 
-The project is motivated by metadata use cases such as:
+### Metadata Use Cases
+
+This project is meant to more elagantly support a wider variety of metadata use cases such as:
 
 - trust and review information
 - provenance for generated code, prompts, and transcripts
@@ -32,11 +30,13 @@ The project is motivated by metadata use cases such as:
 - testing results and attestations
 - path- or project-scoped metadata like ownership or policy hints
 
+### Overall Goals
+
 The core idea is to:
 
 - store metadata locally in a format that is fast to query and mutate
 - exchange metadata using normal Git trees, commits, refs, and transport mechanisms
-- model mergeable data as many small tree entries instead of one large structured blob
+- model mergeable data as many small tree entries instead of large structured blobs
 
 That combination is meant to make metadata:
 
@@ -45,40 +45,40 @@ That combination is meant to make metadata:
 - eventually consistent across collaborators
 - practical even when metadata grows large
 
+## Approach
+
+This project has two parts. One is specifying an agreed upon exchange format that accomplishes these goals. The other is a local reference implementation that can be used, referenced or built upon.
+
 ## Exchange format
 
-- [Shared principles](./exchange-format/principles.md)
+The important part is the exchange format - how metadata is stored, transmitted and updated among teams working on a project.
+
+We refer to this as "serialization" - how to write data into Git primiatives for exchange, and "materialization" - how to update local values when receiving new data.
+
 - [Targets and keys](./exchange-format/targets.md)
 - [Exchange format and refs](./exchange-format/exchange.md)
 - [Materialization and merge workflow](./exchange-format/materialization.md)
 
 ### Value types
 
+There are three initial data types that can be used for any given target key. Here are the specifications for how those data types are serialized.
+
+- [Shared principles](./exchange-format/principles.md)
 - [Strings](./exchange-format/strings.md)
 - [Lists](./exchange-format/lists.md)
 - [Sets](./exchange-format/sets.md)
 
-Ordered lists are intentionally not covered yet.
-
 ## Implementation
 
+Finally, there is a reference implementation for how one might actually use this concept locally in higher level version control tooling. As long as the exchange format and semantics are followed, local implementation isn't important, but it may be valuable to see a practical application.
+
 - [Local storage](./implementation/storage.md)
-- [Standard keys](./implementation/standard-keys.md)
 - [CLI surface](./implementation/cli.md)
 - [Output and query semantics](./implementation/output.md)
 - [Workflow](./implementation/workflow.md)
 
-## Design status
+### Key Naming Standards
 
-> [!NOTE]
-> Test callout 4: on wide screens, generated docs should render this in a right-hand column instead of inline.
+If this were to be widely used, it would be nice to generally agree on how to name common keys, so we're not all reinventing slightly different wheels. We've put together a list of standardized key naming suggestions.
 
-These documents are proposal drafts. They are intended to answer:
-
-- what is the serialized tree shape?
-- what is the current value derived from that shape?
-- how do conflicts resolve?
-- what happens in no-common-ancestor scenarios?
-- what tombstones are needed?
-
-They are not yet implementation docs.
+- [Standard keys](./implementation/standard-keys.md)
