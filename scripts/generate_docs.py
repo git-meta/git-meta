@@ -47,11 +47,13 @@ PAGE_GROUPS = {
     "Implementation": [
         "implementation/overview.md",
         "implementation/storage.md",
-        "implementation/standard-keys.md",
         "implementation/cli.md",
         "implementation/output.md",
-        "implementation/workflow.md",
     ],
+    "Other Considerations": [
+        "implementation/standard-keys.md",
+        "implementation/workflow.md",
+    ]
 }
 
 STYLE_CSS = """
