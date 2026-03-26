@@ -144,6 +144,7 @@ struct WatchState {
     // Git tracking
     known_commits: BTreeSet<String>,
     branch_for_commit: BTreeMap<String, String>, // commit_id -> branch_name
+    branch_first_seen: HashMap<String, i64>,    // branch_name -> first-seen epoch ms
     last_committed_branch: Option<String>,
     git_dirty: bool,
     last_git_event: Option<Instant>,
@@ -161,6 +162,7 @@ impl WatchState {
             agent_idle: true,
             known_commits: BTreeSet::new(),
             branch_for_commit: BTreeMap::new(),
+            branch_first_seen: HashMap::new(),
             last_committed_branch: None,
             git_dirty: false,
             last_git_event: None,
@@ -475,7 +477,12 @@ impl WatchState {
 
                     if let Some(ref cid) = change_id {
                         let ts = Utc::now().timestamp_millis();
-                        let value = serde_json::to_string(&branch_name)?;
+                        let first_seen = *self
+                            .branch_first_seen
+                            .entry(branch_name.clone())
+                            .or_insert(ts);
+                        let branch_id = format!("{}@{}", branch_name, first_seen);
+                        let value = serde_json::to_string(&branch_id)?;
                         db.set(
                             "change-id",
                             cid,
@@ -489,7 +496,7 @@ impl WatchState {
                         let short_cid = &cid[..16.min(cid.len())];
                         eprintln!(
                             "  {}[meta]{} change-id:{}… branch:id = {}",
-                            CYAN, RESET, short_cid, branch_name
+                            CYAN, RESET, short_cid, branch_id
                         );
                     }
                 }
