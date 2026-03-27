@@ -2,11 +2,7 @@
 
 This document describes how metadata keys can be excluded from serialization or routed to alternative refs during the serialize step.
 
-## Problem
-
-Some metadata is only meaningful locally and should never leave the machine. Other metadata may be useful to share, but only within a limited scope (e.g. a personal ref rather than the shared team ref).
-
-Today, all keys in the database are serialized into `refs/meta/local` unconditionally. There is no way to keep a key local-only or to direct certain keys to a different ref.
+This allows the user to split up project metadata into different references for exchange - for example, public versus corporate data.
 
 ## Design
 
@@ -23,8 +19,6 @@ Examples:
 
 The `meta:local:` prefix is a hard rule enforced by the serializer. No filter configuration is needed to make it work. Keys in this namespace are silently skipped during serialize and are never written into any git tree.
 
-On materialize, `local:` keys in an incoming tree are ignored (they should not exist, but if they do, they are skipped).
-
 ### Filter rules via `meta:local:filter`
 
 Users can define filter rules that control serialization behavior. Filter rules are stored as set members on the **project** target under the key `meta:local:filter`.
@@ -37,9 +31,9 @@ Each set member is a rule string with the format:
 
 #### Actions
 
-| Action    | Meaning                                                                      |
-| --------- | ---------------------------------------------------------------------------- |
-| `exclude` | Never serialize matching keys to any ref. They remain local-only.            |
+| Action    | Meaning                                                                                                                 |
+| --------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `exclude` | Never serialize matching keys to any ref. They remain local-only.                                                       |
 | `route`   | Serialize matching keys to a named secondary ref instead of the default local ref. Requires a `<destination>` argument. |
 
 #### Patterns
