@@ -9,7 +9,10 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    // ── Read / Write ────────────────────────────────────────────────────────
+
     /// Set a metadata value
+    #[command(help_heading = "Read / Write")]
     Set {
         /// Value type: string (default) or list
         #[arg(short = 't', long = "type", default_value = "string")]
@@ -30,6 +33,7 @@ pub enum Commands {
     },
 
     /// Get metadata value(s)
+    #[command(help_heading = "Read / Write")]
     Get {
         /// Output as JSON
         #[arg(long)]
@@ -47,6 +51,7 @@ pub enum Commands {
     },
 
     /// Remove a metadata key
+    #[command(help_heading = "Read / Write")]
     Rm {
         /// Target in type:value format
         target: String,
@@ -56,7 +61,7 @@ pub enum Commands {
     },
 
     /// Push a value onto a list
-    #[command(name = "list:push")]
+    #[command(name = "list:push", help_heading = "Read / Write")]
     ListPush {
         /// Target in type:value format
         target: String,
@@ -69,7 +74,7 @@ pub enum Commands {
     },
 
     /// Pop a value from a list
-    #[command(name = "list:pop")]
+    #[command(name = "list:pop", help_heading = "Read / Write")]
     ListPop {
         /// Target in type:value format
         target: String,
@@ -82,7 +87,7 @@ pub enum Commands {
     },
 
     /// Show list entries with IDs, or remove one by index
-    #[command(name = "list:rm")]
+    #[command(name = "list:rm", help_heading = "Read / Write")]
     ListRm {
         /// Target in type:value format
         target: String,
@@ -95,7 +100,7 @@ pub enum Commands {
     },
 
     /// Add a member to a set
-    #[command(name = "set:add")]
+    #[command(name = "set:add", help_heading = "Read / Write")]
     SetAdd {
         /// Target in type:value format
         target: String,
@@ -108,7 +113,7 @@ pub enum Commands {
     },
 
     /// Remove a member from a set
-    #[command(name = "set:rm")]
+    #[command(name = "set:rm", help_heading = "Read / Write")]
     SetRm {
         /// Target in type:value format
         target: String,
@@ -120,43 +125,10 @@ pub enum Commands {
         value: String,
     },
 
-    /// Serialize metadata to Git ref
-    Serialize {
-        /// Show detailed information about serialization decisions
-        #[arg(short = 'v', long)]
-        verbose: bool,
-    },
-
-    /// Materialize remote metadata into local SQLite
-    Materialize {
-        /// Remote name (optional, defaults to all remotes)
-        remote: Option<String>,
-
-        /// Show what would be changed without updating SQLite or refs
-        #[arg(long = "dry-run")]
-        dry_run: bool,
-
-        /// Show detailed information about merge decisions and tree parsing
-        #[arg(short = 'v', long)]
-        verbose: bool,
-    },
-
-    /// Import metadata from another format
-    Import {
-        /// Source format: "entire" or "git-ai"
-        #[arg(long)]
-        format: String,
-
-        /// Show what would be imported without writing
-        #[arg(long = "dry-run")]
-        dry_run: bool,
-
-        /// Only import metadata for commits on or after this date (YYYY-MM-DD)
-        #[arg(long)]
-        since: Option<String>,
-    },
+    // ── Inspect ─────────────────────────────────────────────────────────────
 
     /// Show commit details and associated metadata
+    #[command(help_heading = "Inspect")]
     Show {
         /// Commit SHA or ref to show
         #[arg(value_name = "COMMIT")]
@@ -164,6 +136,7 @@ pub enum Commands {
     },
 
     /// Browse metadata keys and values
+    #[command(help_heading = "Inspect")]
     Inspect {
         /// Target type to list (e.g. commit, change-id, branch, project)
         target_type: Option<String>,
@@ -177,9 +150,11 @@ pub enum Commands {
     },
 
     /// Show metadata statistics
+    #[command(help_heading = "Inspect")]
     Stats,
 
     /// Walk commit log and show metadata for each commit
+    #[command(help_heading = "Inspect")]
     Log {
         /// Commit-ish to start from (default: HEAD)
         #[arg(value_name = "REF")]
@@ -194,31 +169,63 @@ pub enum Commands {
         metadata_only: bool,
     },
 
-    /// Benchmark read performance across all stored keys
-    Bench,
+    // ── Sync ────────────────────────────────────────────────────────────────
 
-    /// Benchmark fanout schemes (first2 vs first3 vs first2/next2) on a synthetic repo
-    FanoutBench {
-        /// Number of base objects to populate the tree with (default: 1_000_000)
-        #[arg(long, default_value = "1000000")]
-        objects: usize,
+    /// Serialize metadata to Git ref
+    #[command(help_heading = "Sync")]
+    Serialize {
+        /// Show detailed information about serialization decisions
+        #[arg(short = 'v', long)]
+        verbose: bool,
     },
 
-    /// Benchmark history generation and full-history walk on a synthetic meta commit chain
-    HistoryWalker {
-        /// Number of meta commits to generate (default: 500)
-        #[arg(long, default_value = "500")]
-        commits: usize,
+    /// Materialize remote metadata into local SQLite
+    #[command(help_heading = "Sync")]
+    Materialize {
+        /// Remote name (optional, defaults to all remotes)
+        remote: Option<String>,
+
+        /// Show what would be changed without updating SQLite or refs
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+
+        /// Show detailed information about merge decisions and tree parsing
+        #[arg(short = 'v', long)]
+        verbose: bool,
     },
 
-    /// Benchmark serialize performance: insert random keys and serialize across multiple rounds
-    SerializeBench {
-        /// Number of insert+serialize rounds (default: 10)
-        #[arg(long, default_value = "10")]
-        rounds: usize,
+    /// Import metadata from another format
+    #[command(help_heading = "Sync")]
+    Import {
+        /// Source format: "entire" or "git-ai"
+        #[arg(long)]
+        format: String,
+
+        /// Show what would be imported without writing
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+
+        /// Only import metadata for commits on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
     },
+
+    /// Watch agent transcripts and auto-attach to commits
+    #[command(help_heading = "Sync")]
+    Watch {
+        /// Agent to watch (default: claude)
+        #[arg(long, default_value = "claude")]
+        agent: String,
+
+        /// Seconds of inactivity before considering agent stopped
+        #[arg(long, default_value = "30")]
+        debounce: u64,
+    },
+
+    // ── Maintenance ─────────────────────────────────────────────────────────
 
     /// Get or set project configuration (meta:* keys)
+    #[command(help_heading = "Maintenance")]
     Config {
         /// List all config values
         #[arg(long)]
@@ -236,10 +243,11 @@ pub enum Commands {
     },
 
     /// Interactively configure auto-prune rules
-    #[command(name = "config:prune")]
+    #[command(name = "config:prune", help_heading = "Maintenance")]
     ConfigPrune,
 
     /// Prune the serialized git tree, dropping old entries
+    #[command(help_heading = "Maintenance")]
     Prune {
         /// Show what would be pruned without committing
         #[arg(long = "dry-run")]
@@ -247,7 +255,7 @@ pub enum Commands {
     },
 
     /// Prune old metadata from the local SQLite database
-    #[command(name = "local-prune")]
+    #[command(name = "local-prune", help_heading = "Maintenance")]
     LocalPrune {
         /// Show what would be pruned without deleting anything
         #[arg(long = "dry-run")]
@@ -259,16 +267,36 @@ pub enum Commands {
     },
 
     /// Remove the gmeta database and all meta refs
+    #[command(help_heading = "Maintenance")]
     Teardown,
 
-    /// Watch agent transcripts and auto-attach to commits
-    Watch {
-        /// Agent to watch (default: claude)
-        #[arg(long, default_value = "claude")]
-        agent: String,
+    // ── Benchmarks ──────────────────────────────────────────────────────────
 
-        /// Seconds of inactivity before considering agent stopped
-        #[arg(long, default_value = "30")]
-        debounce: u64,
+    /// Benchmark read performance across all stored keys
+    #[command(help_heading = "Benchmarks")]
+    Bench,
+
+    /// Benchmark fanout schemes (first2 vs first3 vs first2/next2) on a synthetic repo
+    #[command(help_heading = "Benchmarks")]
+    FanoutBench {
+        /// Number of base objects to populate the tree with (default: 1_000_000)
+        #[arg(long, default_value = "1000000")]
+        objects: usize,
+    },
+
+    /// Benchmark history generation and full-history walk on a synthetic meta commit chain
+    #[command(help_heading = "Benchmarks")]
+    HistoryWalker {
+        /// Number of meta commits to generate (default: 500)
+        #[arg(long, default_value = "500")]
+        commits: usize,
+    },
+
+    /// Benchmark serialize performance: insert random keys and serialize across multiple rounds
+    #[command(help_heading = "Benchmarks")]
+    SerializeBench {
+        /// Number of insert+serialize rounds (default: 10)
+        #[arg(long, default_value = "10")]
+        rounds: usize,
     },
 }
