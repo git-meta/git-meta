@@ -31,7 +31,7 @@ pub fn run(format: &str, dry_run: bool, since: Option<&str>) -> Result<()> {
 fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     let repo = git_utils::discover_repo()?;
     let email = git_utils::get_email(&repo)?;
-    let now = Utc::now().timestamp_millis();
+    let fallback_ts = Utc::now().timestamp_millis();
 
     let db_path = git_utils::db_path(&repo)?;
     let db = if dry_run {
@@ -67,7 +67,6 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
             cp_tree,
             &db,
             &email,
-            now,
             dry_run,
             since_epoch,
         )?;
@@ -76,7 +75,7 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     // Step 2: Import trails
     if let Some(tree) = resolve_entire_ref(&repo, "entire/trails/v1")? {
         eprintln!("Processing entire/trails/v1...");
-        imported_count += import_trails(&repo, &tree, &db, &email, now, dry_run)?;
+        imported_count += import_trails(&repo, &tree, &db, &email, fallback_ts, dry_run)?;
     } else {
         eprintln!("No entire/trails/v1 ref found, skipping trails");
     }
@@ -115,12 +114,10 @@ fn import_checkpoints_from_commits(
     checkpoints_tree: &git2::Tree,
     db: &Option<Db>,
     email: &str,
-    base_ts: i64,
     dry_run: bool,
     since_epoch: Option<i64>,
 ) -> Result<u64> {
     let mut count = 0u64;
-    let mut ts = base_ts;
     let mut seen_commits: HashSet<git2::Oid> = HashSet::new();
     let mut found = 0u64;
     let mut skipped = 0u64;
@@ -212,6 +209,9 @@ fn import_checkpoints_from_commits(
                 &commit_sha[..7],
                 checkpoint_id,
             );
+
+            // Use the commit's author date as the metadata timestamp
+            let mut ts = commit.author().when().seconds() * 1000;
 
             // Store checkpoint ID
             count += set_value(
@@ -821,7 +821,6 @@ const NOTES_REFS: &[&str] = &["refs/remotes/notes/ai", "refs/notes/ai"];
 fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     let repo = git_utils::discover_repo()?;
     let email = git_utils::get_email(&repo)?;
-    let now = Utc::now().timestamp_millis();
 
     let db_path = git_utils::db_path(&repo)?;
     let db = if dry_run {
@@ -895,20 +894,20 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                     continue;
                 }
             };
+            let annotated_commit = match repo.find_commit(commit_oid) {
+                Ok(c) => c,
+                Err(_) => {
+                    errors += 1;
+                    continue;
+                }
+            };
             if let Some(since) = since_epoch {
-                match repo.find_commit(commit_oid) {
-                    Ok(c) => {
-                        if c.time().seconds() < since {
-                            skipped_date += 1;
-                            continue;
-                        }
-                    }
-                    Err(_) => {
-                        errors += 1;
-                        continue;
-                    }
+                if annotated_commit.time().seconds() < since {
+                    skipped_date += 1;
+                    continue;
                 }
             }
+            let commit_ts = annotated_commit.author().when().seconds() * 1000;
 
             total += 1;
 
@@ -978,7 +977,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                     &blame_val,
                     "string",
                     &email,
-                    now,
+                    commit_ts,
                     is_ref,
                 )?;
 
@@ -989,7 +988,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                     &json_string(&parsed.schema_version),
                     "string",
                     &email,
-                    now,
+                    commit_ts,
                 )?;
 
                 if let Some(ref ver) = parsed.git_ai_version {
@@ -1000,7 +999,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                         &json_string(ver),
                         "string",
                         &email,
-                        now,
+                        commit_ts,
                     )?;
                 }
 
@@ -1012,7 +1011,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                         &json_string(&parsed.model),
                         "string",
                         &email,
-                        now,
+                        commit_ts,
                     )?;
                 }
             }
