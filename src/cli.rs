@@ -240,6 +240,10 @@ pub enum Commands {
         /// Show what would be pruned without deleting anything
         #[arg(long = "dry-run")]
         dry_run: bool,
+
+        /// Ignore the date rule and prune all non-project metadata
+        #[arg(long = "skip-date")]
+        skip_date: bool,
     },
 
     /// Remove the gmeta database and all meta refs

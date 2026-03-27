@@ -2,6 +2,7 @@
 
 - serialize filter rules
 - test pruning on entire db
+- watch adds prompts only to agent:prompts on change-id
 - better pruning rules
   - path no longer exists (prune paths at all?)
   - don't prune otherwise prunable peers

@@ -5,45 +5,52 @@ use crate::commands::auto_prune::{parse_since_to_cutoff_ms, read_prune_rules};
 use crate::db::Db;
 use crate::git_utils;
 
-pub fn run(dry_run: bool) -> Result<()> {
+pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
     let repo = git_utils::discover_repo()?;
     let db_path = git_utils::db_path(&repo)?;
     let db = Db::open(&db_path)?;
 
-    // Read the since value directly — for manual prune we only need the retention window,
-    // not the triggers (max-keys/max-size).
-    let rules = read_prune_rules(&db)?;
-    let since = match rules {
-        Some(ref r) => r.since.clone(),
-        None => {
-            // Check if at least meta:prune:since is set (triggers may be absent)
-            match db.get("project", "", "meta:prune:since")? {
-                Some((value, _, _)) => {
-                    let s: String = serde_json::from_str(&value)?;
-                    s
-                }
-                None => {
-                    eprintln!("No prune rules configured.");
-                    eprintln!();
-                    eprintln!("Run `gmeta config:prune` to set up auto-prune rules, or set them manually:");
-                    eprintln!("  gmeta config meta:prune:since 6m");
-                    eprintln!("  gmeta config meta:prune:max-keys 10000");
-                    eprintln!("  gmeta config meta:prune:max-size 10m");
-                    return Ok(());
+    let cutoff_ms = if skip_date {
+        // Prune everything (cutoff far in the future so all timestamps qualify)
+        eprintln!("Pruning all non-project metadata (--skip-date)");
+        i64::MAX
+    } else {
+        // Read the since value directly — for manual prune we only need the retention window,
+        // not the triggers (max-keys/max-size).
+        let rules = read_prune_rules(&db)?;
+        let since = match rules {
+            Some(ref r) => r.since.clone(),
+            None => {
+                // Check if at least meta:prune:since is set (triggers may be absent)
+                match db.get("project", "", "meta:prune:since")? {
+                    Some((value, _, _)) => {
+                        let s: String = serde_json::from_str(&value)?;
+                        s
+                    }
+                    None => {
+                        eprintln!("No prune rules configured.");
+                        eprintln!();
+                        eprintln!("Run `gmeta config:prune` to set up auto-prune rules, or set them manually:");
+                        eprintln!("  gmeta config meta:prune:since 6m");
+                        eprintln!("  gmeta config meta:prune:max-keys 10000");
+                        eprintln!("  gmeta config meta:prune:max-size 10m");
+                        return Ok(());
+                    }
                 }
             }
-        }
+        };
+
+        let ms = parse_since_to_cutoff_ms(&since)?;
+        let cutoff_date = chrono::DateTime::from_timestamp_millis(ms)
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| "?".to_string());
+
+        eprintln!(
+            "Pruning metadata older than {} (cutoff: {})",
+            since, cutoff_date
+        );
+        ms
     };
-
-    let cutoff_ms = parse_since_to_cutoff_ms(&since)?;
-    let cutoff_date = chrono::DateTime::from_timestamp_millis(cutoff_ms)
-        .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
-        .unwrap_or_else(|| "?".to_string());
-
-    eprintln!(
-        "Pruning metadata older than {} (cutoff: {})",
-        since, cutoff_date
-    );
 
     if dry_run {
         eprintln!("(dry run — no changes will be made)");
