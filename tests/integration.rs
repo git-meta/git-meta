@@ -355,11 +355,11 @@ fn test_serialize_creates_ref() {
         .args(["serialize"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("refs/meta/local"));
+        .stdout(predicate::str::contains("refs/meta/local/main"));
 
     // Verify the ref exists and contains the right tree structure
     let repo = git2::Repository::open(dir.path()).unwrap();
-    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let reference = repo.find_reference("refs/meta/local/main").unwrap();
     let commit = reference.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
 
@@ -397,7 +397,7 @@ fn test_serialize_path_target_uses_raw_segments_and_separator() {
     gmeta(dir.path()).args(["serialize"]).assert().success();
 
     let repo = git2::Repository::open(dir.path()).unwrap();
-    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let reference = repo.find_reference("refs/meta/local/main").unwrap();
     let commit = reference.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
 
@@ -477,7 +477,7 @@ fn test_serialize_list_values() {
 
     // Verify tree structure has list entries with timestamp-hash format
     let repo = git2::Repository::open(dir.path()).unwrap();
-    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let reference = repo.find_reference("refs/meta/local/main").unwrap();
     let commit = reference.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
 
@@ -691,7 +691,7 @@ fn test_serialize_rm_writes_tombstone_blob() {
     gmeta(dir.path()).args(["serialize"]).assert().success();
 
     let repo = git2::Repository::open(dir.path()).unwrap();
-    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let reference = repo.find_reference("refs/meta/local/main").unwrap();
     let commit = reference.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
 
@@ -738,7 +738,7 @@ fn test_materialize_fast_forward_applies_remote_removal() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let first_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -754,7 +754,7 @@ fn test_materialize_fast_forward_applies_remote_removal() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let second_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -764,7 +764,7 @@ fn test_materialize_fast_forward_applies_remote_removal() {
     repo.reference("refs/meta/origin", second_oid, true, "test remote")
         .unwrap();
     // Move local ref back so materialize takes fast-forward path.
-    repo.reference("refs/meta/local", first_oid, true, "rollback local")
+    repo.reference("refs/meta/local/main", first_oid, true, "rollback local")
         .unwrap();
     drop(repo);
 
@@ -805,7 +805,7 @@ fn test_materialize_fast_forward_applies_remote_list_entry_removal() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let first_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -821,7 +821,7 @@ fn test_materialize_fast_forward_applies_remote_list_entry_removal() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let second_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -830,7 +830,7 @@ fn test_materialize_fast_forward_applies_remote_list_entry_removal() {
     // Simulate fetched remote ahead of local, then rewind local ref.
     repo.reference("refs/meta/origin", second_oid, true, "test remote")
         .unwrap();
-    repo.reference("refs/meta/local", first_oid, true, "rollback local")
+    repo.reference("refs/meta/local/main", first_oid, true, "rollback local")
         .unwrap();
     drop(repo);
 
@@ -860,7 +860,7 @@ fn test_materialize_fast_forward_applies_remote_list_entry_removal() {
 }
 
 fn collect_list_entry_names(repo: &git2::Repository) -> Vec<String> {
-    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let reference = repo.find_reference("refs/meta/local/main").unwrap();
     let commit = reference.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
 
@@ -967,7 +967,7 @@ fn test_set_type_round_trips_and_serializes_members() {
     gmeta(dir.path()).args(["serialize"]).assert().success();
 
     let repo = git2::Repository::open(dir.path()).unwrap();
-    let reference = repo.find_reference("refs/meta/local").unwrap();
+    let reference = repo.find_reference("refs/meta/local/main").unwrap();
     let commit = reference.peel_to_commit().unwrap();
     let tree = commit.tree().unwrap();
     let fanout = target_fanout("sc-branch-1-deadbeef");
@@ -1019,12 +1019,12 @@ fn test_custom_namespace() {
         .args(["serialize"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("refs/notes/local"));
+        .stdout(predicate::str::contains("refs/notes/local/main"));
 
     // Verify the ref exists under the custom namespace
     let repo = git2::Repository::open(dir.path()).unwrap();
-    assert!(repo.find_reference("refs/notes/local").is_ok());
-    assert!(repo.find_reference("refs/meta/local").is_err());
+    assert!(repo.find_reference("refs/notes/local/main").is_ok());
+    assert!(repo.find_reference("refs/meta/local/main").is_err());
 }
 
 /// Simulate the full round-trip described in the bug report:
@@ -1112,12 +1112,12 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
         .success();
 
     // "Push": copy refs/meta/local from A to bare
-    let a_local_ref = repo_a.find_reference("refs/meta/local").unwrap();
+    let a_local_ref = repo_a.find_reference("refs/meta/local/main").unwrap();
     let a_local_oid = a_local_ref.peel_to_commit().unwrap().id();
     copy_meta_objects(&repo_a, &bare_dir);
     let bare_repo = git2::Repository::open_bare(bare_dir.path()).unwrap();
     bare_repo
-        .reference("refs/meta/local", a_local_oid, true, "push from A")
+        .reference("refs/meta/local/main", a_local_oid, true, "push from A")
         .unwrap();
 
     // === Step 2: User B pulls and materializes (no new data) ===
@@ -1139,12 +1139,12 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
         .success();
 
     // "Push" B's local ref back to bare
-    let b_local_ref = repo_b.find_reference("refs/meta/local").unwrap();
+    let b_local_ref = repo_b.find_reference("refs/meta/local/main").unwrap();
     let b_local_oid = b_local_ref.peel_to_commit().unwrap().id();
     copy_meta_objects(&repo_b, &bare_dir);
     let bare_repo = git2::Repository::open_bare(bare_dir.path()).unwrap();
     bare_repo
-        .reference("refs/meta/local", b_local_oid, true, "push from B")
+        .reference("refs/meta/local/main", b_local_oid, true, "push from B")
         .unwrap();
 
     // === Step 3: User A pulls B's ref, overwrites a value locally, serializes ===
@@ -1152,7 +1152,7 @@ fn test_materialize_preserves_local_changes_over_stale_remote() {
     copy_meta_objects_from(&bare_dir, &repo_a);
     let bare_repo = git2::Repository::open_bare(bare_dir.path()).unwrap();
     let bare_local = bare_repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1274,7 +1274,7 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
 
     // Push A → bare
     let a_oid = repo_a
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1282,7 +1282,7 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
     copy_meta_objects(&repo_a, &bare_dir);
     git2::Repository::open_bare(bare_dir.path())
         .unwrap()
-        .reference("refs/meta/local", a_oid, true, "push A")
+        .reference("refs/meta/local/main", a_oid, true, "push A")
         .unwrap();
 
     // === Step 2: User B pulls, materializes, modifies, serializes ===
@@ -1315,7 +1315,7 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
 
     // Push B → bare
     let b_oid = repo_b
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1323,7 +1323,7 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
     copy_meta_objects(&repo_b, &bare_dir);
     git2::Repository::open_bare(bare_dir.path())
         .unwrap()
-        .reference("refs/meta/local", b_oid, true, "push B")
+        .reference("refs/meta/local/main", b_oid, true, "push B")
         .unwrap();
 
     // === Step 3: User A modifies the same key AFTER B, serializes, then materializes ===
@@ -1368,7 +1368,7 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
     // === Now test the reverse: B materializes A's newer changes, B's commit is older ===
     // Fetch A's latest into B
     let a_oid_new = repo_a
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1376,7 +1376,7 @@ fn test_materialize_both_sides_modified_later_timestamp_wins() {
     copy_meta_objects(&repo_a, &bare_dir);
     git2::Repository::open_bare(bare_dir.path())
         .unwrap()
-        .reference("refs/meta/local", a_oid_new, true, "push A new")
+        .reference("refs/meta/local/main", a_oid_new, true, "push A new")
         .unwrap();
 
     copy_meta_objects_from(&bare_dir, &repo_b);
@@ -1414,7 +1414,7 @@ fn test_materialize_dry_run_does_not_mutate_sqlite_or_ref() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let first_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1429,14 +1429,14 @@ fn test_materialize_dry_run_does_not_mutate_sqlite_or_ref() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let second_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
         .id();
     repo.reference("refs/meta/origin", second_oid, true, "test remote")
         .unwrap();
-    repo.reference("refs/meta/local", first_oid, true, "rollback local")
+    repo.reference("refs/meta/local/main", first_oid, true, "rollback local")
         .unwrap();
     drop(repo);
 
@@ -1464,7 +1464,7 @@ fn test_materialize_dry_run_does_not_mutate_sqlite_or_ref() {
     // Local metadata ref should not move in dry-run.
     let repo = git2::Repository::open(dir.path()).unwrap();
     let local_after = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1486,7 +1486,7 @@ fn test_materialize_dry_run_reports_concurrent_add_conflict_resolution() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let base_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1502,12 +1502,12 @@ fn test_materialize_dry_run_reports_concurrent_add_conflict_resolution() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let remote_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
         .id();
-    repo.reference("refs/meta/local", base_oid, true, "rollback to base")
+    repo.reference("refs/meta/local/main", base_oid, true, "rollback to base")
         .unwrap();
     drop(repo);
 
@@ -1520,7 +1520,7 @@ fn test_materialize_dry_run_reports_concurrent_add_conflict_resolution() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let local_oid = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1546,7 +1546,7 @@ fn test_materialize_dry_run_reports_concurrent_add_conflict_resolution() {
 
     let repo = git2::Repository::open(dir.path()).unwrap();
     let local_after = repo
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1577,7 +1577,7 @@ fn test_materialize_no_common_ancestor_uses_two_way_merge_remote_wins() {
 
     let repo_a = git2::Repository::open(repo_a_dir.path()).unwrap();
     let a_oid = repo_a
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1599,7 +1599,7 @@ fn test_materialize_no_common_ancestor_uses_two_way_merge_remote_wins() {
 
     let repo_b = git2::Repository::open(repo_b_dir.path()).unwrap();
     let b_oid = repo_b
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()
@@ -1609,7 +1609,7 @@ fn test_materialize_no_common_ancestor_uses_two_way_merge_remote_wins() {
     copy_meta_objects(&repo_b, &bare_dir);
     git2::Repository::open_bare(bare_dir.path())
         .unwrap()
-        .reference("refs/meta/local", b_oid, true, "push B")
+        .reference("refs/meta/local/main", b_oid, true, "push B")
         .unwrap();
     copy_meta_objects_from(&bare_dir, &repo_a);
     repo_a
@@ -1632,7 +1632,7 @@ fn test_materialize_no_common_ancestor_uses_two_way_merge_remote_wins() {
 
     // Dry-run should not move local ref.
     let a_after_dry_run = repo_a
-        .find_reference("refs/meta/local")
+        .find_reference("refs/meta/local/main")
         .unwrap()
         .peel_to_commit()
         .unwrap()

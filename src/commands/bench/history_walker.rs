@@ -629,12 +629,12 @@ pub fn run(n_commits: usize) -> Result<()> {
 
     // Point refs/meta/local at the tip commit and make HEAD a symbolic ref to it.
     repo.reference(
-        "refs/meta/local",
+        "refs/meta/local/main",
         tip_oid,
         true,
         "history-walker: generation complete",
     )?;
-    repo.set_head("refs/meta/local")?;
+    repo.set_head("refs/meta/local/main")?;
 
     let pack_secs = t_pack.elapsed().as_secs_f64();
     println!(

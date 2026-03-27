@@ -74,12 +74,12 @@
 <h2 id="refs">Refs</h2>
 <p>When serializing metadata, the commit/tree produced updates a local metadata ref so it can be pushed.</p>
 <p>The local serialized metadata head by default should be:</p>
-<ul><li><code>refs/meta/local</code></li></ul>
+<ul><li><code>refs/meta/local/main</code></li></ul>
 <p>If <code>meta.namespace</code> Git config is set, that namespace should be used instead of <code>meta</code>.</p>
 <p>Fetched remote metadata heads should be stored under a remote-specific namespace, for example:</p>
 <ul><li><code>refs/meta/remotes/origin</code></li></ul>
-<p>If user has multiple local metadata destinations, the local layout would expand to directory-shaped refs such as:</p>
-<ul><li><code>refs/meta/local/public</code></li><li><code>refs/meta/local/private</code></li></ul>
+<p>If user has filter rules that route keys to additional destinations, those destinations get their own refs:</p>
+<ul><li><code>refs/meta/local/main</code> (default, always present)</li><li><code>refs/meta/local/private</code></li><li><code>refs/meta/local/vendor</code></li></ul>
         </article>
       </main>
     </div>

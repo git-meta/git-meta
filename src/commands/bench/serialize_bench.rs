@@ -289,7 +289,7 @@ pub fn run(rounds: usize) -> Result<()> {
     let db_path = repo_path.join("gmeta.sqlite");
     let db = Db::open(&db_path)?;
 
-    let ref_name = "refs/meta/local";
+    let ref_name = "refs/meta/local/main";
     let mut total_keys = 0usize;
     let mut round_stats: Vec<RoundStats> = Vec::with_capacity(rounds);
 

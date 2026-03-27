@@ -1449,7 +1449,8 @@ fn find_remote_refs(
     for reference in refs {
         let reference = reference?;
         if let Some(name) = reference.name() {
-            if name.starts_with(&prefix) && name != format!("refs/{}/local", ns) {
+            let local_prefix = format!("refs/{}/local/", ns);
+            if name.starts_with(&prefix) && !name.starts_with(&local_prefix) {
                 if let Ok(commit) = reference.peel_to_commit() {
                     results.push((name.to_string(), commit.id()));
                 }

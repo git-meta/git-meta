@@ -198,7 +198,7 @@ So, we're thinking about this sort of like the local tuple database is an "index
 
 The way we propose to do this is by "serializing" the values you want to share into a Git tree and creating a commit that points to that tree.
 
-It saves that new commit to `refs/meta/local` so it can be pushed. Other collaborators can fetch that head (into `refs/meta/remotes/origin`) and "materialize" the data - adding any new or updated values into their working database and so on.
+It saves that new commit to `refs/meta/local/main` so it can be pushed. Other collaborators can fetch that head (into `refs/meta/remotes/origin`) and "materialize" the data - adding any new or updated values into their working database and so on.
 
 #### Serializing
 
@@ -209,7 +209,7 @@ Serializing the data takes the targets, keys and values from SQLite and put them
 So, for example, setting `agent:model` to 'claude' on commit `13a7d29` would serialize roughly to this:
 
 ```
-❯ git ls-tree -r refs/meta/local
+❯ git ls-tree -r refs/meta/local/main
 100644 blob a76e08d661b081b4e618e7e61066c879056c8f18 commit/13/a7d29cde8f8557b54fd6474f547a56822180ae/agent/model/__value
 
 ❯ git cat-file -p a76e08d66
@@ -228,7 +228,7 @@ Lists are handled slightly differently. Instead of `__value` as a blob at the te
 The serialized data might look like this:
 
 ```
-❯ git ls-tree -r refs/meta/local
+❯ git ls-tree -r refs/meta/local/main
 100644 blob b4e618e7e61066c879056c8f18a76e08d661b081 path/src/metrics/owners/__list/1771232450203-23c0f
 100644 blob 066c879056c8f1b4e618e7e618a76e08d661b081 path/src/metrics/owners/__list/1771232450204-0d5f2
 ```
@@ -395,7 +395,7 @@ Most likely, an implementation would have a ruleset filter for writing that says
 
 I feel like the simplest solution would be to have the tuple database source/destination agnostic and have some match filter that keys are compared against on serialization.
 
-When there are multiple metadata remotes, the local heads would be kept under references like `refs/meta/local/corporate`, `refs/meta/local/public`. If `refs/meta/local` is a ref, there is only one. If it's a directory, there are multiple.
+When there are multiple metadata destinations, filter rules can route keys to separate refs like `refs/meta/local/corporate`, `refs/meta/local/private`. The default destination is always `refs/meta/local/main`.
 
 With multiple remotes, the meta refs structure might look like this:
 

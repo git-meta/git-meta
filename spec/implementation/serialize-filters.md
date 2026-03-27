@@ -99,7 +99,7 @@ The current serialize flow is:
 1. Read all metadata from SQLite (`get_all_metadata`)
 2. Read all tombstones
 3. Build git tree entries for each key
-4. Commit to `refs/meta/local`
+4. Commit to `refs/meta/local/main`
 
 The new flow becomes:
 

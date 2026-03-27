@@ -284,239 +284,285 @@ pub fn run(verbose: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Summarize what we're serializing
-    let mut targets: BTreeSet<String> = BTreeSet::new();
-    let mut string_count = 0u64;
-    let mut list_count = 0u64;
-    let mut set_count = 0u64;
-    for (target_type, target_value, _key, _value, value_type, _ts, _is_git_ref) in &metadata_entries
-    {
-        let label = if target_type == "project" {
-            "project".to_string()
-        } else {
-            format!(
-                "{}:{}",
-                target_type,
-                &target_value[..7.min(target_value.len())]
-            )
-        };
-        targets.insert(label);
-        match value_type.as_str() {
-            "string" => string_count += 1,
-            "list" => list_count += 1,
-            "set" => set_count += 1,
-            _ => {}
+    // ── Read filter rules ───────────────────────────────────────────────────
+    let filter_rules = parse_filter_rules(&db)?;
+    if verbose && !filter_rules.is_empty() {
+        eprintln!("[verbose] filter rules: {}", filter_rules.len());
+        for rule in &filter_rules {
+            eprintln!("  {:?}", rule);
         }
     }
-    eprintln!(
-        "Serializing {} keys ({} string, {} list, {} set) across {} targets, {} tombstones, {} set tombstones, {} list tombstones",
-        metadata_entries.len(),
-        string_count,
-        list_count,
-        set_count,
-        targets.len(),
-        tombstone_entries.len(),
-        set_tombstone_entries.len(),
-        list_tombstone_entries.len(),
-    );
 
-    if verbose {
-        eprintln!("[verbose] targets:");
-        for target in &targets {
-            eprintln!("  {}", target);
+    // ── Partition entries by destination ─────────────────────────────────────
+    type MetaEntry = (String, String, String, String, String, i64, bool);
+    type TombEntry = (String, String, String, i64, String);
+    type SetTombEntry = (String, String, String, String, String, i64, String);
+    type ListTombEntry = (String, String, String, String, i64, String);
+
+    let mut dest_metadata: BTreeMap<String, Vec<MetaEntry>> = BTreeMap::new();
+    let mut dest_tombstones: BTreeMap<String, Vec<TombEntry>> = BTreeMap::new();
+    let mut dest_set_tombstones: BTreeMap<String, Vec<SetTombEntry>> = BTreeMap::new();
+    let mut dest_list_tombstones: BTreeMap<String, Vec<ListTombEntry>> = BTreeMap::new();
+    let mut excluded_count = 0u64;
+
+    for entry in &metadata_entries {
+        let key = &entry.2;
+        match classify_key(key, &filter_rules) {
+            None => {
+                excluded_count += 1;
+                if verbose {
+                    eprintln!("[verbose] excluding key: {}", key);
+                }
+            }
+            Some(dests) => {
+                for dest in dests {
+                    dest_metadata.entry(dest).or_default().push(entry.clone());
+                }
+            }
         }
+    }
 
-        eprintln!("[verbose] metadata entries:");
-        for (target_type, target_value, key, value, value_type, ts, is_git_ref) in &metadata_entries
-        {
-            let target_label = if target_type == "project" {
-                "project".to_string()
-            } else {
-                format!(
-                    "{}:{}",
-                    target_type,
-                    &target_value[..12.min(target_value.len())]
-                )
-            };
-            let value_preview = if *is_git_ref {
-                format!("<git-blob:{}>", &value[..8.min(value.len())])
-            } else if value.len() > 60 {
-                format!("{}...", &value[..60])
-            } else {
-                value.clone()
-            };
+    for entry in &tombstone_entries {
+        let key = &entry.2;
+        match classify_key(key, &filter_rules) {
+            None => {}
+            Some(dests) => {
+                for dest in dests {
+                    dest_tombstones.entry(dest).or_default().push(entry.clone());
+                }
+            }
+        }
+    }
+
+    for entry in &set_tombstone_entries {
+        let key = &entry.2;
+        match classify_key(key, &filter_rules) {
+            None => {}
+            Some(dests) => {
+                for dest in dests {
+                    dest_set_tombstones.entry(dest).or_default().push(entry.clone());
+                }
+            }
+        }
+    }
+
+    for entry in &list_tombstone_entries {
+        let key = &entry.2;
+        match classify_key(key, &filter_rules) {
+            None => {}
+            Some(dests) => {
+                for dest in dests {
+                    dest_list_tombstones.entry(dest).or_default().push(entry.clone());
+                }
+            }
+        }
+    }
+
+    // Ensure "main" is always present
+    dest_metadata.entry(MAIN_DEST.to_string()).or_default();
+
+    let mut all_dests: BTreeSet<String> = BTreeSet::new();
+    all_dests.extend(dest_metadata.keys().cloned());
+    all_dests.extend(dest_tombstones.keys().cloned());
+    all_dests.extend(dest_set_tombstones.keys().cloned());
+    all_dests.extend(dest_list_tombstones.keys().cloned());
+
+    // ── Summarize ───────────────────────────────────────────────────────────
+    {
+        let mut string_count = 0u64;
+        let mut list_count = 0u64;
+        let mut set_count = 0u64;
+        let mut targets: BTreeSet<String> = BTreeSet::new();
+        let total_meta: usize = dest_metadata.values().map(|v| v.len()).sum();
+        for entries in dest_metadata.values() {
+            for (target_type, target_value, _key, _value, value_type, _ts, _is_git_ref) in entries {
+                let label = if target_type == "project" {
+                    "project".to_string()
+                } else {
+                    format!(
+                        "{}:{}",
+                        target_type,
+                        &target_value[..7.min(target_value.len())]
+                    )
+                };
+                targets.insert(label);
+                match value_type.as_str() {
+                    "string" => string_count += 1,
+                    "list" => list_count += 1,
+                    "set" => set_count += 1,
+                    _ => {}
+                }
+            }
+        }
+        let total_tombstones: usize = dest_tombstones.values().map(|v| v.len()).sum();
+        let total_set_tombstones: usize = dest_set_tombstones.values().map(|v| v.len()).sum();
+        let total_list_tombstones: usize = dest_list_tombstones.values().map(|v| v.len()).sum();
+        eprintln!(
+            "Serializing {} keys ({} string, {} list, {} set) across {} targets, {} tombstones, {} set tombstones, {} list tombstones",
+            total_meta, string_count, list_count, set_count, targets.len(),
+            total_tombstones, total_set_tombstones, total_list_tombstones,
+        );
+        if excluded_count > 0 {
+            eprintln!("  {} keys excluded by filters", excluded_count);
+        }
+        let non_main: Vec<&String> = all_dests.iter().filter(|d| d.as_str() != MAIN_DEST).collect();
+        if !non_main.is_empty() {
             eprintln!(
-                "  {} {} ({}) = {} [ts={}, git_ref={}]",
-                target_label, key, value_type, value_preview, ts, is_git_ref
+                "  routing to destinations: {}",
+                non_main.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", ")
             );
         }
-
-        if !tombstone_entries.is_empty() {
-            eprintln!("[verbose] tombstones:");
-            for (target_type, target_value, key, timestamp, email) in &tombstone_entries {
-                let target_label = if target_type == "project" {
-                    "project".to_string()
-                } else {
-                    format!(
-                        "{}:{}",
-                        target_type,
-                        &target_value[..12.min(target_value.len())]
-                    )
-                };
-                eprintln!(
-                    "  {} {} [ts={}, by={}]",
-                    target_label, key, timestamp, email
-                );
-            }
-        }
-
-        if !set_tombstone_entries.is_empty() {
-            eprintln!("[verbose] set tombstones:");
-            for (target_type, target_value, key, member_id, _value, _ts, _email) in
-                &set_tombstone_entries
-            {
-                let target_label = if target_type == "project" {
-                    "project".to_string()
-                } else {
-                    format!(
-                        "{}:{}",
-                        target_type,
-                        &target_value[..12.min(target_value.len())]
-                    )
-                };
-                eprintln!("  {} {} member={}", target_label, key, member_id);
+        if verbose {
+            eprintln!("[verbose] targets:");
+            for target in &targets {
+                eprintln!("  {}", target);
             }
         }
     }
 
-    eprintln!("Building git tree...");
-    let tree_oid = build_tree(
-        &repo,
-        &metadata_entries,
-        &tombstone_entries,
-        &set_tombstone_entries,
-        &list_tombstone_entries,
-        existing_tree.as_ref(),
-        dirty_target_bases.as_ref(),
-        verbose,
-    )?;
-
-    if verbose {
-        let tree = repo.find_tree(tree_oid)?;
-        eprintln!("[verbose] built tree {} ({} top-level entries)", tree_oid, tree.len());
-    }
-
-    // Create commit
+    // ── Build and commit trees per destination ──────────────────────────────
     let name = git_utils::get_name(&repo)?;
     let email = git_utils::get_email(&repo)?;
     let sig = git2::Signature::now(&name, &email)?;
 
-    let tree = repo.find_tree(tree_oid)?;
+    for dest in &all_dests {
+        let ref_name = git_utils::destination_ref(&repo, dest)?;
+        let empty_meta: Vec<MetaEntry> = Vec::new();
+        let empty_tomb: Vec<TombEntry> = Vec::new();
+        let empty_set_tomb: Vec<SetTombEntry> = Vec::new();
+        let empty_list_tomb: Vec<ListTombEntry> = Vec::new();
 
-    // Find parent commit if exists
-    let parent = repo
-        .find_reference(&local_ref_name)
-        .ok()
-        .and_then(|r| r.peel_to_commit().ok());
+        let meta = dest_metadata.get(dest).unwrap_or(&empty_meta);
+        let tombs = dest_tombstones.get(dest).unwrap_or(&empty_tomb);
+        let set_tombs = dest_set_tombstones.get(dest).unwrap_or(&empty_set_tomb);
+        let list_tombs = dest_list_tombstones.get(dest).unwrap_or(&empty_list_tomb);
 
-    if verbose {
-        if let Some(ref p) = parent {
-            eprintln!("[verbose] parent commit: {}", &p.id().to_string()[..8]);
+        if meta.is_empty() && tombs.is_empty() && set_tombs.is_empty() && list_tombs.is_empty() {
+            continue;
+        }
+
+        // Use incremental mode only for the main destination
+        let (existing, dirty) = if dest == MAIN_DEST {
+            (existing_tree.as_ref(), dirty_target_bases.as_ref())
         } else {
-            eprintln!("[verbose] no parent commit (root)");
+            (None, None)
+        };
+
+        eprintln!("Building git tree for {}...", ref_name);
+        let tree_oid = build_tree(
+            &repo, meta, tombs, set_tombs, list_tombs, existing, dirty, verbose,
+        )?;
+
+        if verbose {
+            let tree = repo.find_tree(tree_oid)?;
+            eprintln!("[verbose] built tree {} ({} top-level entries)", tree_oid, tree.len());
+        }
+
+        let tree = repo.find_tree(tree_oid)?;
+
+        let parent = repo
+            .find_reference(&ref_name)
+            .ok()
+            .and_then(|r| r.peel_to_commit().ok());
+
+        if verbose {
+            if let Some(ref p) = parent {
+                eprintln!("[verbose] parent commit for {}: {}", ref_name, &p.id().to_string()[..8]);
+            } else {
+                eprintln!("[verbose] no parent commit for {} (root)", ref_name);
+            }
+        }
+
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        let commit_oid = repo.commit(Some(&ref_name), &sig, &sig, "", &tree, &parents)?;
+
+        println!(
+            "serialized to {} ({})",
+            ref_name,
+            &commit_oid.to_string()[..8]
+        );
+
+        // Auto-prune only for main destination
+        if dest == MAIN_DEST {
+            if let Some(prune_rules) = auto_prune::read_prune_rules(&db)? {
+                if verbose {
+                    eprintln!(
+                        "[verbose] auto-prune rules: since={}, min_size={}",
+                        prune_rules.since,
+                        prune_rules.min_size.map(|s| s.to_string()).unwrap_or_else(|| "none".to_string())
+                    );
+                }
+                if auto_prune::should_prune(&repo, tree_oid, &prune_rules)? {
+                    eprintln!("Auto-prune triggered, pruning with --since={}...", prune_rules.since);
+
+                    if verbose {
+                        let cutoff_ms = parse_since_to_cutoff_ms(&prune_rules.since)?;
+                        eprintln!(
+                            "[verbose] prune cutoff: {} ({}ms)",
+                            chrono::DateTime::from_timestamp_millis(cutoff_ms).map(|d| d.to_rfc3339()).unwrap_or_else(|| "?".to_string()),
+                            cutoff_ms
+                        );
+                    }
+
+                    let prune_tree_oid = prune_tree(&repo, tree_oid, &prune_rules, &db, verbose)?;
+
+                    if prune_tree_oid != tree_oid {
+                        if verbose {
+                            eprintln!("[verbose] pruned tree: {} (changed from {})", prune_tree_oid, tree_oid);
+                        }
+                        let prune_tree = repo.find_tree(prune_tree_oid)?;
+                        let prune_parent = repo
+                            .find_reference(&ref_name)?
+                            .peel_to_commit()?;
+
+                        let (keys_dropped, keys_retained) =
+                            count_prune_stats(&repo, tree_oid, prune_tree_oid)?;
+
+                        if verbose {
+                            eprintln!(
+                                "[verbose] prune stats: {} keys dropped, {} keys retained",
+                                keys_dropped, keys_retained
+                            );
+                        }
+
+                        let min_size_str = prune_rules
+                            .min_size
+                            .map(|s| format!("\nmin-size: {}", s))
+                            .unwrap_or_default();
+
+                        let message = format!(
+                            "gmeta: prune --since={}\n\npruned: true\nsince: {}{}\nkeys-dropped: {}\nkeys-retained: {}",
+                            prune_rules.since, prune_rules.since, min_size_str, keys_dropped, keys_retained
+                        );
+
+                        let prune_commit_oid = repo.commit(
+                            Some(&ref_name),
+                            &sig,
+                            &sig,
+                            &message,
+                            &prune_tree,
+                            &[&prune_parent],
+                        )?;
+
+                        println!(
+                            "auto-pruned to {} ({})",
+                            ref_name,
+                            &prune_commit_oid.to_string()[..8]
+                        );
+                    } else {
+                        eprintln!("Auto-prune: tree unchanged after pruning, skipping prune commit");
+                    }
+                } else if verbose {
+                    eprintln!("[verbose] auto-prune: conditions not met, skipping");
+                }
+            } else if verbose {
+                eprintln!("[verbose] no auto-prune rules configured");
+            }
         }
     }
-
-    let parents: Vec<&git2::Commit> = parent.iter().collect();
-
-    eprintln!("Writing commit to {}...", local_ref_name);
-    let commit_oid = repo.commit(Some(&local_ref_name), &sig, &sig, "", &tree, &parents)?;
 
     let now = Utc::now().timestamp_millis();
     db.set_last_materialized(now)?;
-
-    println!(
-        "serialized to {} ({})",
-        local_ref_name,
-        &commit_oid.to_string()[..8]
-    );
-
-    // Check auto-prune rules
-    if let Some(rules) = auto_prune::read_prune_rules(&db)? {
-        if verbose {
-            eprintln!(
-                "[verbose] auto-prune rules: since={}, min_size={}",
-                rules.since,
-                rules.min_size.map(|s| s.to_string()).unwrap_or_else(|| "none".to_string())
-            );
-        }
-        if auto_prune::should_prune(&repo, tree_oid, &rules)? {
-            eprintln!("Auto-prune triggered, pruning with --since={}...", rules.since);
-
-            if verbose {
-                let cutoff_ms = parse_since_to_cutoff_ms(&rules.since)?;
-                eprintln!(
-                    "[verbose] prune cutoff: {} ({}ms)",
-                    chrono::DateTime::from_timestamp_millis(cutoff_ms).map(|d| d.to_rfc3339()).unwrap_or_else(|| "?".to_string()),
-                    cutoff_ms
-                );
-            }
-
-            let prune_tree_oid =
-                prune_tree(&repo, tree_oid, &rules, &db, verbose)?;
-
-            if prune_tree_oid != tree_oid {
-                if verbose {
-                    eprintln!("[verbose] pruned tree: {} (changed from {})", prune_tree_oid, tree_oid);
-                }
-                let prune_tree = repo.find_tree(prune_tree_oid)?;
-                let prune_parent = repo
-                    .find_reference(&local_ref_name)?
-                    .peel_to_commit()?;
-
-                let (keys_dropped, keys_retained) =
-                    count_prune_stats(&repo, tree_oid, prune_tree_oid)?;
-
-                if verbose {
-                    eprintln!(
-                        "[verbose] prune stats: {} keys dropped, {} keys retained",
-                        keys_dropped, keys_retained
-                    );
-                }
-
-                let min_size_str = rules
-                    .min_size
-                    .map(|s| format!("\nmin-size: {}", s))
-                    .unwrap_or_default();
-
-                let message = format!(
-                    "gmeta: prune --since={}\n\npruned: true\nsince: {}{}\nkeys-dropped: {}\nkeys-retained: {}",
-                    rules.since, rules.since, min_size_str, keys_dropped, keys_retained
-                );
-
-                let prune_commit_oid = repo.commit(
-                    Some(&local_ref_name),
-                    &sig,
-                    &sig,
-                    &message,
-                    &prune_tree,
-                    &[&prune_parent],
-                )?;
-
-                println!(
-                    "auto-pruned to {} ({})",
-                    local_ref_name,
-                    &prune_commit_oid.to_string()[..8]
-                );
-            } else {
-                eprintln!("Auto-prune: tree unchanged after pruning, skipping prune commit");
-            }
-        } else if verbose {
-            eprintln!("[verbose] auto-prune: conditions not met, skipping");
-        }
-    } else if verbose {
-        eprintln!("[verbose] no auto-prune rules configured");
-    }
 
     Ok(())
 }

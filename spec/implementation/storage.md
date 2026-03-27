@@ -73,7 +73,7 @@ When serializing metadata, the commit/tree produced updates a local metadata ref
 
 The local serialized metadata head by default should be:
 
-- `refs/meta/local`
+- `refs/meta/local/main`
 
 If `meta.namespace` Git config is set, that namespace should be used instead of `meta`.
 
@@ -81,7 +81,8 @@ Fetched remote metadata heads should be stored under a remote-specific namespace
 
 - `refs/meta/remotes/origin`
 
-If user has multiple local metadata destinations, the local layout would expand to directory-shaped refs such as:
+If user has filter rules that route keys to additional destinations, those destinations get their own refs:
 
-- `refs/meta/local/public`
+- `refs/meta/local/main` (default, always present)
 - `refs/meta/local/private`
+- `refs/meta/local/vendor`
