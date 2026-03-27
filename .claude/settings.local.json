@@ -26,7 +26,8 @@
       "Bash(find ~/.claude/projects -maxdepth 1 -type d -name -Users-*)",
       "Bash(sort -k5 -hr)",
       "Bash(grep:*)",
-      "Bash(git -C /Users/schacon/projects/gmeta log --oneline -- docs/example-serialize.html)"
+      "Bash(git -C /Users/schacon/projects/gmeta log --oneline -- docs/example-serialize.html)",
+      "Bash(git update-ref:*)"
     ]
   }
 }
