@@ -1,0 +1,233 @@
+//! `gmeta inspect` — browse metadata keys and values.
+//!
+//! - No arguments: show count of keys per target type
+//! - `gmeta inspect <target-type>`: list all keys for that target type
+//! - `gmeta inspect <target-type> <term>`: fuzzy-match keys/targets on term
+
+use anyhow::Result;
+use std::collections::BTreeMap;
+
+use crate::db::Db;
+use crate::git_utils;
+use crate::list_value::list_values_from_json;
+
+// ── ANSI colours ──────────────────────────────────────────────────────────────
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const YELLOW: &str = "\x1b[33m";
+const GREEN: &str = "\x1b[32m";
+const CYAN: &str = "\x1b[36m";
+
+pub fn run(target_type: Option<&str>, term: Option<&str>) -> Result<()> {
+    let repo = git_utils::discover_repo()?;
+    let db_path = git_utils::db_path(&repo)?;
+    let db = Db::open(&db_path)?;
+
+    match target_type {
+        None => run_overview(&db),
+        Some(tt) => run_list(&db, tt, term),
+    }
+}
+
+/// Show key counts per target type.
+fn run_overview(db: &Db) -> Result<()> {
+    let keys = db.get_all_keys()?;
+
+    if keys.is_empty() {
+        println!("no metadata stored");
+        return Ok(());
+    }
+
+    // Count keys and unique targets per target_type
+    let mut type_stats: BTreeMap<String, (u64, BTreeMap<String, ()>)> = BTreeMap::new();
+    for (target_type, target_value, _key) in &keys {
+        let entry = type_stats.entry(target_type.clone()).or_default();
+        entry.0 += 1;
+        entry.1.insert(target_value.clone(), ());
+    }
+
+    for (target_type, (key_count, targets)) in &type_stats {
+        let target_count = targets.len();
+        let targets_label = if target_count == 1 && target_type == "project" {
+            String::new()
+        } else {
+            format!(" across {} targets", target_count)
+        };
+        println!(
+            "{YELLOW}{}{RESET}  {} keys{}",
+            target_type, key_count, targets_label
+        );
+    }
+
+    Ok(())
+}
+
+/// List keys for a specific target type, optionally fuzzy-filtered.
+fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
+    let all = db.get_all_metadata()?;
+
+    // Filter to target type
+    let mut entries: Vec<&(String, String, String, String, String, i64, bool)> = all
+        .iter()
+        .filter(|(tt, _, _, _, _, _, _)| tt == target_type)
+        .collect();
+
+    if entries.is_empty() {
+        println!("no metadata for target type '{}'", target_type);
+        return Ok(());
+    }
+
+    // Fuzzy filter if term is provided
+    if let Some(term) = term {
+        let lower_term = term.to_lowercase();
+        entries.retain(|(_tt, tv, key, value, vtype, _, _)| {
+            fuzzy_matches(&lower_term, tv)
+                || fuzzy_matches(&lower_term, key)
+                || (vtype == "string" && fuzzy_matches(&lower_term, &decode_string_value(value)))
+        });
+    }
+
+    if entries.is_empty() {
+        println!("no matches for '{}'", term.unwrap_or(""));
+        return Ok(());
+    }
+
+    // Determine terminal width
+    let term_width = terminal_width();
+
+    // Group by target_value
+    let mut by_target: BTreeMap<&str, Vec<&(String, String, String, String, String, i64, bool)>> =
+        BTreeMap::new();
+    for entry in &entries {
+        by_target.entry(&entry.1).or_default().push(entry);
+    }
+
+    let mut first = true;
+    for (target_value, target_entries) in &by_target {
+        if !first {
+            println!();
+        }
+        first = false;
+
+        let short_target = if target_value.len() > 12 {
+            &target_value[..12]
+        } else {
+            target_value
+        };
+        let display_target = if target_type == "project" {
+            "project".to_string()
+        } else {
+            format!("{CYAN}{target_type}{RESET}:{GREEN}{short_target}{RESET}")
+        };
+        println!("{}", display_target);
+
+        for entry in target_entries {
+            let key = &entry.2;
+            let value = &entry.3;
+            let value_type = &entry.4;
+
+            let preview = format_value_oneline(value, value_type, term_width, key.len());
+            println!("  {BOLD}{key}{RESET}  {DIM}{preview}{RESET}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Format a value for one-line display, fitting within available width.
+fn format_value_oneline(value: &str, value_type: &str, term_width: usize, key_len: usize) -> String {
+    // 2 spaces indent + key + 2 spaces gap = overhead
+    let overhead = 2 + key_len + 2;
+    let available = if term_width > overhead + 5 {
+        term_width - overhead
+    } else {
+        40
+    };
+
+    match value_type {
+        "string" => {
+            let raw = decode_string_value(value);
+            let first_line = raw.lines().next().unwrap_or("");
+            let has_more = raw.contains('\n') && raw.trim_end_matches('\n') != first_line;
+            let mut s = if first_line.len() > available {
+                format!("{}...", &first_line[..available.saturating_sub(3)])
+            } else {
+                first_line.to_string()
+            };
+            if has_more && s.len() < available {
+                s.push_str(" ...");
+            }
+            s
+        }
+        "list" => {
+            if let Ok(items) = list_values_from_json(value) {
+                format!("[list: {} items]", items.len())
+            } else if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(value) {
+                format!("[list: {} items]", arr.len())
+            } else {
+                "[list]".to_string()
+            }
+        }
+        "set" => {
+            if let Ok(members) = serde_json::from_str::<Vec<String>>(value) {
+                format!("[set: {} members]", members.len())
+            } else {
+                "[set]".to_string()
+            }
+        }
+        _ => {
+            if value.len() > available {
+                format!("{}...", &value[..available.saturating_sub(3)])
+            } else {
+                value.to_string()
+            }
+        }
+    }
+}
+
+/// Decode a JSON-encoded string value, falling back to raw.
+fn decode_string_value(value: &str) -> String {
+    serde_json::from_str::<String>(value).unwrap_or_else(|_| value.to_string())
+}
+
+/// Simple fuzzy match: all characters of the term appear in order in the haystack.
+fn fuzzy_matches(term: &str, haystack: &str) -> bool {
+    let haystack_lower = haystack.to_lowercase();
+    let mut hay_chars = haystack_lower.chars();
+    for tc in term.chars() {
+        loop {
+            match hay_chars.next() {
+                Some(hc) if hc == tc => break,
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    }
+    true
+}
+
+/// Get terminal width, defaulting to 100.
+fn terminal_width() -> usize {
+    // Try COLUMNS env var first
+    if let Ok(cols) = std::env::var("COLUMNS") {
+        if let Ok(w) = cols.parse::<usize>() {
+            if w > 20 {
+                return w;
+            }
+        }
+    }
+    // Try `tput cols`
+    if let Ok(output) = std::process::Command::new("tput").arg("cols").output() {
+        if output.status.success() {
+            if let Ok(s) = std::str::from_utf8(&output.stdout) {
+                if let Ok(w) = s.trim().parse::<usize>() {
+                    if w > 20 {
+                        return w;
+                    }
+                }
+            }
+        }
+    }
+    100
+}

@@ -68,6 +68,10 @@ fn main() -> Result<()> {
 
         Commands::Show { commit } => commands::show::run(&commit),
 
+        Commands::Inspect { target_type, term } => {
+            commands::inspect::run(target_type.as_deref(), term.as_deref())
+        }
+
         Commands::Stats => commands::stats::run(),
 
         Commands::Log {

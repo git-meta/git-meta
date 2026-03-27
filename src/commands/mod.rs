@@ -4,6 +4,7 @@ pub mod config;
 pub mod config_prune;
 pub mod get;
 pub mod import;
+pub mod inspect;
 pub mod list;
 pub mod log;
 pub mod materialize;

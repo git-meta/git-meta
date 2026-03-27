@@ -163,6 +163,15 @@ pub enum Commands {
         commit: String,
     },
 
+    /// Browse metadata keys and values
+    Inspect {
+        /// Target type to list (e.g. commit, change-id, branch, project)
+        target_type: Option<String>,
+
+        /// Fuzzy search term to filter keys/values
+        term: Option<String>,
+    },
+
     /// Show metadata statistics
     Stats,
 
