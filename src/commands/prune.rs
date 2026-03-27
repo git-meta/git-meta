@@ -1,10 +1,14 @@
 //! `gmeta prune` — create a prune commit on the serialized ref tree,
 //! dropping entries older than the configured retention window.
+//!
+//! Unlike auto-prune (which only drops list entries and tombstones from the
+//! existing tree), this rebuilds the tree from the DB, filtering out all
+//! metadata entries (string, list, set) older than the cutoff.
 
 use anyhow::Result;
 
-use crate::commands::auto_prune::{self, parse_since_to_cutoff_ms};
-use crate::commands::serialize::{count_prune_stats, prune_tree};
+use crate::commands::auto_prune::parse_since_to_cutoff_ms;
+use crate::commands::serialize::{build_filtered_tree, count_prune_stats};
 use crate::db::Db;
 use crate::git_utils;
 
@@ -28,21 +32,6 @@ pub fn run(dry_run: bool) -> Result<()> {
         }
     };
 
-    let min_size = match db.get("project", "", "meta:prune:min-size")? {
-        Some((value, _, _)) => {
-            let s: String = serde_json::from_str(&value)?;
-            Some(auto_prune::parse_size(&s)?)
-        }
-        None => None,
-    };
-
-    let rules = auto_prune::PruneRules {
-        since: since.clone(),
-        max_keys: None,
-        max_size: None,
-        min_size,
-    };
-
     let cutoff_ms = parse_since_to_cutoff_ms(&since)?;
     let cutoff_date = chrono::DateTime::from_timestamp_millis(cutoff_ms)
         .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
@@ -54,19 +43,23 @@ pub fn run(dry_run: bool) -> Result<()> {
         Ok(r) => match r.peel_to_commit() {
             Ok(c) => c,
             Err(_) => {
-                eprintln!("No serialized metadata found at {}. Run `gmeta serialize` first.", ref_name);
+                eprintln!(
+                    "No serialized metadata found at {}. Run `gmeta serialize` first.",
+                    ref_name
+                );
                 return Ok(());
             }
         },
         Err(_) => {
-            eprintln!("No serialized metadata found at {}. Run `gmeta serialize` first.", ref_name);
+            eprintln!(
+                "No serialized metadata found at {}. Run `gmeta serialize` first.",
+                ref_name
+            );
             return Ok(());
         }
     };
 
     let tree_oid = current_commit.tree()?.id();
-
-    // Count current keys
     let (_, current_keys) = count_prune_stats(&repo, tree_oid, tree_oid)?;
 
     eprintln!(
@@ -75,8 +68,37 @@ pub fn run(dry_run: bool) -> Result<()> {
     );
     eprintln!("  current tree: {} keys", current_keys);
 
-    // Build the pruned tree
-    let pruned_tree_oid = prune_tree(&repo, tree_oid, &rules, &db, false)?;
+    // Read all metadata and filter by cutoff, keeping project entries always
+    let all_metadata = db.get_all_metadata()?;
+    let all_tombstones = db.get_all_tombstones()?;
+    let all_set_tombstones = db.get_all_set_tombstones()?;
+    let all_list_tombstones = db.get_all_list_tombstones()?;
+
+    let metadata: Vec<_> = all_metadata
+        .into_iter()
+        .filter(|(tt, _, _, _, _, ts, _)| tt == "project" || *ts >= cutoff_ms)
+        .collect();
+    let tombstones: Vec<_> = all_tombstones
+        .into_iter()
+        .filter(|(tt, _, _, ts, _)| tt == "project" || *ts >= cutoff_ms)
+        .collect();
+    let set_tombstones: Vec<_> = all_set_tombstones
+        .into_iter()
+        .filter(|(tt, _, _, _, _, ts, _)| tt == "project" || *ts >= cutoff_ms)
+        .collect();
+    let list_tombstones: Vec<_> = all_list_tombstones
+        .into_iter()
+        .filter(|(tt, _, _, _, ts, _)| tt == "project" || *ts >= cutoff_ms)
+        .collect();
+
+    // Build a fresh tree from the surviving entries
+    let pruned_tree_oid = build_filtered_tree(
+        &repo,
+        &metadata,
+        &tombstones,
+        &set_tombstones,
+        &list_tombstones,
+    )?;
 
     if pruned_tree_oid == tree_oid {
         println!("Nothing to prune — tree unchanged.");
@@ -85,7 +107,10 @@ pub fn run(dry_run: bool) -> Result<()> {
 
     let (keys_dropped, keys_retained) = count_prune_stats(&repo, tree_oid, pruned_tree_oid)?;
 
-    eprintln!("  pruned tree:  {} keys ({} dropped)", keys_retained, keys_dropped);
+    eprintln!(
+        "  pruned tree:  {} keys ({} dropped)",
+        keys_retained, keys_dropped
+    );
 
     if dry_run {
         println!(
@@ -101,13 +126,9 @@ pub fn run(dry_run: bool) -> Result<()> {
     let sig = git2::Signature::now(&name, &email)?;
     let pruned_tree = repo.find_tree(pruned_tree_oid)?;
 
-    let min_size_str = min_size
-        .map(|s| format!("\nmin-size: {}", s))
-        .unwrap_or_default();
-
     let message = format!(
-        "gmeta: prune --since={}\n\npruned: true\nsince: {}{}\nkeys-dropped: {}\nkeys-retained: {}",
-        since, since, min_size_str, keys_dropped, keys_retained
+        "gmeta: prune --since={}\n\npruned: true\nsince: {}\nkeys-dropped: {}\nkeys-retained: {}",
+        since, since, keys_dropped, keys_retained
     );
 
     let commit_oid = repo.commit(
