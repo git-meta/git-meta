@@ -130,6 +130,34 @@ pub fn list_meta_remotes(repo: &Repository) -> Result<Vec<(String, String)>> {
     Ok(remotes)
 }
 
+/// Resolve a meta remote by name, or pick the first one if no name given.
+pub fn resolve_meta_remote(repo: &Repository, remote: Option<&str>) -> Result<String> {
+    let meta_remotes = list_meta_remotes(repo)?;
+
+    if meta_remotes.is_empty() {
+        bail!("no metadata remotes configured. Add one with: gmeta remote add <url>");
+    }
+
+    match remote {
+        Some(name) => {
+            if meta_remotes.iter().any(|(n, _)| n == name) {
+                Ok(name.to_string())
+            } else {
+                bail!(
+                    "'{}' is not a metadata remote. Available: {}",
+                    name,
+                    meta_remotes
+                        .iter()
+                        .map(|(n, _)| n.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        }
+        None => Ok(meta_remotes[0].0.clone()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

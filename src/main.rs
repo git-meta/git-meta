@@ -58,6 +58,9 @@ fn main() -> Result<()> {
             RemoteAction::List => commands::remote::run_list(),
         },
 
+        Commands::Push { remote, verbose } => commands::push::run(remote.as_deref(), verbose),
+        Commands::Pull { remote, verbose } => commands::pull::run(remote.as_deref(), verbose),
+
         Commands::Serialize { verbose } => commands::serialize::run(verbose),
 
         Commands::Materialize {

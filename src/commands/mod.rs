@@ -10,6 +10,8 @@ pub mod log;
 pub mod materialize;
 pub mod local_prune;
 pub mod prune;
+pub mod pull;
+pub mod push;
 pub mod remote;
 pub mod rm;
 pub mod serialize;

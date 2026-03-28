@@ -218,6 +218,28 @@ pub enum Commands {
     #[command(display_order = 34)]
     Remote(RemoteArgs),
 
+    /// Push local metadata to a remote
+    #[command(display_order = 35)]
+    Push {
+        /// Remote name (defaults to the first meta remote)
+        remote: Option<String>,
+
+        /// Show detailed information about push decisions
+        #[arg(short = 'v', long)]
+        verbose: bool,
+    },
+
+    /// Pull remote metadata and merge into local database
+    #[command(display_order = 36)]
+    Pull {
+        /// Remote name (defaults to the first meta remote)
+        remote: Option<String>,
+
+        /// Show detailed information about pull decisions
+        #[arg(short = 'v', long)]
+        verbose: bool,
+    },
+
     /// Watch agent transcripts and auto-attach to commits
     #[command(display_order = 33)]
     Watch {
