@@ -137,14 +137,17 @@ fn rebase_local_on_remote(
     let message = local_commit.message().unwrap_or("");
     let sig = local_commit.author();
 
+    // Use None for the ref update here — we'll force-update the ref ourselves,
+    // because repo.commit(Some(ref)) requires the current tip to be the first parent.
     let new_oid = repo.commit(
-        Some(local_ref),
+        None,
         &sig,
         &sig,
         message,
         &tree,
         &[&remote_commit],
     )?;
+    repo.reference(local_ref, new_oid, true, "gmeta: rebase for push")?;
 
     if verbose {
         eprintln!(

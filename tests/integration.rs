@@ -1667,6 +1667,425 @@ fn test_materialize_no_common_ancestor_uses_two_way_merge_remote_wins() {
         .stdout(predicate::str::contains("keep-too"));
 }
 
+// ── Remote / Push / Pull integration tests ─────────────────────────────────
+
+/// Create a bare repo that has a refs/meta/main with some metadata.
+/// Returns the TempDir for the bare repo.
+fn setup_bare_with_meta(ns: &str) -> TempDir {
+    let bare_dir = TempDir::new().unwrap();
+    let bare = git2::Repository::init_bare(bare_dir.path()).unwrap();
+
+    // Build a tree with some metadata
+    let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+    let mut tb = bare.treebuilder(None).unwrap();
+
+    // Create a subtree: project/testing/__value
+    let blob_oid = bare.blob(b"\"hello\"").unwrap();
+    let mut sub_tb = bare.treebuilder(None).unwrap();
+    sub_tb.insert("__value", blob_oid, 0o100644).unwrap();
+    let sub_tree_oid = sub_tb.write().unwrap();
+
+    let mut project_tb = bare.treebuilder(None).unwrap();
+    project_tb
+        .insert("testing", sub_tree_oid, 0o040000)
+        .unwrap();
+    let project_tree_oid = project_tb.write().unwrap();
+
+    tb.insert("project", project_tree_oid, 0o040000).unwrap();
+    let tree_oid = tb.write().unwrap();
+    let tree = bare.find_tree(tree_oid).unwrap();
+
+    let ref_name = format!("refs/{}/main", ns);
+    bare.commit(Some(&ref_name), &sig, &sig, "initial meta", &tree, &[])
+        .unwrap();
+
+    bare_dir
+}
+
+#[test]
+fn test_remote_add_no_meta_refs() {
+    let (dir, _sha) = setup_repo();
+    // Bare repo with no meta refs at all
+    let bare_dir = TempDir::new().unwrap();
+    git2::Repository::init_bare(bare_dir.path()).unwrap();
+
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no metadata refs found"));
+}
+
+#[test]
+fn test_remote_add_meta_refs_in_different_namespace() {
+    let (dir, _sha) = setup_repo();
+    // Bare repo with refs/altmeta/main but not refs/meta/main
+    let bare_dir = setup_bare_with_meta("altmeta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("refs/altmeta/main"))
+        .stderr(predicate::str::contains("--namespace=altmeta"));
+}
+
+#[test]
+fn test_remote_add_with_namespace_override() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("altmeta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path, "--namespace=altmeta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added meta remote"));
+
+    // Verify config has the correct fetch refspec
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let config = repo.config().unwrap();
+    let fetch = config.get_string("remote.meta.fetch").unwrap();
+    assert!(
+        fetch.contains("refs/altmeta/"),
+        "fetch refspec should use altmeta namespace, got: {}",
+        fetch
+    );
+    let meta_ns = config.get_string("remote.meta.metanamespace").unwrap();
+    assert_eq!(meta_ns, "altmeta");
+}
+
+#[test]
+fn test_remote_add_shorthand_url_expansion() {
+    let (dir, _sha) = setup_repo();
+
+    // Shorthand "owner/repo" should expand to git@github.com:owner/repo.git.
+    // The command will succeed (warning on fetch failure) — verify the expanded URL
+    // appears in the output.
+    gmeta(dir.path())
+        .args(["remote", "add", "nonexistent-user-xyz/nonexistent-repo-xyz"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "git@github.com:nonexistent-user-xyz/nonexistent-repo-xyz.git",
+        ));
+
+    // Verify the config stored the expanded URL
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let config = repo.config().unwrap();
+    let url = config.get_string("remote.meta.url").unwrap();
+    assert_eq!(url, "git@github.com:nonexistent-user-xyz/nonexistent-repo-xyz.git");
+}
+
+#[test]
+fn test_remote_list_and_remove() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    // Add
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+
+    // List
+    gmeta(dir.path())
+        .args(["remote", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("meta\t"))
+        .stdout(predicate::str::contains(bare_path));
+
+    // Remove
+    gmeta(dir.path())
+        .args(["remote", "remove", "meta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed meta remote"));
+
+    // List again — empty
+    gmeta(dir.path())
+        .args(["remote", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No metadata remotes configured"));
+}
+
+#[test]
+fn test_push_simple() {
+    let (dir, sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    // Add remote and pull existing data
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+
+    // Set local metadata
+    let target = commit_target(&sha);
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "claude-4.6"])
+        .assert()
+        .success();
+
+    // Push
+    gmeta(dir.path())
+        .args(["push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Pushed metadata to meta"));
+
+    // Verify: the pushed ref on the bare repo has no merge commits
+    let bare = git2::Repository::open_bare(bare_dir.path()).unwrap();
+    let commit = bare
+        .find_reference("refs/meta/main")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap();
+    assert_eq!(
+        commit.parent_count(),
+        1,
+        "pushed commit should have exactly 1 parent (no merge commits)"
+    );
+}
+
+#[test]
+fn test_push_up_to_date() {
+    let (dir, sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+
+    let target = commit_target(&sha);
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "claude-4.6"])
+        .assert()
+        .success();
+
+    // First push
+    gmeta(dir.path())
+        .args(["push"])
+        .assert()
+        .success();
+
+    // Second push — nothing changed
+    gmeta(dir.path())
+        .args(["push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Everything up-to-date"));
+}
+
+#[test]
+fn test_push_commit_message_format() {
+    let (dir, sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+
+    let target = commit_target(&sha);
+    gmeta(dir.path())
+        .args(["set", &target, "agent:model", "claude-4.6"])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["set", &target, "agent:cost", "0.05"])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["push"])
+        .assert()
+        .success();
+
+    // Check the commit message on the bare repo
+    let bare = git2::Repository::open_bare(bare_dir.path()).unwrap();
+    let commit = bare
+        .find_reference("refs/meta/main")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap();
+    let msg = commit.message().unwrap();
+    assert!(
+        msg.contains("gmeta: serialize"),
+        "commit message should start with 'gmeta: serialize', got: {}",
+        msg
+    );
+    assert!(
+        msg.contains("agent:model"),
+        "commit message should contain changed key, got: {}",
+        msg
+    );
+}
+
+#[test]
+fn test_push_conflict_produces_no_merge_commits() {
+    // Two clones push different metadata — second clone should auto-merge
+    // and the result should have no merge commits
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    let (dir_a, sha_a) = setup_repo();
+    let (dir_b, sha_b) = setup_repo();
+
+    // Both add the same remote
+    gmeta(dir_a.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir_b.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+
+    // Both pull initial state
+    gmeta(dir_a.path()).args(["pull"]).assert().success();
+    gmeta(dir_b.path()).args(["pull"]).assert().success();
+
+    // A sets and pushes
+    let target_a = commit_target(&sha_a);
+    gmeta(dir_a.path())
+        .args(["set", &target_a, "from:a", "value-a"])
+        .assert()
+        .success();
+    gmeta(dir_a.path()).args(["push"]).assert().success();
+
+    // B sets and pushes (should conflict then auto-merge)
+    let target_b = commit_target(&sha_b);
+    gmeta(dir_b.path())
+        .args(["set", &target_b, "from:b", "value-b"])
+        .assert()
+        .success();
+    gmeta(dir_b.path()).args(["push"]).assert().success();
+
+    // Walk the entire history on the bare repo — no merge commits allowed
+    let bare = git2::Repository::open_bare(bare_dir.path()).unwrap();
+    let tip = bare
+        .find_reference("refs/meta/main")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap();
+
+    let mut revwalk = bare.revwalk().unwrap();
+    revwalk.push(tip.id()).unwrap();
+    for oid in revwalk {
+        let oid = oid.unwrap();
+        let commit = bare.find_commit(oid).unwrap();
+        assert!(
+            commit.parent_count() <= 1,
+            "commit {} has {} parents — merge commits are not allowed in pushed history",
+            &commit.id().to_string()[..8],
+            commit.parent_count()
+        );
+    }
+}
+
+#[test]
+fn test_pull_simple() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Pulled metadata from meta"));
+
+    // The bare repo had project/testing = "hello" — check it materialized
+    gmeta(dir.path())
+        .args(["get", "project", "testing"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn test_pull_up_to_date() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+
+    // First pull
+    gmeta(dir.path()).args(["pull"]).assert().success();
+
+    // Second pull — nothing new
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Already up-to-date"));
+}
+
+#[test]
+fn test_pull_merges_with_local_data() {
+    let (dir, sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    // Set some local-only metadata before adding the remote
+    let target = commit_target(&sha);
+    gmeta(dir.path())
+        .args(["set", &target, "local:key", "local-value"])
+        .assert()
+        .success();
+
+    // Add remote and pull
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path()).args(["pull"]).assert().success();
+
+    // Should have both local and remote data
+    gmeta(dir.path())
+        .args(["get", &target, "local:key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("local-value"));
+
+    gmeta(dir.path())
+        .args(["get", "project", "testing"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
 /// Copy all git objects from src repo into a bare repo (simulates push).
 fn copy_meta_objects(src: &git2::Repository, bare_dir: &TempDir) {
     let src_objects = src.path().join("objects");

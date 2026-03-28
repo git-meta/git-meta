@@ -35,11 +35,21 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
         .and_then(|r| r.peel_to_commit().ok())
         .map(|c| c.id());
 
+    // Check if we need to materialize even if no new commits were fetched
+    // (e.g. remote add fetched but never materialized)
+    let db_path = git_utils::db_path(&repo)?;
+    let db = crate::db::Db::open(&db_path)?;
+    let needs_materialize = db.get_last_materialized()?.is_none()
+        || repo.find_reference(&git_utils::local_ref(&repo)?).is_err();
+
     // Count new commits
     match (old_tip, new_tip) {
         (Some(old), Some(new)) if old == new => {
-            println!("Already up-to-date.");
-            return Ok(());
+            if !needs_materialize {
+                println!("Already up-to-date.");
+                return Ok(());
+            }
+            eprintln!("No new commits, but local state needs materializing.");
         }
         (Some(old), Some(new)) => {
             let count = count_commits_between(&repo, old, new);
