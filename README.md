@@ -239,7 +239,7 @@ This can also help chunk things like agentic transcripts, so instead of one larg
 
 #### Materializing
 
-So, the general workflow would be that you would add metadata to your project's commits, changesets, paths or global scope and then when you push the code, you would simultaneously serialize the metadata and push that as well - either to the same repository or a seperate meta repository. This could be configured with a pushspec, similar to normal Git branch usage.
+So, the general workflow would be that you would add metadata to your project's commits, changesets, paths or global scope and then when you push the code, you would simultaneously serialize the metadata and push that as well - either to the same repository or a seperate meta repository. This could be configured with fetch refspec, similar to normal Git branch usage.
 
 Once this is pushed, there are four different scenarios of getting new upstream data to materialize.
 
@@ -250,11 +250,11 @@ Once this is pushed, there are four different scenarios of getting new upstream 
 
 ##### 1. Initial Sync
 
-This is pretty simple. We walk the tree pointed to by the head ref (`refs/meta/remotes/origin` for example) and put all those tuples in our local database. We don't need to walk any farther in the commit history of the metadata.
+This is pretty simple. We walk the tree pointed to by the head ref (`refs/meta/remotes/main` for example) and put all those tuples in our local database. We don't need to walk any farther in the commit history of the metadata.
 
 ##### 2. Multiple Start Points
 
-If you have data and go to push your serialized data and find that there is already a reference existing, then we would serialize our tree and do a baseless 2-way merge, favoring the remote values on any conficts. Then we would write a new commit with the result of that which has the upstread head as it's parent and do a fast-forward push. If someone has pushed more data in the meantime, we take our already serialized tree and repeat the process until our fast-forward push succeeds.
+If you have data and go to push your serialized data and find that there is already a reference existing, then we would serialize our tree and do a baseless 2-way merge, favoring the local values on any conficts. Then we would write a new commit with the result of that which has the upstread head as it's parent and do a fast-forward push. If someone has pushed more data in the meantime, we take our already serialized tree and repeat the process until our fast-forward push succeeds.
 
 ##### 3. Pull New Data
 
@@ -270,13 +270,13 @@ This is one of the more common and interesting cases. What happens when you add 
 
 This is one of the ways that `git notes` is not great as a generalized metadata solution. If you want multiple key/values on a commit, you may put json or structured data into the note. If two people mutate that, now you need to have a json data merge strategy.
 
-Keeping the values as tree entries greatly simplifies this and allows us to use builtin git content merging strategies. If you both add values to different keys on the same target, Git will simply merge the trees as though you had both added new files. If you both modify the value of the same key, we simply use the "theirs" strategy to favor the remote value.
+Keeping the values as tree entries greatly simplifies this and allows us to use builtin git content merging strategies. If you both add values to different keys on the same target, Git will simply merge the trees as though you had both added new files. If you both modify the value of the same key, we simply use the "ours" strategy to favor the local value (this way we have both values in the history).
 
 Because of the nature of the keys and namespacing, most values will probably not be modified very often. If it's something to append to (comments or something), you can use a list value and the additions should cleanly become the union of what both sides added.
 
 So, if the remote ref has updated and you have mutated data locally, the strategy is to serialize your data and merge the remote tree into it.
 
-You do this in memory and write the merged tree out as a new commit, so the metadata history is linear. Just like Git, if someone else has pushed since then, you repeat the strategy.
+You do this in memory and write the merged tree out as a new commit, so the metadata history is linear. Just like Git, if someone else has pushed since then, you repeat the strategy, essentially rebasing your changes.
 
 #### Metadata history
 
@@ -298,7 +298,7 @@ This project proposes two solutions, though only the first will probably general
 
 #### Pruning checkpoints and blobless fetches
 
-Getting every transcript for every commit in your entire codebase is probably not what you generally need. What you probably _generally_ want locally is recent transcripts and global or project wide data (codeowners, etc).
+Getting every transcript for every commit in your entire codebase is probably not what you generally need. What you probably _generally_ want locally is recent transcripts and global or project wide data (codeowners, etc) and on-demand access to everything else.
 
 One of the cool things about recent (well, for almost a decade now - [2.19](https://github.blog/open-source/git/highlights-from-git-2-19/#user-content-partial-clones)?) versions of Git is that we can do blobless history clones and get just the blobs we actually want on demand with promisor remotes.
 
@@ -429,7 +429,6 @@ This is considered the plumbing, not something you would probably be constantly 
 Not much of this will be in scope for this project (though I may do some working implementations for testing). This project is only about deciding on the format and working semantics.
 
 Once we've decided the final implementation details, we will be incorporating this into the [gitbutler](https://github.com/gitbutlerapp/gitbutler) project. The more formal, detailed spec is found in the [spec](/spec) folder.
-
 
 ### TESTING
 
