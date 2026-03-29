@@ -1,6 +1,5 @@
 ## Notes
 
-- remote management and pushspecs
 - watch adds prompts only to agent:prompts on change-id
 - better pruning rules
   - path no longer exists (prune paths at all?)

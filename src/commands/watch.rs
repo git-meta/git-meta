@@ -285,22 +285,12 @@ impl WatchState {
             "user" => {
                 let is_meta = parsed["isMeta"].as_bool().unwrap_or(false);
                 if !is_meta {
-                    if let Some(content) = parsed["message"]["content"].as_array() {
-                        for block in content {
-                            if block["type"].as_str() == Some("text") {
-                                if let Some(text) = block["text"].as_str() {
-                                    let text = text.trim();
-                                    if text.is_empty() {
-                                        continue;
-                                    }
-                                    let preview = truncate(text, 100).replace('\n', " ");
-                                    eprintln!(
-                                        "  {}{}[user]{} {}",
-                                        BOLD, MAGENTA, RESET, preview
-                                    );
-                                }
-                            }
-                        }
+                    for text in extract_content_texts(&parsed["message"]["content"]) {
+                        let preview = truncate(&text, 100).replace('\n', " ");
+                        eprintln!(
+                            "  {}{}[user]{} {}",
+                            BOLD, MAGENTA, RESET, preview
+                        );
                     }
                 }
             }
@@ -561,17 +551,8 @@ impl WatchState {
                 continue;
             }
 
-            if let Some(content) = parsed["message"]["content"].as_array() {
-                for block in content {
-                    if block["type"].as_str() == Some("text") {
-                        if let Some(text) = block["text"].as_str() {
-                            let text = text.trim();
-                            if !text.is_empty() {
-                                prompts.push(text.to_string());
-                            }
-                        }
-                    }
-                }
+            for text in extract_content_texts(&parsed["message"]["content"]) {
+                prompts.push(text);
             }
         }
 
@@ -656,6 +637,31 @@ fn get_change_id(workdir: &Path, show_id: &str) -> Option<String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
     json["changeId"].as_str().map(|s| s.to_string())
+}
+
+/// Extract text strings from a message content value.
+/// Handles both the array-of-blocks format (`[{"type":"text","text":"..."}]`)
+/// and the plain-string format (`"the prompt text"`) used by Claude Code transcripts.
+fn extract_content_texts(content: &serde_json::Value) -> Vec<String> {
+    let mut texts = Vec::new();
+    if let Some(arr) = content.as_array() {
+        for block in arr {
+            if block["type"].as_str() == Some("text") {
+                if let Some(text) = block["text"].as_str() {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        texts.push(text.to_string());
+                    }
+                }
+            }
+        }
+    } else if let Some(s) = content.as_str() {
+        let s = s.trim();
+        if !s.is_empty() {
+            texts.push(s.to_string());
+        }
+    }
+    texts
 }
 
 fn truncate(s: &str, max: usize) -> String {

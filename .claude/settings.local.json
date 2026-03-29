@@ -27,7 +27,8 @@
       "Bash(sort -k5 -hr)",
       "Bash(grep:*)",
       "Bash(git -C /Users/schacon/projects/gmeta log --oneline -- docs/example-serialize.html)",
-      "Bash(git update-ref:*)"
+      "Bash(git update-ref:*)",
+      "Bash(sort -k6)"
     ]
   }
 }

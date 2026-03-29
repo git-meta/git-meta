@@ -346,6 +346,35 @@ pub fn run(verbose: bool) -> Result<()> {
         return Ok(());
     }
 
+    // ── Pre-filter by prune cutoff ────────────────────────────────────────
+    // If meta:prune:since is configured, drop entries older than the cutoff
+    // before building the tree. This avoids building a large tree only to
+    // prune it, and keeps the summary counts accurate.
+    let prune_since = db
+        .get("project", "", "meta:prune:since")?
+        .and_then(|(value, _, _)| serde_json::from_str::<String>(&value).ok());
+    let prune_rules = auto_prune::read_prune_rules(&db)?;
+    let prune_cutoff_ms = prune_since
+        .as_deref()
+        .map(parse_since_to_cutoff_ms)
+        .transpose()?;
+    let mut pruned_count = 0u64;
+    let metadata_entries = if let Some(cutoff) = prune_cutoff_ms {
+        metadata_entries
+            .into_iter()
+            .filter(|(target_type, _, _, _, _, ts, _)| {
+                if target_type != "project" && *ts < cutoff {
+                    pruned_count += 1;
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect()
+    } else {
+        metadata_entries
+    };
+
     // ── Read filter rules ───────────────────────────────────────────────────
     let filter_rules = parse_filter_rules(&db)?;
     if verbose && !filter_rules.is_empty() {
@@ -464,6 +493,9 @@ pub fn run(verbose: bool) -> Result<()> {
             total_meta, string_count, list_count, set_count, targets.len(),
             total_tombstones, total_set_tombstones, total_list_tombstones,
         );
+        if pruned_count > 0 {
+            eprintln!("  {} keys outside prune window", pruned_count);
+        }
         if excluded_count > 0 {
             eprintln!("  {} keys excluded by filters", excluded_count);
         }
@@ -547,7 +579,7 @@ pub fn run(verbose: bool) -> Result<()> {
 
         // Auto-prune only for main destination
         if dest == MAIN_DEST {
-            if let Some(prune_rules) = auto_prune::read_prune_rules(&db)? {
+            if let Some(ref prune_rules) = prune_rules {
                 if verbose {
                     eprintln!(
                         "[verbose] auto-prune rules: since={}, min_size={}",
