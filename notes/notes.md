@@ -1,5 +1,8 @@
 ## Notes
 
+- partial blob hydration on get
+- ability to set timestamp
+
 - namespaces (local, shared, internal, etc - push targets (none, remote)
   - materialize targets too
   - on conflicts, which wins?
