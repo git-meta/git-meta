@@ -63,7 +63,7 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
 
     // Hydrate tip tree blobs so libgit2 can read them
     let short_ref = format!("{}/remotes/main", ns);
-    git_utils::hydrate_tip_blobs(&repo, &remote_name, &short_ref)?;
+    git_utils::hydrate_tip_blobs(&repo, &remote_name, &short_ref, true)?;
 
     // Serialize local state so materialize can do a proper 3-way merge
     eprintln!("Serializing local metadata...");

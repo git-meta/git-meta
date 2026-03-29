@@ -137,21 +137,20 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
 
     // Initial blobless fetch
     let fetch_refspec = format!("refs/{ns}/main:refs/{ns}/remotes/main");
-    print!("Fetching metadata...");
-    match git_utils::run_git(
+    eprintln!("Fetching metadata...");
+    match git_utils::run_git_visible(
         &repo,
         &["fetch", "--filter=blob:none", name, &fetch_refspec],
     ) {
         Ok(_) => {
-            println!(" done.");
-
             // Hydrate tip tree blobs so libgit2 can read the metadata
+            eprintln!("Hydrating blobs...");
             let remote_ref = format!("{ns}/remotes/main");
-            git_utils::hydrate_tip_blobs(&repo, name, &remote_ref)?;
+            git_utils::hydrate_tip_blobs(&repo, name, &remote_ref, true)?;
         }
         Err(e) => {
             eprintln!(
-                "\nWarning: initial fetch failed: {}",
+                "Warning: initial fetch failed: {}",
                 e
             );
             eprintln!("You can fetch later with: git fetch {name}");

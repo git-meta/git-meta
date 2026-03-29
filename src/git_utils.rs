@@ -90,18 +90,34 @@ pub fn is_list_entry_name(name: &str) -> bool {
 /// Run a git CLI command in the repository's working directory.
 /// Returns stdout on success, or an error with stderr on failure.
 pub fn run_git(repo: &Repository, args: &[&str]) -> Result<String> {
+    run_git_inner(repo, args, false)
+}
+
+/// Like run_git, but inherits stderr so the user sees git's progress output.
+pub fn run_git_visible(repo: &Repository, args: &[&str]) -> Result<String> {
+    run_git_inner(repo, args, true)
+}
+
+fn run_git_inner(repo: &Repository, args: &[&str], inherit_stderr: bool) -> Result<String> {
     let workdir = repo
         .workdir()
         .or_else(|| Some(repo.path()))
         .context("cannot determine repository directory")?;
 
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(workdir)
-        .output()
-        .context("failed to run git command")?;
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(workdir);
+
+    if inherit_stderr {
+        cmd.stderr(std::process::Stdio::inherit());
+    }
+
+    let output = cmd.output().context("failed to run git command")?;
 
     if !output.status.success() {
+        if inherit_stderr {
+            // stderr was already shown to user
+            bail!("git {} failed", args.first().unwrap_or(&""));
+        }
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("git {} failed: {}", args.first().unwrap_or(&""), stderr.trim());
     }
@@ -132,7 +148,13 @@ pub fn list_meta_remotes(repo: &Repository) -> Result<Vec<(String, String)>> {
 
 /// Hydrate tip tree blobs for a blobless-fetched ref.
 /// This fetches all blob objects referenced by the tip tree so libgit2 can read them.
-pub fn hydrate_tip_blobs(repo: &Repository, remote_name: &str, ref_name: &str) -> Result<()> {
+/// When `visible` is true, git's stderr (progress) is shown to the user.
+pub fn hydrate_tip_blobs(
+    repo: &Repository,
+    remote_name: &str,
+    ref_name: &str,
+    visible: bool,
+) -> Result<()> {
     let blob_list = run_git(repo, &["ls-tree", "-r", "--object-only", ref_name]);
 
     if let Ok(blobs) = blob_list {
@@ -141,6 +163,12 @@ pub fn hydrate_tip_blobs(repo: &Repository, remote_name: &str, ref_name: &str) -
                 .workdir()
                 .or_else(|| Some(repo.path()))
                 .context("cannot determine repository directory")?;
+
+            let stderr_cfg = if visible {
+                std::process::Stdio::inherit()
+            } else {
+                std::process::Stdio::piped()
+            };
 
             let mut child = Command::new("git")
                 .args([
@@ -157,7 +185,7 @@ pub fn hydrate_tip_blobs(repo: &Repository, remote_name: &str, ref_name: &str) -
                 .current_dir(workdir)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::piped())
+                .stderr(stderr_cfg)
                 .spawn()?;
 
             if let Some(mut stdin) = child.stdin.take() {
@@ -167,8 +195,12 @@ pub fn hydrate_tip_blobs(repo: &Repository, remote_name: &str, ref_name: &str) -
 
             let output = child.wait_with_output()?;
             if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                eprintln!("Warning: blob hydration failed: {}", stderr.trim());
+                if visible {
+                    eprintln!("Warning: blob hydration failed");
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    eprintln!("Warning: blob hydration failed: {}", stderr.trim());
+                }
             }
         }
     }
