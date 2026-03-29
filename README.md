@@ -198,7 +198,7 @@ So, we're thinking about this sort of like the local tuple database is an "index
 
 The way we propose to do this is by "serializing" the values you want to share into a Git tree and creating a commit that points to that tree.
 
-It saves that new commit to `refs/meta/local/main` so it can be pushed. Other collaborators can fetch that head (into `refs/meta/remotes/origin`) and "materialize" the data - adding any new or updated values into their working database and so on.
+It saves that new commit to `refs/meta/local/main` so it can be pushed. Other collaborators can fetch that head (into `refs/meta/remotes/main`) and "materialize" the data - adding any new or updated values into their working database and so on.
 
 #### Serializing
 
