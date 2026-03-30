@@ -208,6 +208,88 @@ pub fn hydrate_tip_blobs(
     Ok(())
 }
 
+/// Look up a blob OID in a git tree by following a slash-separated path.
+/// Returns None if any path segment is missing. Trees are local (fetched even
+/// in blobless clones), so this works without network access.
+pub fn find_blob_oid_in_tree(
+    repo: &Repository,
+    tree: &git2::Tree,
+    path: &str,
+) -> Result<Option<git2::Oid>> {
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return Ok(None);
+    }
+
+    let mut current_tree = tree.clone();
+    for (i, segment) in segments.iter().enumerate() {
+        let (entry_id, entry_kind) = match current_tree.get_name(segment) {
+            Some(e) => (e.id(), e.kind()),
+            None => return Ok(None),
+        };
+
+        if i == segments.len() - 1 {
+            return Ok(Some(entry_id));
+        }
+
+        if entry_kind != Some(git2::ObjectType::Tree) {
+            return Ok(None);
+        }
+        current_tree = repo.find_tree(entry_id)?;
+    }
+
+    Ok(None)
+}
+
+/// Fetch specific blob OIDs from a remote. Similar to hydrate_tip_blobs but
+/// takes an explicit list of OIDs instead of discovering them via ls-tree.
+pub fn fetch_blob_oids(
+    repo: &Repository,
+    remote_name: &str,
+    oids: &[git2::Oid],
+) -> Result<()> {
+    if oids.is_empty() {
+        return Ok(());
+    }
+
+    let workdir = repo
+        .workdir()
+        .or_else(|| Some(repo.path()))
+        .context("cannot determine repository directory")?;
+
+    let oid_list: String = oids.iter().map(|o| format!("{}\n", o)).collect();
+
+    let mut child = Command::new("git")
+        .args([
+            "-c",
+            "fetch.negotiationAlgorithm=noop",
+            "fetch",
+            remote_name,
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--recurse-submodules=no",
+            "--filter=blob:none",
+            "--stdin",
+        ])
+        .current_dir(workdir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin.write_all(oid_list.as_bytes())?;
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        bail!("blob fetch failed");
+    }
+
+    Ok(())
+}
+
 /// Resolve a meta remote by name, or pick the first one if no name given.
 pub fn resolve_meta_remote(repo: &Repository, remote: Option<&str>) -> Result<String> {
     let meta_remotes = list_meta_remotes(repo)?;

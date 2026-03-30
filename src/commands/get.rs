@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 use crate::db::Db;
 use crate::git_utils;
 use crate::list_value::list_values_from_json;
-use crate::types::{Target, TargetType};
+use crate::types::{self, Target, TargetType};
 
 const NODE_VALUE_KEY: &str = "__value";
 
@@ -59,10 +59,31 @@ pub fn run(
         return Ok(());
     }
 
-    // Resolve git refs to actual values
+    // Hydrate any promised entries on demand
+    let promised: Vec<_> = entries
+        .iter()
+        .filter(|(_, _, _, _, _, is_promised)| *is_promised)
+        .map(|(tv, k, _, _, _, _)| (tv.clone(), k.clone()))
+        .collect();
+
+    if !promised.is_empty() {
+        let hydrated = hydrate_promised_entries(&repo, &db, &promised)?;
+        if hydrated > 0 {
+            // Re-query to get the now-resolved values
+            entries = db.get_all_with_target_prefix(
+                target.type_str(),
+                target.value_str(),
+                include_target_subtree,
+                key,
+            )?;
+        }
+    }
+
+    // Resolve git refs to actual values, skip any remaining promised entries
     let resolved: Vec<(String, String, String, String)> = entries
         .into_iter()
-        .map(|(entry_target_value, key, value, value_type, is_git_ref)| {
+        .filter(|(_, _, _, _, _, is_promised)| !is_promised)
+        .map(|(entry_target_value, key, value, value_type, is_git_ref, _)| {
             if is_git_ref {
                 let resolved_value = resolve_git_ref(&repo, &value)?;
                 // JSON-encode the resolved content to match normal string format
@@ -74,6 +95,10 @@ pub fn run(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    if resolved.is_empty() {
+        return Ok(());
+    }
+
     if json_output {
         print_json(&db, &target, &resolved, with_authorship)?;
     } else {
@@ -81,6 +106,139 @@ pub fn run(
     }
 
     Ok(())
+}
+
+/// Hydrate promised entries by looking up their blob OIDs in the tip tree
+/// and fetching the blobs from the remote. Returns the number hydrated.
+fn hydrate_promised_entries(
+    repo: &Repository,
+    db: &Db,
+    entries: &[(String, String)], // (target_value, key)
+) -> Result<usize> {
+    let ns = git_utils::get_namespace(repo)?;
+    let tracking_ref = format!("refs/{}/remotes/main", ns);
+
+    let tip_commit = match repo.find_reference(&tracking_ref) {
+        Ok(r) => r.peel_to_commit()?,
+        Err(_) => return Ok(0), // no remote tracking ref, can't hydrate
+    };
+    let tip_tree = tip_commit.tree()?;
+
+    // For each promised entry, find its blob OID in the tip tree
+    let mut to_fetch: Vec<(usize, git2::Oid, String)> = Vec::new(); // (index, oid, tree_path)
+    let mut not_found: Vec<usize> = Vec::new();
+
+    // We need to reconstruct Target objects to build tree paths.
+    // The target_type comes from the DB query context, but we only have target_value here.
+    // We need to also pass target_type. For now, we get it from the DB row.
+    // Actually, all entries in a single get call share the same target_type from the query.
+    // But we don't have that here. Let me work around this by trying to parse from DB.
+
+    // We'll look up each entry's target_type from the DB
+    for (idx, (target_value, key)) in entries.iter().enumerate() {
+        // Query the metadata table directly for the target_type
+        let target_type: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT target_type FROM metadata WHERE target_value = ?1 AND key = ?2 AND is_promised = 1",
+                rusqlite::params![target_value, key],
+                |row| row.get(0),
+            )
+            .ok();
+
+        let target_type = match target_type {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let target_str = if target_type == "project" {
+            "project".to_string()
+        } else {
+            format!("{}:{}", target_type, target_value)
+        };
+        let parsed_target = match Target::parse(&target_str) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        // Try string value first (__value blob)
+        let tree_path = match types::build_tree_path(&parsed_target, key) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        match git_utils::find_blob_oid_in_tree(repo, &tip_tree, &tree_path)? {
+            Some(oid) => to_fetch.push((idx, oid, tree_path)),
+            None => {
+                // Key doesn't exist in tip tree — it was deleted in a later commit
+                not_found.push(idx);
+            }
+        }
+    }
+
+    // Clean up entries that no longer exist in the tip
+    for idx in &not_found {
+        let (target_value, key) = &entries[*idx];
+        // Look up target_type again
+        let target_type: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT target_type FROM metadata WHERE target_value = ?1 AND key = ?2 AND is_promised = 1",
+                rusqlite::params![target_value, key],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(tt) = target_type {
+            db.delete_promised(&tt, target_value, key)?;
+        }
+    }
+
+    if to_fetch.is_empty() {
+        return Ok(0);
+    }
+
+    // Fetch all needed blobs in one call
+    let oids: Vec<git2::Oid> = to_fetch.iter().map(|(_, oid, _)| *oid).collect();
+    let remote_name = git_utils::resolve_meta_remote(repo, None)?;
+
+    eprintln!("Fetching {} value{} from remote...", oids.len(), if oids.len() == 1 { "" } else { "s" });
+    git_utils::fetch_blob_oids(repo, &remote_name, &oids)?;
+
+    // Now read each blob and update the DB
+    let mut hydrated = 0;
+    for (idx, oid, _tree_path) in &to_fetch {
+        let (target_value, key) = &entries[*idx];
+
+        let blob = match repo.find_blob(*oid) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let content = match std::str::from_utf8(blob.content()) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Look up target_type
+        let target_type: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT target_type FROM metadata WHERE target_value = ?1 AND key = ?2 AND is_promised = 1",
+                rusqlite::params![target_value, key],
+                |row| row.get(0),
+            )
+            .ok();
+        let target_type = match target_type {
+            Some(t) => t,
+            None => continue,
+        };
+
+        // Store as JSON-encoded string value
+        let json_value = serde_json::to_string(content)?;
+        db.resolve_promised(&target_type, target_value, key, &json_value, "string", false)?;
+        hydrated += 1;
+    }
+
+    Ok(hydrated)
 }
 
 /// Resolve a git blob SHA to its content as a UTF-8 string.

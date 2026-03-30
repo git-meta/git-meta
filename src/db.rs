@@ -127,6 +127,9 @@ impl Db {
                 UNIQUE(target_type, target_value, key, entry_name)
             );",
         )?;
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE metadata ADD COLUMN is_promised INTEGER NOT NULL DEFAULT 0;",
+        );
 
         Ok(())
     }
@@ -204,7 +207,7 @@ impl Db {
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, ?4, 'string', ?5, ?6)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
-                     SET value = excluded.value, value_type = 'string', last_timestamp = excluded.last_timestamp, is_git_ref = excluded.is_git_ref",
+                     SET value = excluded.value, value_type = 'string', last_timestamp = excluded.last_timestamp, is_git_ref = excluded.is_git_ref, is_promised = 0",
                     params![target_type, target_value, key, value, timestamp, git_ref_val],
                 )?;
 
@@ -231,7 +234,7 @@ impl Db {
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, '[]', 'list', ?4, 0)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
-                     SET value = '[]', value_type = 'list', last_timestamp = excluded.last_timestamp, is_git_ref = 0",
+                     SET value = '[]', value_type = 'list', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0",
                     params![target_type, target_value, key, timestamp],
                 )?;
 
@@ -273,7 +276,7 @@ impl Db {
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, '[]', 'set', ?4, 0)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
-                     SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp, is_git_ref = 0",
+                     SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0",
                     params![target_type, target_value, key, timestamp],
                 )?;
 
@@ -406,6 +409,8 @@ impl Db {
 
     /// Get all key/value pairs for a target, optionally filtered by key prefix.
     /// Returns (key, value, value_type, is_git_ref).
+    /// Note: promised entries are excluded from this wrapper — use get_all_with_target_prefix directly
+    /// if you need to see them.
     pub fn get_all(
         &self,
         target_type: &str,
@@ -415,26 +420,27 @@ impl Db {
         Ok(self
             .get_all_with_target_prefix(target_type, target_value, false, key_prefix)?
             .into_iter()
-            .map(|(_, key, value, value_type, is_git_ref)| (key, value, value_type, is_git_ref))
+            .filter(|(_, _, _, _, _, is_promised)| !is_promised)
+            .map(|(_, key, value, value_type, is_git_ref, _)| (key, value, value_type, is_git_ref))
             .collect())
     }
 
     /// Get all key/value pairs for a target or subtree, optionally filtered by key prefix.
-    /// Returns (target_value, key, value, value_type, is_git_ref).
+    /// Returns (target_value, key, value, value_type, is_git_ref, is_promised).
     pub fn get_all_with_target_prefix(
         &self,
         target_type: &str,
         target_value: &str,
         include_target_subtree: bool,
         key_prefix: Option<&str>,
-    ) -> Result<Vec<(String, String, String, String, bool)>> {
+    ) -> Result<Vec<(String, String, String, String, bool, bool)>> {
         let escaped_target = escape_like_pattern(target_value);
         let target_like = format!("{}/%", escaped_target);
 
         let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) =
             match (include_target_subtree, key_prefix) {
                 (false, Some(prefix)) => (
-                    "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
+                    "SELECT rowid, target_value, key, value, value_type, is_git_ref, is_promised FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2
                  AND (key = ?3 OR key LIKE ?4 ESCAPE '\\')
                  ORDER BY target_value, key",
@@ -446,7 +452,7 @@ impl Db {
                     ],
                 ),
                 (false, None) => (
-                    "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
+                    "SELECT rowid, target_value, key, value, value_type, is_git_ref, is_promised FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2
                  ORDER BY target_value, key",
                     vec![
@@ -455,7 +461,7 @@ impl Db {
                     ],
                 ),
                 (true, Some(prefix)) => (
-                    "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
+                    "SELECT rowid, target_value, key, value, value_type, is_git_ref, is_promised FROM metadata
                  WHERE target_type = ?1 AND (target_value = ?2 OR target_value LIKE ?3 ESCAPE '\\')
                  AND (key = ?4 OR key LIKE ?5 ESCAPE '\\')
                  ORDER BY target_value, key",
@@ -468,7 +474,7 @@ impl Db {
                     ],
                 ),
                 (true, None) => (
-                    "SELECT rowid, target_value, key, value, value_type, is_git_ref FROM metadata
+                    "SELECT rowid, target_value, key, value, value_type, is_git_ref, is_promised FROM metadata
                  WHERE target_type = ?1 AND (target_value = ?2 OR target_value LIKE ?3 ESCAPE '\\')
                  ORDER BY target_value, key",
                     vec![
@@ -490,25 +496,28 @@ impl Db {
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, bool>(5)?,
+                row.get::<_, bool>(6)?,
             ))
         })?;
 
         let mut results = Vec::new();
         for row in rows {
-            let (metadata_id, target_value, key, value, value_type, is_git_ref) = row?;
-            if value_type == "list" {
+            let (metadata_id, target_value, key, value, value_type, is_git_ref, is_promised) = row?;
+            if is_promised {
+                results.push((target_value, key, value, value_type, false, true));
+            } else if value_type == "list" {
                 let encoded = encode_list_entries_by_metadata_id(
                     &self.conn,
                     self.repo.as_ref(),
                     metadata_id,
                 )?;
-                results.push((target_value, key, encoded, value_type, false));
+                results.push((target_value, key, encoded, value_type, false, false));
             } else if value_type == "set" {
                 let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-                results.push((target_value, key, encoded, value_type, false));
+                results.push((target_value, key, encoded, value_type, false, false));
             } else {
                 let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
-                results.push((target_value, key, resolved, value_type, is_git_ref));
+                results.push((target_value, key, resolved, value_type, is_git_ref, false));
             }
         }
         Ok(results)
@@ -534,6 +543,58 @@ impl Db {
             .optional()?;
 
         Ok(result)
+    }
+
+    /// Insert a "promised" entry — we know this key exists in the remote history
+    /// but we haven't fetched the blob data yet. Uses INSERT OR IGNORE so existing
+    /// entries (e.g. from tip materialization) are never overwritten.
+    /// Returns Ok(true) if a row was inserted, Ok(false) if it already existed.
+    pub fn insert_promised(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        key: &str,
+        value_type: &str,
+    ) -> Result<bool> {
+        let rows = self.conn.execute(
+            "INSERT OR IGNORE INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref, is_promised)
+             VALUES (?1, ?2, ?3, '', ?4, 0, 0, 1)",
+            params![target_type, target_value, key, value_type],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// Resolve a promised entry by filling in the real value and clearing the flag.
+    pub fn resolve_promised(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        key: &str,
+        value: &str,
+        value_type: &str,
+        is_git_ref: bool,
+    ) -> Result<()> {
+        let git_ref_val: i64 = if is_git_ref { 1 } else { 0 };
+        self.conn.execute(
+            "UPDATE metadata SET value = ?4, value_type = ?5, is_git_ref = ?6, is_promised = 0
+             WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND is_promised = 1",
+            params![target_type, target_value, key, value, value_type, git_ref_val],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a promised entry (e.g. if the key no longer exists in the tip tree).
+    pub fn delete_promised(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        key: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND is_promised = 1",
+            params![target_type, target_value, key],
+        )?;
+        Ok(())
     }
 
     /// Remove a key.
@@ -1176,6 +1237,7 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT rowid, target_type, target_value, key, value, value_type, last_timestamp, is_git_ref
              FROM metadata
+             WHERE is_promised = 0
              ORDER BY target_type, target_value, key",
         )?;
 

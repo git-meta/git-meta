@@ -2086,6 +2086,265 @@ fn test_pull_merges_with_local_data() {
         .stdout(predicate::str::contains("hello"));
 }
 
+/// Build a bare repo with multiple gmeta serialize commits for promisor tests.
+/// Returns the bare TempDir. The repo has 2 commits:
+///   Commit 1 (older): project/old_key/__value = "old_value"
+///   Commit 2 (tip):   project/testing/__value = "hello"
+/// Commit 1's message lists: A\tproject\told_key
+/// Commit 2's message lists: A\tproject\ttesting
+fn setup_bare_with_history() -> TempDir {
+    let bare_dir = TempDir::new().unwrap();
+    let bare = git2::Repository::init_bare(bare_dir.path()).unwrap();
+    let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+
+    // --- Commit 1: project/old_key/__value = "old_value" ---
+    let blob1 = bare.blob(b"\"old_value\"").unwrap();
+    let mut val_tb = bare.treebuilder(None).unwrap();
+    val_tb.insert("__value", blob1, 0o100644).unwrap();
+    let val_tree = val_tb.write().unwrap();
+
+    let mut proj_tb = bare.treebuilder(None).unwrap();
+    proj_tb.insert("old_key", val_tree, 0o040000).unwrap();
+    let proj_tree = proj_tb.write().unwrap();
+
+    let mut root_tb = bare.treebuilder(None).unwrap();
+    root_tb.insert("project", proj_tree, 0o040000).unwrap();
+    let root_tree_oid = root_tb.write().unwrap();
+    let root_tree = bare.find_tree(root_tree_oid).unwrap();
+
+    let commit1_msg = "gmeta: serialize (1 changes)\n\nA\tproject\told_key";
+    let commit1 = bare
+        .commit(None, &sig, &sig, commit1_msg, &root_tree, &[])
+        .unwrap();
+    let commit1_obj = bare.find_commit(commit1).unwrap();
+
+    // --- Commit 2 (tip): project/testing/__value = "hello" (old_key removed) ---
+    let blob2 = bare.blob(b"\"hello\"").unwrap();
+    let mut val_tb2 = bare.treebuilder(None).unwrap();
+    val_tb2.insert("__value", blob2, 0o100644).unwrap();
+    let val_tree2 = val_tb2.write().unwrap();
+
+    let mut proj_tb2 = bare.treebuilder(None).unwrap();
+    proj_tb2.insert("testing", val_tree2, 0o040000).unwrap();
+    let proj_tree2 = proj_tb2.write().unwrap();
+
+    let mut root_tb2 = bare.treebuilder(None).unwrap();
+    root_tb2.insert("project", proj_tree2, 0o040000).unwrap();
+    let root_tree_oid2 = root_tb2.write().unwrap();
+    let root_tree2 = bare.find_tree(root_tree_oid2).unwrap();
+
+    let commit2_msg = "gmeta: serialize (1 changes)\n\nA\tproject\ttesting";
+    bare.commit(
+        Some("refs/meta/main"),
+        &sig,
+        &sig,
+        commit2_msg,
+        &root_tree2,
+        &[&commit1_obj],
+    )
+    .unwrap();
+
+    bare_dir
+}
+
+#[test]
+fn test_pull_inserts_promisor_entries() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_history();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    // Add remote and pull
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Indexed 1 keys from history"));
+
+    // The tip key (testing) should be available immediately
+    gmeta(dir.path())
+        .args(["get", "project", "testing"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+
+    // The historical key (old_key) was pruned from the tip tree, so it can't be hydrated.
+    // Get should silently skip it (promised but not resolvable in tip).
+    // Verify it doesn't crash.
+    gmeta(dir.path())
+        .args(["get", "project", "old_key"])
+        .assert()
+        .success();
+
+    // Verify the promisor entry exists in the DB by checking that the key shows
+    // up in get with --json for the full project target (it will be filtered out
+    // since it can't be hydrated, but the tip key should still work)
+    gmeta(dir.path())
+        .args(["get", "project", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("testing"))
+        .stdout(predicate::str::contains("hello"));
+}
+
+/// Build a bare repo where a key exists in both history and tip tree,
+/// but the tip commit message only lists the newer key.
+/// Commit 1: A project old_key (tree has project/old_key/__value)
+/// Commit 2: A project testing (tree has project/testing/__value AND project/old_key/__value)
+fn setup_bare_with_history_retained() -> TempDir {
+    let bare_dir = TempDir::new().unwrap();
+    let bare = git2::Repository::init_bare(bare_dir.path()).unwrap();
+    let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+
+    // --- Commit 1: project/old_key/__value = "old_value" ---
+    let blob1 = bare.blob(b"\"old_value\"").unwrap();
+    let mut val_tb = bare.treebuilder(None).unwrap();
+    val_tb.insert("__value", blob1, 0o100644).unwrap();
+    let val_tree = val_tb.write().unwrap();
+
+    let mut proj_tb = bare.treebuilder(None).unwrap();
+    proj_tb.insert("old_key", val_tree, 0o040000).unwrap();
+    let proj_tree = proj_tb.write().unwrap();
+
+    let mut root_tb = bare.treebuilder(None).unwrap();
+    root_tb.insert("project", proj_tree, 0o040000).unwrap();
+    let root_tree_oid = root_tb.write().unwrap();
+    let root_tree = bare.find_tree(root_tree_oid).unwrap();
+
+    let commit1_msg = "gmeta: serialize (1 changes)\n\nA\tproject\told_key";
+    let commit1 = bare
+        .commit(None, &sig, &sig, commit1_msg, &root_tree, &[])
+        .unwrap();
+    let commit1_obj = bare.find_commit(commit1).unwrap();
+
+    // --- Commit 2 (tip): has both old_key and testing ---
+    let blob2 = bare.blob(b"\"hello\"").unwrap();
+    let mut val_tb2 = bare.treebuilder(None).unwrap();
+    val_tb2.insert("__value", blob2, 0o100644).unwrap();
+    let val_tree2 = val_tb2.write().unwrap();
+
+    let mut proj_tb2 = bare.treebuilder(None).unwrap();
+    proj_tb2.insert("testing", val_tree2, 0o040000).unwrap();
+    proj_tb2.insert("old_key", val_tree, 0o040000).unwrap();
+    let proj_tree2 = proj_tb2.write().unwrap();
+
+    let mut root_tb2 = bare.treebuilder(None).unwrap();
+    root_tb2.insert("project", proj_tree2, 0o040000).unwrap();
+    let root_tree_oid2 = root_tb2.write().unwrap();
+    let root_tree2 = bare.find_tree(root_tree_oid2).unwrap();
+
+    // Only mention 'testing' in the tip commit — old_key was added in commit 1
+    let commit2_msg = "gmeta: serialize (1 changes)\n\nA\tproject\ttesting";
+    bare.commit(
+        Some("refs/meta/main"),
+        &sig,
+        &sig,
+        commit2_msg,
+        &root_tree2,
+        &[&commit1_obj],
+    )
+    .unwrap();
+
+    bare_dir
+}
+
+#[test]
+fn test_promisor_hydration_from_tip_tree() {
+    // old_key is in both the history and the tip tree, but tip commit only
+    // mentions 'testing'. Materialize processes the full tip tree, so old_key
+    // gets materialized as a real entry (not promised).
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_history_retained();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+
+    // Both keys should be available — old_key was in the tip tree so
+    // materialize handled it directly (not as a promisor entry)
+    gmeta(dir.path())
+        .args(["get", "project", "old_key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("old_value"));
+
+    gmeta(dir.path())
+        .args(["get", "project", "testing"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn test_promisor_entry_not_serialized() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_history();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    // Pull to get promisor entries
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+
+    // Serialize — should not include promised entries in the commit
+    gmeta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success();
+
+    // Verify the local ref tree doesn't contain old_key (it was promised, not materialized)
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let local_ref = repo.find_reference("refs/meta/local/main").unwrap();
+    let commit = local_ref.peel_to_commit().unwrap();
+    let tree = commit.tree().unwrap();
+
+    // The tree should have project/testing but not project/old_key
+    let project_entry = tree.get_name("project").unwrap();
+    let project_tree = repo.find_tree(project_entry.id()).unwrap();
+
+    assert!(
+        project_tree.get_name("testing").is_some(),
+        "tip key 'testing' should be in serialized tree"
+    );
+    assert!(
+        project_tree.get_name("old_key").is_none(),
+        "promised key 'old_key' should NOT be in serialized tree"
+    );
+}
+
+#[test]
+fn test_pull_tip_only_no_promisor_entries() {
+    // A single-commit remote should produce no promisor entries
+    let (dir, _sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    gmeta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    gmeta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success()
+        // Should NOT contain "Indexed" since there are no non-tip commits to parse
+        .stderr(predicate::str::contains("Indexed").not());
+}
+
 /// Copy all git objects from src repo into a bare repo (simulates push).
 fn copy_meta_objects(src: &git2::Repository, bare_dir: &TempDir) {
     let src_objects = src.path().join("objects");

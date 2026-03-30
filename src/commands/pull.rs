@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::commands::{materialize, serialize};
+use crate::db::Db;
 use crate::git_utils;
 
 pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
@@ -38,7 +39,7 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     // Check if we need to materialize even if no new commits were fetched
     // (e.g. remote add fetched but never materialized)
     let db_path = git_utils::db_path(&repo)?;
-    let db = crate::db::Db::open(&db_path)?;
+    let db = Db::open(&db_path)?;
     let needs_materialize = db.get_last_materialized()?.is_none()
         || repo.find_reference(&git_utils::local_ref(&repo)?).is_err();
 
@@ -73,8 +74,114 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     eprintln!("Materializing remote metadata...");
     materialize::run(None, false, verbose)?;
 
+    // Insert promisor entries from non-tip commits so we know what keys exist
+    // in the history even though we haven't fetched their blob data yet.
+    // On first materialize, walk the entire history (pass None as old_tip).
+    if let Some(new) = new_tip {
+        let walk_from = if needs_materialize { None } else { old_tip };
+        let promisor_count = insert_promisor_entries(&repo, &db, new, walk_from, verbose)?;
+        if promisor_count > 0 {
+            eprintln!("Indexed {} keys from history (available on demand).", promisor_count);
+        }
+    }
+
     println!("Pulled metadata from {}", remote_name);
     Ok(())
+}
+
+/// Parse the change list from a gmeta serialize commit message.
+/// Returns None if the message can't be parsed (not a gmeta commit, or changes omitted).
+/// Each entry is (op, target_type, target_value, key).
+fn parse_commit_changes(message: &str) -> Option<Vec<(char, String, String, String)>> {
+    if !message.starts_with("gmeta: serialize") {
+        return None;
+    }
+
+    // Find the body (after first blank line)
+    let body_start = message.find("\n\n")?;
+    let body = &message[body_start + 2..];
+
+    if body.contains("changes-omitted: true") {
+        return None;
+    }
+
+    let mut changes = Vec::new();
+    for line in body.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+        let op = parts[0].chars().next()?;
+        let target_label = parts[1];
+        let key = parts[2].to_string();
+
+        let (target_type, target_value) = if target_label == "project" {
+            ("project".to_string(), String::new())
+        } else if let Some((t, v)) = target_label.split_once(':') {
+            (t.to_string(), v.to_string())
+        } else {
+            continue;
+        };
+
+        changes.push((op, target_type, target_value, key));
+    }
+
+    Some(changes)
+}
+
+/// Walk non-tip commits and insert promisor entries for keys mentioned in their
+/// commit messages. Returns the number of new promisor entries inserted.
+fn insert_promisor_entries(
+    repo: &git2::Repository,
+    db: &Db,
+    tip_oid: git2::Oid,
+    old_tip: Option<git2::Oid>,
+    verbose: bool,
+) -> Result<usize> {
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push(tip_oid)?;
+    if let Some(old) = old_tip {
+        revwalk.hide(old)?;
+    }
+
+    let mut count = 0;
+    let mut is_tip = true;
+
+    for oid_result in revwalk {
+        let oid = oid_result?;
+
+        // Skip the tip commit — it was already fully materialized
+        if is_tip {
+            is_tip = false;
+            continue;
+        }
+
+        let commit = repo.find_commit(oid)?;
+        let message = commit.message().unwrap_or("");
+
+        if let Some(changes) = parse_commit_changes(message) {
+            for (op, target_type, target_value, key) in &changes {
+                if *op == 'D' {
+                    continue;
+                }
+                if db.insert_promised(target_type, target_value, key, "string")? {
+                    count += 1;
+                    if verbose {
+                        eprintln!(
+                            "[verbose] promisor: {} {}:{} {}",
+                            op, target_type, target_value, key
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(count)
 }
 
 /// Count commits reachable from `new` but not from `old`.
@@ -90,4 +197,40 @@ fn count_commits_between(repo: &git2::Repository, old: git2::Oid, new: git2::Oid
         return 0;
     }
     revwalk.count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_commit_changes_normal() {
+        let msg = "gmeta: serialize (3 changes)\n\n\
+                   A\tcommit:abc123\tagent:model\n\
+                   M\tproject\tmeta:prune:since\n\
+                   D\tbranch:main\treview:status";
+        let changes = parse_commit_changes(msg).unwrap();
+        assert_eq!(changes.len(), 3);
+        assert_eq!(changes[0], ('A', "commit".into(), "abc123".into(), "agent:model".into()));
+        assert_eq!(changes[1], ('M', "project".into(), String::new(), "meta:prune:since".into()));
+        assert_eq!(changes[2], ('D', "branch".into(), "main".into(), "review:status".into()));
+    }
+
+    #[test]
+    fn test_parse_commit_changes_omitted() {
+        let msg = "gmeta: serialize (5000 changes)\n\nchanges-omitted: true\ncount: 5000";
+        assert!(parse_commit_changes(msg).is_none());
+    }
+
+    #[test]
+    fn test_parse_commit_changes_non_gmeta() {
+        let msg = "Initial commit\n\nSome body text";
+        assert!(parse_commit_changes(msg).is_none());
+    }
+
+    #[test]
+    fn test_parse_commit_changes_no_body() {
+        let msg = "gmeta: serialize (0 changes)";
+        assert!(parse_commit_changes(msg).is_none());
+    }
 }
