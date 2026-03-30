@@ -26,8 +26,8 @@ pub fn run(
     timeline: bool,
     promisor: bool,
 ) -> Result<()> {
-    let repo = git_utils::discover_repo()?;
-    let db_path = git_utils::db_path(&repo)?;
+    let repo = git_utils::discover_gix_repo()?;
+    let db_path = git_utils::gix_db_path(&repo)?;
     let db = Db::open(&db_path)?;
 
     if promisor {
