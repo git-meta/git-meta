@@ -80,12 +80,12 @@ impl Target {
     }
 
     /// If this is a commit target with a partial SHA, expand it to 40 chars
-    /// using the given Git repository.
-    pub fn resolve(&mut self, repo: &git2::Repository) -> anyhow::Result<()> {
+    /// using the given git2 repository.
+    pub fn git2_resolve(&mut self, repo: &git2::Repository) -> anyhow::Result<()> {
         if self.target_type == TargetType::Commit {
             if let Some(ref v) = self.value {
                 if v.len() < 40 {
-                    let full = crate::git_utils::resolve_commit_sha(repo, v)?;
+                    let full = crate::git_utils::git2_resolve_commit_sha(repo, v)?;
                     self.value = Some(full);
                 }
             }
@@ -94,12 +94,12 @@ impl Target {
     }
 
     /// If this is a commit target with a partial SHA, expand it to 40 chars
-    /// using a gix repository.
-    pub fn gix_resolve(&mut self, repo: &gix::Repository) -> anyhow::Result<()> {
+    /// using the given Git repository.
+    pub fn resolve(&mut self, repo: &gix::Repository) -> anyhow::Result<()> {
         if self.target_type == TargetType::Commit {
             if let Some(ref v) = self.value {
                 if v.len() < 40 {
-                    let full = crate::git_utils::gix_resolve_commit_sha(repo, v)?;
+                    let full = crate::git_utils::resolve_commit_sha(repo, v)?;
                     self.value = Some(full);
                 }
             }

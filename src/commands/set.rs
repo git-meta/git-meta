@@ -22,10 +22,10 @@ fn open_context(
     let mut target = Target::parse(target_str)?;
     validate_key(key)?;
 
-    let repo = git_utils::discover_gix_repo()?;
-    target.gix_resolve(&repo)?;
-    let db_path = git_utils::gix_db_path(&repo)?;
-    let email = git_utils::gix_get_email(&repo)?;
+    let repo = git_utils::discover_repo()?;
+    target.resolve(&repo)?;
+    let db_path = git_utils::db_path(&repo)?;
+    let email = git_utils::get_email(&repo)?;
     let timestamp = timestamp_override.unwrap_or_else(|| Utc::now().timestamp_millis());
     let db = Db::open(&db_path)?;
 
@@ -82,7 +82,7 @@ pub fn run(
         from_file && matches!(value_type, ValueType::String) && raw_value.len() > GIT_REF_THRESHOLD;
 
     if use_git_ref {
-        let repo = git_utils::discover_repo()?;
+        let repo = git_utils::git2_discover_repo()?;
         let blob_oid = repo.blob(raw_value.as_bytes())?;
         ctx.db.set_with_git_ref(
             None,

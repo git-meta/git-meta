@@ -8,8 +8,8 @@ use crate::types::validate_key;
 const CONFIG_PREFIX: &str = "meta:";
 
 pub fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str>) -> Result<()> {
-    let repo = git_utils::discover_gix_repo()?;
-    let db_path = git_utils::gix_db_path(&repo)?;
+    let repo = git_utils::discover_repo()?;
+    let db_path = git_utils::db_path(&repo)?;
     let db = Db::open(&db_path)?;
 
     if list {
@@ -44,7 +44,7 @@ fn validate_config_key(key: &str) -> Result<()> {
 }
 
 fn run_set(repo: &gix::Repository, db: &Db, key: &str, value: &str) -> Result<()> {
-    let email = git_utils::gix_get_email(repo)?;
+    let email = git_utils::get_email(repo)?;
     let timestamp = Utc::now().timestamp_millis();
     let stored_value = serde_json::to_string(value)?;
 
@@ -87,7 +87,7 @@ fn run_list(db: &Db) -> Result<()> {
 }
 
 fn run_unset(repo: &gix::Repository, db: &Db, key: &str) -> Result<()> {
-    let email = git_utils::gix_get_email(repo)?;
+    let email = git_utils::get_email(repo)?;
     let timestamp = Utc::now().timestamp_millis();
 
     let removed = db.rm("project", "", key, &email, timestamp)?;
