@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use git2::Repository;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Discover the Git repository from the current directory.
@@ -302,6 +302,109 @@ pub fn resolve_meta_remote(repo: &Repository, remote: Option<&str>) -> Result<St
             }
         }
         None => Ok(meta_remotes[0].0.clone()),
+    }
+}
+
+// ── gix-based helpers ────────────────────────────────────────────────────────
+
+/// Discover the Git repository from the current directory using gix.
+pub fn discover_gix_repo() -> Result<gix::Repository> {
+    let repo =
+        gix::discover(".").context("not a git repository (or any parent up to mount point)")?;
+    Ok(repo)
+}
+
+/// Get the path to the gmeta SQLite database (gix version).
+pub fn gix_db_path(repo: &gix::Repository) -> Result<PathBuf> {
+    Ok(repo.git_dir().join("gmeta.sqlite"))
+}
+
+/// Get the user's email from Git config (gix version).
+pub fn gix_get_email(repo: &gix::Repository) -> Result<String> {
+    let config = repo.config_snapshot();
+    Ok(config
+        .string("user.email")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string()))
+}
+
+/// Get the user's name from Git config (gix version).
+pub fn gix_get_name(repo: &gix::Repository) -> Result<String> {
+    let config = repo.config_snapshot();
+    Ok(config
+        .string("user.name")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string()))
+}
+
+/// Get the meta namespace from Git config (gix version).
+pub fn gix_get_namespace(repo: &gix::Repository) -> Result<String> {
+    let config = repo.config_snapshot();
+    Ok(config
+        .string("meta.namespace")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "meta".to_string()))
+}
+
+/// Get the local ref name for serialization (gix version).
+pub fn gix_local_ref(repo: &gix::Repository) -> Result<String> {
+    let ns = gix_get_namespace(repo)?;
+    Ok(format!("refs/{}/local/main", ns))
+}
+
+/// Get the ref name for a named destination (gix version).
+pub fn gix_destination_ref(repo: &gix::Repository, destination: &str) -> Result<String> {
+    let ns = gix_get_namespace(repo)?;
+    Ok(format!("refs/{}/local/{}", ns, destination))
+}
+
+/// Get the ref pattern for remote metadata (gix version).
+#[allow(dead_code)]
+pub fn gix_remote_ref(repo: &gix::Repository, remote: &str) -> Result<String> {
+    let ns = gix_get_namespace(repo)?;
+    Ok(format!("refs/{}/{}", ns, remote))
+}
+
+/// Run a git CLI command in the repository's working directory (gix version).
+pub fn gix_run_git(repo: &gix::Repository, args: &[&str]) -> Result<String> {
+    let workdir = repo.workdir().unwrap_or_else(|| repo.git_dir());
+
+    gix_run_git_in(workdir, args)
+}
+
+fn gix_run_git_in(workdir: &Path, args: &[&str]) -> Result<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(workdir)
+        .output()
+        .context("failed to run git command")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "git {} failed: {}",
+            args.first().unwrap_or(&""),
+            stderr.trim()
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Expand a partial commit SHA to the full 40-char hex string (gix version).
+pub fn gix_resolve_commit_sha(repo: &gix::Repository, partial: &str) -> Result<String> {
+    let obj = repo
+        .rev_parse_single(partial.as_bytes())
+        .with_context(|| format!("could not resolve commit: {}", partial))?;
+    let id = obj.detach();
+    // Verify it's a commit by peeling
+    let object = repo.find_object(id)?;
+    if object.kind != gix::object::Kind::Commit {
+        // Try peeling tags etc.
+        let peeled = object.peel_to_kind(gix::object::Kind::Commit)?;
+        Ok(peeled.id.to_string())
+    } else {
+        Ok(id.to_string())
     }
 }
 
