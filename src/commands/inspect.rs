@@ -167,7 +167,15 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
     let all = db.get_all_metadata()?;
 
     // Filter to target type
-    let mut entries: Vec<&(String, String, String, String, String, i64, bool)> = all
+    let mut entries: Vec<&(
+        String,
+        String,
+        String,
+        String,
+        crate::types::ValueType,
+        i64,
+        bool,
+    )> = all
         .iter()
         .filter(|(tt, _, _, _, _, _, _)| tt == target_type)
         .collect();
@@ -183,7 +191,8 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
         entries.retain(|(_tt, tv, key, value, vtype, _, _)| {
             fuzzy_matches(&lower_term, tv)
                 || fuzzy_matches(&lower_term, key)
-                || (vtype == "string" && fuzzy_matches(&lower_term, &decode_string_value(value)))
+                || (*vtype == crate::types::ValueType::String
+                    && fuzzy_matches(&lower_term, &decode_string_value(value)))
         });
     }
 
@@ -196,8 +205,18 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
     let term_width = terminal_width();
 
     // Group by target_value
-    let mut by_target: BTreeMap<&str, Vec<&(String, String, String, String, String, i64, bool)>> =
-        BTreeMap::new();
+    let mut by_target: BTreeMap<
+        &str,
+        Vec<&(
+            String,
+            String,
+            String,
+            String,
+            crate::types::ValueType,
+            i64,
+            bool,
+        )>,
+    > = BTreeMap::new();
     for entry in &entries {
         by_target.entry(&entry.1).or_default().push(entry);
     }
@@ -302,10 +321,11 @@ fn run_timeline(db: &Db) -> Result<()> {
 /// Format a value for one-line display, fitting within available width.
 fn format_value_oneline(
     value: &str,
-    value_type: &str,
+    value_type: &crate::types::ValueType,
     term_width: usize,
     key_len: usize,
 ) -> String {
+    use crate::types::ValueType;
     // 2 spaces indent + key + 2 spaces gap = overhead
     let overhead = 2 + key_len + 2;
     let available = if term_width > overhead + 5 {
@@ -315,7 +335,7 @@ fn format_value_oneline(
     };
 
     match value_type {
-        "string" => {
+        ValueType::String => {
             let raw = decode_string_value(value);
             let first_line = raw.lines().next().unwrap_or("");
             let has_more = raw.contains('\n') && raw.trim_end_matches('\n') != first_line;
@@ -329,7 +349,7 @@ fn format_value_oneline(
             }
             s
         }
-        "list" => {
+        ValueType::List => {
             if let Ok(items) = list_values_from_json(value) {
                 format!("[list: {} items]", items.len())
             } else if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(value) {
@@ -338,18 +358,11 @@ fn format_value_oneline(
                 "[list]".to_string()
             }
         }
-        "set" => {
+        ValueType::Set => {
             if let Ok(members) = serde_json::from_str::<Vec<String>>(value) {
                 format!("[set: {} members]", members.len())
             } else {
                 "[set]".to_string()
-            }
-        }
-        _ => {
-            if value.len() > available {
-                format!("{}...", &value[..available.saturating_sub(3)])
-            } else {
-                value.to_string()
             }
         }
     }

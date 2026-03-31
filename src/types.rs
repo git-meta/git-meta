@@ -21,7 +21,7 @@ impl TargetType {
         }
     }
 
-    fn from_str(s: &str) -> Result<Self> {
+    pub fn from_str(s: &str) -> Result<Self> {
         match s {
             "commit" => Ok(TargetType::Commit),
             "change-id" => Ok(TargetType::ChangeId),
@@ -29,6 +29,17 @@ impl TargetType {
             "path" => Ok(TargetType::Path),
             "project" => Ok(TargetType::Project),
             _ => bail!("unknown target type: {}", s),
+        }
+    }
+
+    /// Returns the English plural form of this target type for display.
+    pub fn pluralize(&self) -> &str {
+        match self {
+            TargetType::Commit => "commits",
+            TargetType::ChangeId => "change-ids",
+            TargetType::Branch => "branches",
+            TargetType::Path => "paths",
+            TargetType::Project => "project",
         }
     }
 }
@@ -158,6 +169,26 @@ impl ValueType {
             "list" => Ok(ValueType::List),
             "set" => Ok(ValueType::Set),
             _ => bail!("unknown value type: {}", s),
+        }
+    }
+}
+
+/// Supported import source formats.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportFormat {
+    /// Import the entire git history.
+    Entire,
+    /// Import from git-ai format.
+    GitAi,
+}
+
+impl ImportFormat {
+    /// Parse an import format string.
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "entire" => Ok(ImportFormat::Entire),
+            "git-ai" => Ok(ImportFormat::GitAi),
+            _ => bail!("unsupported import format: {}", s),
         }
     }
 }

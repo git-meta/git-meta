@@ -104,7 +104,10 @@ fn main() -> Result<()> {
             format,
             dry_run,
             since,
-        } => commands::import::run(&format, dry_run, since.as_deref()),
+        } => {
+            let fmt = types::ImportFormat::from_str(&format)?;
+            commands::import::run(fmt, dry_run, since.as_deref())
+        }
 
         Commands::Show { commit } => commands::show::run(&commit),
 

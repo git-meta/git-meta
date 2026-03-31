@@ -8,8 +8,8 @@ use crate::types::{
     build_list_entry_tombstone_tree_path, build_list_tree_dir_path,
     build_set_member_tombstone_tree_path, build_set_tree_dir_path, build_tombstone_tree_path,
     build_tree_path, decode_key_path_segments, decode_path_target_segments, set_member_id, Target,
-    LIST_VALUE_DIR, PATH_TARGET_SEPARATOR, SET_VALUE_DIR, STRING_VALUE_BLOB, TOMBSTONE_BLOB,
-    TOMBSTONE_ROOT,
+    TargetType, ValueType, LIST_VALUE_DIR, PATH_TARGET_SEPARATOR, SET_VALUE_DIR, STRING_VALUE_BLOB,
+    TOMBSTONE_BLOB, TOMBSTONE_ROOT,
 };
 use anyhow::Result;
 
@@ -165,7 +165,7 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
                 remote_entries.set_tombstones.len()
             );
             for ((tt, tv, k), val) in &remote_entries.values {
-                let target = format_target_for_display(tt, tv);
+                let target = format_target_for_display(&TargetType::from_str(tt)?, tv);
                 let val_desc = match val {
                     TreeValue::String(s) => {
                         if s.len() > 50 {
@@ -180,7 +180,7 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
                 eprintln!("  {} {} -> {}", target, k, val_desc);
             }
             for ((tt, tv, k), tomb) in &remote_entries.tombstones {
-                let target = format_target_for_display(tt, tv);
+                let target = format_target_for_display(&TargetType::from_str(tt)?, tv);
                 eprintln!(
                     "  {} {} -> tombstone [ts={}, by={}]",
                     target, k, tomb.timestamp, tomb.email
@@ -326,15 +326,16 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
             for key in local_entries.values.keys() {
                 if !remote_entries.values.contains_key(key) {
                     let (target_type, target_value, key_name) = key;
+                    let tt = TargetType::from_str(target_type)?;
                     if verbose {
                         eprintln!(
                             "[verbose] applying implicit delete for {} {}",
-                            format_target_for_display(target_type, target_value),
+                            format_target_for_display(&tt, target_value),
                             key_name
                         );
                     }
                     ctx.db
-                        .apply_tombstone(target_type, target_value, key_name, email, now)?;
+                        .apply_tombstone(&tt, target_value, key_name, email, now)?;
                 }
             }
 
@@ -611,15 +612,16 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
                 for key in base_values.keys() {
                     if !merged_values.contains_key(key) && !merged_tombstones.contains_key(key) {
                         let (target_type, target_value, key_name) = key;
+                        let tt = TargetType::from_str(target_type)?;
                         if verbose {
                             eprintln!(
                                 "[verbose] applying legacy delete for {} {}",
-                                format_target_for_display(target_type, target_value),
+                                format_target_for_display(&tt, target_value),
                                 key_name
                             );
                         }
                         ctx.db
-                            .apply_tombstone(target_type, target_value, key_name, email, now)?;
+                            .apply_tombstone(&tt, target_value, key_name, email, now)?;
                     }
                 }
             }
@@ -692,21 +694,22 @@ fn update_db_from_tree(
     use crate::types::GIT_REF_THRESHOLD;
 
     for ((target_type, target_value, key_name), tree_val) in values {
+        let tt = TargetType::from_str(target_type)?;
         match tree_val {
             TreeValue::String(s) => {
                 if s.len() > GIT_REF_THRESHOLD {
                     // Large value: store as git blob reference
                     let blob_oid = repo.blob(s.as_bytes())?;
                     let oid_str = blob_oid.to_string();
-                    let existing = db.get(target_type, target_value, key_name)?;
+                    let existing = db.get(&tt, target_value, key_name)?;
                     if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&oid_str) {
                         db.set_with_git_ref(
                             None,
-                            target_type,
+                            &tt,
                             target_value,
                             key_name,
                             &oid_str,
-                            "string",
+                            &ValueType::String,
                             email,
                             now,
                             true,
@@ -714,14 +717,14 @@ fn update_db_from_tree(
                     }
                 } else {
                     let json_val = serde_json::to_string(s)?;
-                    let existing = db.get(target_type, target_value, key_name)?;
+                    let existing = db.get(&tt, target_value, key_name)?;
                     if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
                         db.set(
-                            target_type,
+                            &tt,
                             target_value,
                             key_name,
                             &json_val,
-                            "string",
+                            &ValueType::String,
                             email,
                             now,
                         )?;
@@ -753,14 +756,14 @@ fn update_db_from_tree(
                     });
                 }
                 let json_val = encode_entries(&items)?;
-                let existing = db.get(target_type, target_value, key_name)?;
+                let existing = db.get(&tt, target_value, key_name)?;
                 if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
                     db.set(
-                        target_type,
+                        &tt,
                         target_value,
                         key_name,
                         &json_val,
-                        "list",
+                        &ValueType::List,
                         email,
                         now,
                     )?;
@@ -785,14 +788,14 @@ fn update_db_from_tree(
                     .collect();
                 visible.sort();
                 let json_val = serde_json::to_string(&visible)?;
-                let existing = db.get(target_type, target_value, key_name)?;
+                let existing = db.get(&tt, target_value, key_name)?;
                 if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
                     db.set(
-                        target_type,
+                        &tt,
                         target_value,
                         key_name,
                         &json_val,
-                        "set",
+                        &ValueType::Set,
                         email,
                         now,
                     )?;
@@ -805,13 +808,8 @@ fn update_db_from_tree(
         if values.contains_key(key) {
             continue;
         }
-        db.apply_tombstone(
-            &key.0,
-            &key.1,
-            &key.2,
-            &tombstone.email,
-            tombstone.timestamp,
-        )?;
+        let tt = TargetType::from_str(&key.0)?;
+        db.apply_tombstone(&tt, &key.1, &key.2, &tombstone.email, tombstone.timestamp)?;
     }
 
     Ok(())
@@ -828,10 +826,11 @@ fn collect_db_changes_from_tree(
     let mut planned = Vec::new();
 
     for ((target_type, target_value, key_name), tree_val) in values {
+        let tt = TargetType::from_str(target_type)?;
         match tree_val {
             TreeValue::String(s) => {
                 let json_val = serde_json::to_string(s)?;
-                let existing = db.get(target_type, target_value, key_name)?;
+                let existing = db.get(&tt, target_value, key_name)?;
                 if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
                     planned.push(PlannedDbChange::Set {
                         target_type: target_type.clone(),
@@ -867,7 +866,7 @@ fn collect_db_changes_from_tree(
                     });
                 }
                 let json_val = encode_entries(&items)?;
-                let existing = db.get(target_type, target_value, key_name)?;
+                let existing = db.get(&tt, target_value, key_name)?;
                 if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
                     planned.push(PlannedDbChange::Set {
                         target_type: target_type.clone(),
@@ -902,7 +901,7 @@ fn collect_db_changes_from_tree(
                     .collect();
                 visible.sort();
                 let json_val = serde_json::to_string(&visible)?;
-                let existing = db.get(target_type, target_value, key_name)?;
+                let existing = db.get(&tt, target_value, key_name)?;
                 if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
                     planned.push(PlannedDbChange::Set {
                         target_type: target_type.clone(),
@@ -976,12 +975,14 @@ fn print_dry_run_report(
                     value_type,
                     value_preview,
                 } => {
+                    let target_display = if target_type == "project" {
+                        "project".to_string()
+                    } else {
+                        format!("{}:{}", target_type, target_value)
+                    };
                     println!(
                         "  set {} {} ({}) = {}",
-                        format_target_for_display(target_type, target_value),
-                        key,
-                        value_type,
-                        value_preview
+                        target_display, key, value_type, value_preview
                     );
                 }
                 PlannedDbChange::Remove {
@@ -989,27 +990,33 @@ fn print_dry_run_report(
                     target_value,
                     key,
                 } => {
-                    println!(
-                        "  rm {} {}",
-                        format_target_for_display(target_type, target_value),
-                        key
-                    );
+                    let target_display = if target_type == "project" {
+                        "project".to_string()
+                    } else {
+                        format!("{}:{}", target_type, target_value)
+                    };
+                    println!("  rm {} {}", target_display, key);
                 }
             }
         }
     }
 }
 
-fn format_target_for_display(target_type: &str, target_value: &str) -> String {
-    if target_type == "project" {
+fn format_target_for_display(target_type: &TargetType, target_value: &str) -> String {
+    if *target_type == TargetType::Project {
         "project".to_string()
     } else {
-        format!("{}:{}", target_type, target_value)
+        format!("{}:{}", target_type.as_str(), target_value)
     }
 }
 
 fn format_key_for_display(key: &Key) -> String {
-    format!("{} {}", format_target_for_display(&key.0, &key.1), key.2)
+    let target_display = if key.0 == "project" {
+        "project".to_string()
+    } else {
+        format!("{}:{}", key.0, key.1)
+    };
+    format!("{} {}", target_display, key.2)
 }
 
 /// Three-way merge: base vs local vs remote.

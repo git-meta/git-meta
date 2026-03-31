@@ -48,7 +48,8 @@ pub fn run() -> Result<()> {
         let grouped = group_keys_by_integer_pattern(keys);
 
         let total: u64 = grouped.values().sum();
-        let plural = pluralize_target_type(target_type);
+        let tt = crate::types::TargetType::from_str(target_type)?;
+        let plural = tt.pluralize();
         println!("{}: {} keys", plural, total);
 
         // Sort keys by count descending, then alphabetically
@@ -105,17 +106,6 @@ fn group_keys_by_integer_pattern(keys: &BTreeMap<String, u64>) -> BTreeMap<Strin
         }
     }
     result
-}
-
-fn pluralize_target_type(t: &str) -> &str {
-    match t {
-        "commit" => "commits",
-        "branch" => "branches",
-        "change-id" => "change-ids",
-        "path" => "paths",
-        "project" => "project",
-        _ => t,
-    }
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ use std::io::Write;
 use std::time::Instant;
 
 use crate::db::Db;
+use crate::types::{TargetType, ValueType};
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -186,7 +187,7 @@ fn do_serialize(repo: &git2::Repository, db: &Db, ref_name: &str) -> Result<()> 
 /// (which is all we insert in this bench).
 fn build_bench_tree(
     repo: &git2::Repository,
-    metadata_entries: &[(String, String, String, String, String, i64, bool)],
+    metadata_entries: &[(String, String, String, String, ValueType, i64, bool)],
 ) -> Result<git2::Oid> {
     use crate::types::{build_tree_path, Target};
     use std::collections::BTreeMap;
@@ -194,7 +195,7 @@ fn build_bench_tree(
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
     for (target_type, target_value, key, value, value_type, _ts, is_git_ref) in metadata_entries {
-        if value_type != "string" {
+        if *value_type != ValueType::String {
             continue;
         }
         let target = if target_type == "project" {
@@ -316,11 +317,11 @@ pub fn run(rounds: usize) -> Result<()> {
             let json_value = serde_json::to_string(&value)?;
 
             db.set(
-                "commit",
+                &TargetType::Commit,
                 &sha,
                 &key,
                 &json_value,
-                "string",
+                &ValueType::String,
                 "bench@bench",
                 timestamp_base + i as i64,
             )?;

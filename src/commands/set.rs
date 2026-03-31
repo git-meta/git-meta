@@ -60,11 +60,11 @@ pub fn run(
         let blob_oid = git2_repo.blob(raw_value.as_bytes())?;
         ctx.db.set_with_git_ref(
             None,
-            target.type_str(),
+            &target.target_type,
             target.value_str(),
             key,
             &blob_oid.to_string(),
-            value_type.as_str(),
+            &value_type,
             &ctx.email,
             ctx.timestamp,
             true,
@@ -83,11 +83,11 @@ pub fn run(
         };
 
         ctx.db.set(
-            target.type_str(),
+            &target.target_type,
             target.value_str(),
             key,
             &stored_value,
-            value_type.as_str(),
+            &value_type,
             &ctx.email,
             ctx.timestamp,
         )?;
@@ -111,7 +111,7 @@ pub fn run_add(
     ctx.resolve_target(&mut target)?;
 
     ctx.db.set_add(
-        target.type_str(),
+        &target.target_type,
         target.value_str(),
         key,
         value,
@@ -136,7 +136,7 @@ pub fn run_rm(
     ctx.resolve_target(&mut target)?;
 
     ctx.db.set_rm(
-        target.type_str(),
+        &target.target_type,
         target.value_str(),
         key,
         value,

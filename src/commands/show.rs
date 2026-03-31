@@ -7,6 +7,7 @@ use chrono::{TimeZone, Utc};
 use git2::Repository;
 
 use crate::context::CommandContext;
+use crate::types::{TargetType, ValueType};
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -103,7 +104,10 @@ pub fn run(commit_ref: &str) -> Result<()> {
     let mut meta_entries: Vec<(String, String, String)> = Vec::new(); // (source, key, display_value)
 
     // Metadata on commit:<sha>
-    let commit_entries = ctx.db.get_all("commit", &sha, None).unwrap_or_default();
+    let commit_entries = ctx
+        .db
+        .get_all(&TargetType::Commit, &sha, None)
+        .unwrap_or_default();
     for (key, value, value_type, _is_git_ref) in &commit_entries {
         let display = format_meta_value(value, value_type);
         meta_entries.push(("commit".to_string(), key.clone(), display));
@@ -111,7 +115,10 @@ pub fn run(commit_ref: &str) -> Result<()> {
 
     // Metadata on change-id:<cid>
     if let Some(ref cid) = change_id {
-        let cid_entries = ctx.db.get_all("change-id", cid, None).unwrap_or_default();
+        let cid_entries = ctx
+            .db
+            .get_all(&TargetType::ChangeId, cid, None)
+            .unwrap_or_default();
         for (key, value, value_type, _is_git_ref) in &cid_entries {
             let display = format_meta_value(value, value_type);
             meta_entries.push(("change-id".to_string(), key.clone(), display));
@@ -130,24 +137,25 @@ pub fn run(commit_ref: &str) -> Result<()> {
 }
 
 /// Format a stored metadata value for display.
-fn format_meta_value(value: &str, value_type: &str) -> String {
+fn format_meta_value(value: &str, value_type: &ValueType) -> String {
     match value_type {
-        "string" => serde_json::from_str::<String>(value).unwrap_or_else(|_| value.to_string()),
-        "list" => {
+        ValueType::String => {
+            serde_json::from_str::<String>(value).unwrap_or_else(|_| value.to_string())
+        }
+        ValueType::List => {
             if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(value) {
                 format!("[list: {} items]", arr.len())
             } else {
                 value.to_string()
             }
         }
-        "set" => {
+        ValueType::Set => {
             if let Ok(arr) = serde_json::from_str::<Vec<String>>(value) {
                 format!("[set: {} members]", arr.len())
             } else {
                 value.to_string()
             }
         }
-        _ => value.to_string(),
     }
 }
 

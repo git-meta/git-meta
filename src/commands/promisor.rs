@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 
 use crate::context::CommandContext;
+use crate::types::{TargetType, ValueType};
 
 pub fn run() -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
@@ -67,9 +68,10 @@ pub fn run() -> Result<()> {
                         skipped_deletes += 1;
                         continue;
                     }
+                    let tt = TargetType::from_str(target_type)?;
                     if ctx
                         .db
-                        .insert_promised(target_type, target_value, key, "string")?
+                        .insert_promised(&tt, target_value, key, &ValueType::String)?
                     {
                         commit_inserted += 1;
                         inserted += 1;
@@ -98,9 +100,10 @@ pub fn run() -> Result<()> {
                 let mut commit_skipped = 0;
 
                 for (target_type, target_value, key) in &keys {
+                    let tt = TargetType::from_str(target_type)?;
                     if ctx
                         .db
-                        .insert_promised(target_type, target_value, key, "string")?
+                        .insert_promised(&tt, target_value, key, &ValueType::String)?
                     {
                         commit_inserted += 1;
                         inserted += 1;

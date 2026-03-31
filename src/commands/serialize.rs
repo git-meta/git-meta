@@ -11,7 +11,7 @@ use crate::list_value::{make_entry_name, parse_entries};
 use crate::types::{
     build_list_entry_tombstone_tree_path, build_list_tree_dir_path,
     build_set_member_tombstone_tree_path, build_set_tree_dir_path, build_tombstone_tree_path,
-    build_tree_path, Target,
+    build_tree_path, Target, TargetType, ValueType,
 };
 
 #[derive(serde::Serialize)]
@@ -46,8 +46,8 @@ pub fn parse_filter_rules(db: &Db) -> Result<Vec<FilterRule>> {
     let mut rules = Vec::new();
 
     // meta:local:filter rules first (higher priority)
-    if let Some((value, value_type, _)) = db.get("project", "", "meta:local:filter")? {
-        if value_type == "set" {
+    if let Some((value, value_type, _)) = db.get(&TargetType::Project, "", "meta:local:filter")? {
+        if value_type == ValueType::Set {
             let members: Vec<String> = serde_json::from_str(&value)?;
             for member in members {
                 rules.push(parse_rule(&member)?);
@@ -56,8 +56,8 @@ pub fn parse_filter_rules(db: &Db) -> Result<Vec<FilterRule>> {
     }
 
     // Then meta:filter rules (shared/corporate)
-    if let Some((value, value_type, _)) = db.get("project", "", "meta:filter")? {
-        if value_type == "set" {
+    if let Some((value, value_type, _)) = db.get(&TargetType::Project, "", "meta:filter")? {
+        if value_type == ValueType::Set {
             let members: Vec<String> = serde_json::from_str(&value)?;
             for member in members {
                 rules.push(parse_rule(&member)?);
@@ -372,7 +372,7 @@ pub fn run(verbose: bool) -> Result<()> {
     // prune it, and keeps the summary counts accurate.
     let prune_since = ctx
         .db
-        .get("project", "", "meta:prune:since")?
+        .get(&TargetType::Project, "", "meta:prune:since")?
         .and_then(|(value, _, _)| serde_json::from_str::<String>(&value).ok());
     let prune_rules = auto::read_prune_rules(&ctx.db)?;
     let prune_cutoff_ms = prune_since
@@ -404,7 +404,7 @@ pub fn run(verbose: bool) -> Result<()> {
         }
     }
 
-    type MetaEntry = (String, String, String, String, String, i64, bool);
+    type MetaEntry = (String, String, String, String, ValueType, i64, bool);
     type TombEntry = (String, String, String, i64, String);
     type SetTombEntry = (String, String, String, String, String, i64, String);
     type ListTombEntry = (String, String, String, String, i64, String);
@@ -501,11 +501,10 @@ pub fn run(verbose: bool) -> Result<()> {
                     )
                 };
                 targets.insert(label);
-                match value_type.as_str() {
-                    "string" => string_count += 1,
-                    "list" => list_count += 1,
-                    "set" => set_count += 1,
-                    _ => {}
+                match value_type {
+                    ValueType::String => string_count += 1,
+                    ValueType::List => list_count += 1,
+                    ValueType::Set => set_count += 1,
                 }
             }
         }
@@ -722,7 +721,7 @@ pub fn run(verbose: bool) -> Result<()> {
 /// Used by `gmeta prune` to rebuild a tree from only the surviving entries.
 pub fn build_filtered_tree(
     repo: &git2::Repository,
-    metadata_entries: &[(String, String, String, String, String, i64, bool)],
+    metadata_entries: &[(String, String, String, String, ValueType, i64, bool)],
     tombstone_entries: &[(String, String, String, i64, String)],
     set_tombstone_entries: &[(String, String, String, String, String, i64, String)],
     list_tombstone_entries: &[(String, String, String, String, i64, String)],
@@ -745,7 +744,7 @@ pub fn build_filtered_tree(
 /// from the existing tree by OID.
 fn build_tree(
     repo: &git2::Repository,
-    metadata_entries: &[(String, String, String, String, String, i64, bool)],
+    metadata_entries: &[(String, String, String, String, ValueType, i64, bool)],
     tombstone_entries: &[(String, String, String, i64, String)],
     set_tombstone_entries: &[(String, String, String, String, String, i64, String)],
     list_tombstone_entries: &[(String, String, String, String, i64, String)],
@@ -774,8 +773,8 @@ fn build_tree(
             }
         }
 
-        match value_type.as_str() {
-            "string" => {
+        match value_type {
+            ValueType::String => {
                 let full_path = build_tree_path(&target, key)?;
                 if *is_git_ref {
                     let oid = git2::Oid::from_str(value)?;
@@ -805,7 +804,7 @@ fn build_tree(
                     files.insert(full_path, raw_value.into_bytes());
                 }
             }
-            "list" => {
+            ValueType::List => {
                 let list_entries = parse_entries(value).context("failed to decode list value")?;
                 let list_dir_path = build_list_tree_dir_path(&target, key)?;
                 if verbose {
@@ -821,7 +820,7 @@ fn build_tree(
                     files.insert(full_path, entry.value.into_bytes());
                 }
             }
-            "set" => {
+            ValueType::Set => {
                 let members: Vec<String> =
                     serde_json::from_str(value).context("failed to decode set value")?;
                 let set_dir_path = build_set_tree_dir_path(&target, key)?;
@@ -838,7 +837,6 @@ fn build_tree(
                     files.insert(full_path, member.into_bytes());
                 }
             }
-            _ => {}
         }
     }
 

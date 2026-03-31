@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Utc;
 
 use crate::db::Db;
+use crate::types::TargetType;
 
 /// Parsed auto-prune rules from project metadata.
 pub struct PruneRules {
@@ -51,7 +52,7 @@ pub fn read_prune_rules(db: &Db) -> Result<Option<PruneRules>> {
 }
 
 fn read_config_string(db: &Db, key: &str) -> Result<Option<String>> {
-    match db.get("project", "", key)? {
+    match db.get(&TargetType::Project, "", key)? {
         Some((value, _, _)) => {
             let s: String = serde_json::from_str(&value)?;
             Ok(Some(s))

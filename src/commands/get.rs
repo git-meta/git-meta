@@ -6,7 +6,7 @@ use crate::context::CommandContext;
 use crate::db::Db;
 use crate::git_utils;
 use crate::list_value::list_values_from_json;
-use crate::types::{self, Target, TargetType};
+use crate::types::{self, Target, TargetType, ValueType};
 
 const NODE_VALUE_KEY: &str = "__value";
 
@@ -24,7 +24,7 @@ pub fn run(
 
     let include_target_subtree = target.target_type == TargetType::Path;
     let mut entries = ctx.db.get_all_with_target_prefix(
-        target.type_str(),
+        &target.target_type,
         target.value_str(),
         include_target_subtree,
         key,
@@ -35,12 +35,12 @@ pub fn run(
     if entries.is_empty() && target.target_type != TargetType::Path {
         let matches =
             ctx.db
-                .find_target_values_by_prefix(target.type_str(), target.value_str(), 2)?;
+                .find_target_values_by_prefix(&target.target_type, target.value_str(), 2)?;
         if matches.len() == 1 {
             let expanded = &matches[0];
-            entries = ctx
-                .db
-                .get_all_with_target_prefix(target.type_str(), expanded, false, key)?;
+            entries =
+                ctx.db
+                    .get_all_with_target_prefix(&target.target_type, expanded, false, key)?;
             if !entries.is_empty() {
                 eprintln!("expanded to {}:{}", target.type_str(), expanded);
             }
@@ -65,11 +65,11 @@ pub fn run(
         .collect();
 
     if !promised.is_empty() {
-        let hydrated = hydrate_promised_entries(repo, &ctx.db, target.type_str(), &promised)?;
+        let hydrated = hydrate_promised_entries(repo, &ctx.db, &target.target_type, &promised)?;
         if hydrated > 0 {
             // Re-query to get the now-resolved values
             entries = ctx.db.get_all_with_target_prefix(
-                target.type_str(),
+                &target.target_type,
                 target.value_str(),
                 include_target_subtree,
                 key,
@@ -78,7 +78,7 @@ pub fn run(
     }
 
     // Resolve git refs to actual values, skip any remaining promised entries
-    let resolved: Vec<(String, String, String, String)> = entries
+    let resolved: Vec<(String, String, String, ValueType)> = entries
         .into_iter()
         .filter(|(_, _, _, _, _, is_promised)| !is_promised)
         .map(
@@ -113,7 +113,7 @@ pub fn run(
 fn hydrate_promised_entries(
     repo: &Repository,
     db: &Db,
-    target_type: &str,
+    target_type: &TargetType,
     entries: &[(String, String)], // (target_value, key)
 ) -> Result<usize> {
     let ns = git_utils::git2_get_namespace(repo)?;
@@ -129,17 +129,17 @@ fn hydrate_promised_entries(
     struct PendingEntry {
         idx: usize,
         oids: Vec<git2::Oid>,
-        value_type: String, // "string", "list", or "set"
+        value_type: ValueType,
     }
 
     let mut pending: Vec<PendingEntry> = Vec::new();
     let mut not_found: Vec<usize> = Vec::new();
 
     for (idx, (target_value, key)) in entries.iter().enumerate() {
-        let target_str = if target_type == "project" {
+        let target_str = if *target_type == TargetType::Project {
             "project".to_string()
         } else {
-            format!("{}:{}", target_type, target_value)
+            format!("{}:{}", target_type.as_str(), target_value)
         };
         let parsed_target = match Target::parse(&target_str) {
             Ok(t) => t,
@@ -152,7 +152,7 @@ fn hydrate_promised_entries(
                 pending.push(PendingEntry {
                     idx,
                     oids: vec![oid],
-                    value_type: "string".to_string(),
+                    value_type: ValueType::String,
                 });
                 continue;
             }
@@ -177,7 +177,7 @@ fn hydrate_promised_entries(
                         pending.push(PendingEntry {
                             idx,
                             oids,
-                            value_type: "list".to_string(),
+                            value_type: ValueType::List,
                         });
                         continue;
                     }
@@ -204,7 +204,7 @@ fn hydrate_promised_entries(
                         pending.push(PendingEntry {
                             idx,
                             oids,
-                            value_type: "set".to_string(),
+                            value_type: ValueType::Set,
                         });
                         continue;
                     }
@@ -252,8 +252,8 @@ fn hydrate_promised_entries(
     for entry in &pending {
         let (target_value, key) = &entries[entry.idx];
 
-        match entry.value_type.as_str() {
-            "string" => {
+        match entry.value_type {
+            ValueType::String => {
                 let oid = entry.oids[0];
                 let blob = match repo.find_blob(oid) {
                     Ok(b) => b,
@@ -264,10 +264,17 @@ fn hydrate_promised_entries(
                     Err(_) => continue,
                 };
                 let json_value = serde_json::to_string(content)?;
-                db.resolve_promised(target_type, target_value, key, &json_value, "string", false)?;
+                db.resolve_promised(
+                    target_type,
+                    target_value,
+                    key,
+                    &json_value,
+                    &ValueType::String,
+                    false,
+                )?;
                 hydrated += 1;
             }
-            "list" => {
+            ValueType::List => {
                 // Read all list entry blobs, build JSON array
                 let mut list_entries = Vec::new();
                 for oid in &entry.oids {
@@ -278,10 +285,17 @@ fn hydrate_promised_entries(
                     }
                 }
                 let json_value = serde_json::to_string(&list_entries)?;
-                db.resolve_promised(target_type, target_value, key, &json_value, "list", false)?;
+                db.resolve_promised(
+                    target_type,
+                    target_value,
+                    key,
+                    &json_value,
+                    &ValueType::List,
+                    false,
+                )?;
                 hydrated += 1;
             }
-            "set" => {
+            ValueType::Set => {
                 // Read all set member blobs, build JSON array
                 let mut set_members = Vec::new();
                 for oid in &entry.oids {
@@ -293,10 +307,16 @@ fn hydrate_promised_entries(
                 }
                 set_members.sort();
                 let json_value = serde_json::to_string(&set_members)?;
-                db.resolve_promised(target_type, target_value, key, &json_value, "set", false)?;
+                db.resolve_promised(
+                    target_type,
+                    target_value,
+                    key,
+                    &json_value,
+                    &ValueType::Set,
+                    false,
+                )?;
                 hydrated += 1;
             }
-            _ => {}
         }
     }
 
@@ -325,7 +345,7 @@ fn truncate_str(s: &str, max: usize) -> String {
 
 fn print_plain(
     target: &Target,
-    entries: &[(String, String, String, String)],
+    entries: &[(String, String, String, ValueType)],
     value_only: bool,
 ) -> Result<()> {
     if value_only {
@@ -358,53 +378,51 @@ fn print_plain(
 }
 
 /// Single-key mode: raw string value, or one line per list/set item.
-fn print_value_only(value: &str, value_type: &str) -> Result<()> {
+fn print_value_only(value: &str, value_type: &ValueType) -> Result<()> {
     match value_type {
-        "string" => {
+        ValueType::String => {
             let s: String = serde_json::from_str(value)?;
             println!("{}", s);
         }
-        "list" => {
+        ValueType::List => {
             for item in list_values_from_json(value)? {
                 println!("{}", item);
             }
         }
-        "set" => {
+        ValueType::Set => {
             let mut set: Vec<String> = serde_json::from_str(value)?;
             set.sort();
             for item in set {
                 println!("{}", item);
             }
         }
-        _ => println!("{}", value),
     }
     Ok(())
 }
 
 /// Multi-key mode: compact one-line representation.
-fn format_value_compact(value: &str, value_type: &str) -> Result<String> {
+fn format_value_compact(value: &str, value_type: &ValueType) -> Result<String> {
     match value_type {
-        "string" => {
+        ValueType::String => {
             let s: String = serde_json::from_str(value)?;
             Ok(s)
         }
-        "list" => {
+        ValueType::List => {
             let list = list_values_from_json(value)?;
             Ok(list.join(", "))
         }
-        "set" => {
+        ValueType::Set => {
             let mut set: Vec<String> = serde_json::from_str(value)?;
             set.sort();
             Ok(set.join(", "))
         }
-        _ => Ok(value.to_string()),
     }
 }
 
 fn print_json(
     db: &Db,
     target: &Target,
-    entries: &[(String, String, String, String)],
+    entries: &[(String, String, String, ValueType)],
     with_authorship: bool,
 ) -> Result<()> {
     let mut root = Map::new();
@@ -413,7 +431,7 @@ fn print_json(
         let parsed_value = parse_stored_value(value, value_type)?;
 
         let leaf_value = if with_authorship {
-            let authorship = db.get_authorship(target.type_str(), entry_target_value, key)?;
+            let authorship = db.get_authorship(&target.target_type, entry_target_value, key)?;
             let (author, timestamp) = authorship.unwrap_or_else(|| ("unknown".to_string(), 0));
             json!({
                 "value": parsed_value,
@@ -441,22 +459,21 @@ fn print_json(
     Ok(())
 }
 
-fn parse_stored_value(value: &str, value_type: &str) -> Result<Value> {
+fn parse_stored_value(value: &str, value_type: &ValueType) -> Result<Value> {
     match value_type {
-        "string" => {
+        ValueType::String => {
             let s: String = serde_json::from_str(value)?;
             Ok(Value::String(s))
         }
-        "list" => {
+        ValueType::List => {
             let list = list_values_from_json(value)?;
             Ok(Value::Array(list.into_iter().map(Value::String).collect()))
         }
-        "set" => {
+        ValueType::Set => {
             let mut set: Vec<String> = serde_json::from_str(value)?;
             set.sort();
             Ok(Value::Array(set.into_iter().map(Value::String).collect()))
         }
-        _ => Ok(serde_json::from_str(value)?),
     }
 }
 
