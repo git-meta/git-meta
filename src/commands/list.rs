@@ -11,7 +11,7 @@ pub fn run_push(target_str: &str, key: &str, value: &str) -> Result<()> {
     ctx.resolve_target(&mut target)?;
 
     ctx.db.list_push(
-        target.type_str(),
+        &target.target_type,
         target.value_str(),
         key,
         value,
@@ -31,7 +31,7 @@ pub fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
 
     let entries = ctx
         .db
-        .list_entries(target.type_str(), target.value_str(), key)?;
+        .list_entries(&target.target_type, target.value_str(), key)?;
 
     match index {
         None => {
@@ -51,7 +51,7 @@ pub fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
         }
         Some(idx) => {
             ctx.db.list_rm(
-                target.type_str(),
+                &target.target_type,
                 target.value_str(),
                 key,
                 idx,
@@ -72,7 +72,7 @@ pub fn run_pop(target_str: &str, key: &str, value: &str) -> Result<()> {
     ctx.resolve_target(&mut target)?;
 
     ctx.db.list_pop(
-        target.type_str(),
+        &target.target_type,
         target.value_str(),
         key,
         value,

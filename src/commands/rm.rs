@@ -11,7 +11,7 @@ pub fn run(target_str: &str, key: &str) -> Result<()> {
     ctx.resolve_target(&mut target)?;
 
     let removed = ctx.db.rm(
-        target.type_str(),
+        &target.target_type,
         target.value_str(),
         key,
         &ctx.email,

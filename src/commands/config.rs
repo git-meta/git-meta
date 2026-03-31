@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 
 use crate::context::CommandContext;
 use crate::db::Db;
-use crate::types::validate_key;
+use crate::types::{validate_key, TargetType, ValueType};
 
 const CONFIG_PREFIX: &str = "meta:";
 
@@ -44,11 +44,11 @@ fn run_set(ctx: &CommandContext, key: &str, value: &str) -> Result<()> {
     let stored_value = serde_json::to_string(value)?;
 
     ctx.db.set(
-        "project",
+        &TargetType::Project,
         "",
         key,
         &stored_value,
-        "string",
+        &ValueType::String,
         &ctx.email,
         ctx.timestamp,
     )?;
@@ -56,7 +56,7 @@ fn run_set(ctx: &CommandContext, key: &str, value: &str) -> Result<()> {
 }
 
 fn run_get(db: &Db, key: &str) -> Result<()> {
-    let result = db.get("project", "", key)?;
+    let result = db.get(&TargetType::Project, "", key)?;
     if let Some((value, _value_type, _is_git_ref)) = result {
         let s: String = serde_json::from_str(&value)?;
         println!("{}", s);
@@ -67,10 +67,10 @@ fn run_get(db: &Db, key: &str) -> Result<()> {
 fn run_list(db: &Db) -> Result<()> {
     // Use "meta" (without trailing colon) as the prefix, since get_all
     // appends ":" for LIKE matching: "meta" → matches "meta" OR "meta:%"
-    let entries = db.get_all("project", "", Some("meta"))?;
+    let entries = db.get_all(&TargetType::Project, "", Some("meta"))?;
     for (key, value, value_type, _is_git_ref) in entries {
-        let display = match value_type.as_str() {
-            "string" => {
+        let display = match value_type {
+            ValueType::String => {
                 let s: String = serde_json::from_str(&value)?;
                 s
             }
@@ -82,7 +82,9 @@ fn run_list(db: &Db) -> Result<()> {
 }
 
 fn run_unset(ctx: &CommandContext, key: &str) -> Result<()> {
-    let removed = ctx.db.rm("project", "", key, &ctx.email, ctx.timestamp)?;
+    let removed = ctx
+        .db
+        .rm(&TargetType::Project, "", key, &ctx.email, ctx.timestamp)?;
     if !removed {
         eprintln!("key '{}' not found", key);
     }

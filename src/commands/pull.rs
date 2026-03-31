@@ -4,7 +4,7 @@ use crate::commands::{materialize, serialize};
 use crate::context::CommandContext;
 use crate::db::Db;
 use crate::git_utils;
-use crate::types;
+use crate::types::{self, TargetType, ValueType};
 
 pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
@@ -189,16 +189,20 @@ fn insert_promisor_entries(
 
         match parse_commit_changes(message) {
             Some(changes) => {
-                for (op, target_type, target_value, key) in &changes {
+                for (op, target_type_str, target_value, key) in &changes {
                     if *op == 'D' {
                         continue;
                     }
-                    if db.insert_promised(target_type, target_value, key, "string")? {
+                    let target_type = TargetType::from_str(target_type_str)?;
+                    if db.insert_promised(&target_type, target_value, key, &ValueType::String)? {
                         count += 1;
                         if verbose {
                             eprintln!(
                                 "[verbose] promisor: {} {}:{} {}",
-                                op, target_type, target_value, key
+                                op,
+                                target_type.as_str(),
+                                target_value,
+                                key
                             );
                         }
                     }
@@ -208,13 +212,16 @@ fn insert_promisor_entries(
                 // Root commit without a change list — walk its tree to discover keys
                 let tree = commit.tree()?;
                 let keys = extract_keys_from_tree(repo, &tree)?;
-                for (target_type, target_value, key) in &keys {
-                    if db.insert_promised(target_type, target_value, key, "string")? {
+                for (target_type_str, target_value, key) in &keys {
+                    let target_type = TargetType::from_str(target_type_str)?;
+                    if db.insert_promised(&target_type, target_value, key, &ValueType::String)? {
                         count += 1;
                         if verbose {
                             eprintln!(
                                 "[verbose] promisor (tree): {}:{} {}",
-                                target_type, target_value, key
+                                target_type.as_str(),
+                                target_value,
+                                key
                             );
                         }
                     }

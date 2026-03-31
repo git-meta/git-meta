@@ -12,6 +12,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::context::CommandContext;
 use crate::db::Db;
 use crate::git_utils;
+use crate::types::{TargetType, ValueType};
 
 // ANSI colors
 const BOLD: &str = "\x1b[1m";
@@ -485,7 +486,15 @@ impl WatchState {
                             .or_insert(ts);
                         let branch_id = format!("{}@{}", branch_name, first_seen);
                         let value = serde_json::to_string(&branch_id)?;
-                        db.set("change-id", cid, "branch:id", &value, "string", &email, ts)?;
+                        db.set(
+                            &TargetType::ChangeId,
+                            cid,
+                            "branch:id",
+                            &value,
+                            &ValueType::String,
+                            &email,
+                            ts,
+                        )?;
 
                         let short_cid = &cid[..16.min(cid.len())];
                         eprintln!(
@@ -500,7 +509,7 @@ impl WatchState {
                             for prompt in prompts {
                                 db.list_push_with_repo(
                                     Some(&repo),
-                                    "change-id",
+                                    &TargetType::ChangeId,
                                     cid,
                                     "agent:prompts",
                                     &prompt,
@@ -602,7 +611,7 @@ impl WatchState {
 
         db.list_push_with_repo(
             Some(&repo),
-            "branch",
+            &TargetType::Branch,
             &branch_id,
             "agent:transcripts",
             &transcript_content,

@@ -3,6 +3,7 @@ use dialoguer::{Confirm, Input, Select};
 
 use super::auto::{parse_size, read_prune_rules};
 use crate::context::CommandContext;
+use crate::types::{TargetType, ValueType};
 
 pub fn run() -> Result<()> {
     let ctx = CommandContext::open_gix(None)?;
@@ -175,7 +176,7 @@ pub fn run() -> Result<()> {
         Some(ref v) => set_config(&ctx, "meta:prune:max-keys", v)?,
         None => {
             ctx.db.rm(
-                "project",
+                &TargetType::Project,
                 "",
                 "meta:prune:max-keys",
                 &ctx.email,
@@ -187,7 +188,7 @@ pub fn run() -> Result<()> {
         Some(ref v) => set_config(&ctx, "meta:prune:max-size", v)?,
         None => {
             ctx.db.rm(
-                "project",
+                &TargetType::Project,
                 "",
                 "meta:prune:max-size",
                 &ctx.email,
@@ -199,7 +200,7 @@ pub fn run() -> Result<()> {
         Some(ref v) => set_config(&ctx, "meta:prune:min-size", v)?,
         None => {
             ctx.db.rm(
-                "project",
+                &TargetType::Project,
                 "",
                 "meta:prune:min-size",
                 &ctx.email,
@@ -215,11 +216,11 @@ pub fn run() -> Result<()> {
 fn set_config(ctx: &CommandContext, key: &str, value: &str) -> Result<()> {
     let stored = serde_json::to_string(value)?;
     ctx.db.set(
-        "project",
+        &TargetType::Project,
         "",
         key,
         &stored,
-        "string",
+        &ValueType::String,
         &ctx.email,
         ctx.timestamp,
     )?;

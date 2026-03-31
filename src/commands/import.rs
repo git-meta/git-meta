@@ -6,9 +6,9 @@ use serde_json::Value;
 
 use crate::context::CommandContext;
 use crate::db::Db;
-use crate::types::GIT_REF_THRESHOLD;
+use crate::types::{ImportFormat, TargetType, ValueType, GIT_REF_THRESHOLD};
 
-pub fn run(format: &str, dry_run: bool, since: Option<&str>) -> Result<()> {
+pub fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<()> {
     let since_epoch = match since {
         Some(date_str) => {
             let date =
@@ -22,9 +22,8 @@ pub fn run(format: &str, dry_run: bool, since: Option<&str>) -> Result<()> {
     };
 
     match format {
-        "entire" => run_entire(dry_run, since_epoch),
-        "git-ai" => run_git_ai(dry_run, since_epoch),
-        _ => bail!("unsupported import format: {}", format),
+        ImportFormat::Entire => run_entire(dry_run, since_epoch),
+        ImportFormat::GitAi => run_git_ai(dry_run, since_epoch),
     }
 }
 
@@ -162,7 +161,8 @@ fn import_checkpoints_from_commits(
 
             // Skip if already imported
             if let Some(db) = db {
-                if let Ok(Some(_)) = db.get("commit", &commit_sha, "agent:checkpoint-id") {
+                if let Ok(Some(_)) = db.get(&TargetType::Commit, &commit_sha, "agent:checkpoint-id")
+                {
                     skipped += 1;
                     continue;
                 }
@@ -208,11 +208,11 @@ fn import_checkpoints_from_commits(
                 repo,
                 db,
                 dry_run,
-                "commit",
+                &TargetType::Commit,
                 &commit_sha,
                 "agent:checkpoint-id",
                 &json_string(checkpoint_id),
-                "string",
+                &ValueType::String,
                 email,
                 ts,
             )?;
@@ -237,11 +237,11 @@ fn import_checkpoints_from_commits(
                             repo,
                             db,
                             dry_run,
-                            "commit",
+                            &TargetType::Commit,
                             &commit_sha,
                             &key,
                             &json_val,
-                            "string",
+                            &ValueType::String,
                             email,
                             ts,
                         )?;
@@ -320,7 +320,16 @@ fn import_session(
                 let key = format!("{}:{}", key_prefix, gmeta_key);
                 let json_val = json_encode_value(val)?;
                 count += set_value(
-                    repo, db, dry_run, "commit", commit_sha, &key, &json_val, "string", email, *ts,
+                    repo,
+                    db,
+                    dry_run,
+                    &TargetType::Commit,
+                    commit_sha,
+                    &key,
+                    &json_val,
+                    &ValueType::String,
+                    email,
+                    *ts,
                 )?;
                 *ts += 1;
             }
@@ -337,7 +346,16 @@ fn import_session(
                 let key = format!("{}:{}", key_prefix, gmeta_key);
                 let json_val = json_encode_value(val)?;
                 count += set_value(
-                    repo, db, dry_run, "commit", commit_sha, &key, &json_val, "string", email, *ts,
+                    repo,
+                    db,
+                    dry_run,
+                    &TargetType::Commit,
+                    commit_sha,
+                    &key,
+                    &json_val,
+                    &ValueType::String,
+                    email,
+                    *ts,
                 )?;
                 *ts += 1;
             }
@@ -351,11 +369,11 @@ fn import_session(
             repo,
             db,
             dry_run,
-            "commit",
+            &TargetType::Commit,
             commit_sha,
             &key,
             &json_string(&content),
-            "string",
+            &ValueType::String,
             email,
             *ts,
         )?;
@@ -368,7 +386,16 @@ fn import_session(
         if !content.trim().is_empty() {
             let json_val = json_string(&content);
             count += set_value(
-                repo, db, dry_run, "commit", commit_sha, &key, &json_val, "string", email, *ts,
+                repo,
+                db,
+                dry_run,
+                &TargetType::Commit,
+                commit_sha,
+                &key,
+                &json_val,
+                &ValueType::String,
+                email,
+                *ts,
             )?;
             *ts += 1;
         }
@@ -381,11 +408,11 @@ fn import_session(
             repo,
             db,
             dry_run,
-            "commit",
+            &TargetType::Commit,
             commit_sha,
             &key,
             &json_string(content.trim()),
-            "string",
+            &ValueType::String,
             email,
             *ts,
         )?;
@@ -415,11 +442,11 @@ fn import_session(
                     repo,
                     db,
                     dry_run,
-                    "commit",
+                    &TargetType::Commit,
                     commit_sha,
                     &key,
                     &json_string(&content),
-                    "string",
+                    &ValueType::String,
                     email,
                     *ts,
                 )?;
@@ -455,8 +482,16 @@ fn import_session(
                             }
                             let encoded = crate::list_value::encode_entries(&entries)?;
                             count += set_value(
-                                repo, db, dry_run, "commit", commit_sha, &key, &encoded, "list",
-                                email, *ts,
+                                repo,
+                                db,
+                                dry_run,
+                                &TargetType::Commit,
+                                commit_sha,
+                                &key,
+                                &encoded,
+                                &ValueType::List,
+                                email,
+                                *ts,
                             )?;
                             *ts += lines.len() as i64 + 1;
                         }
@@ -590,11 +625,11 @@ fn import_trails(
                 repo,
                 db,
                 dry_run,
-                "branch",
+                &TargetType::Branch,
                 &branch_uuid,
                 "review:trail-id",
                 &json_string(&trail_id),
-                "string",
+                &ValueType::String,
                 email,
                 ts,
             )?;
@@ -611,11 +646,11 @@ fn import_trails(
                         repo,
                         db,
                         dry_run,
-                        "branch",
+                        &TargetType::Branch,
                         &branch_uuid,
                         &key,
                         &json_val,
-                        "string",
+                        &ValueType::String,
                         email,
                         ts,
                     )?;
@@ -632,11 +667,11 @@ fn import_trails(
                         repo,
                         db,
                         dry_run,
-                        "branch",
+                        &TargetType::Branch,
                         &branch_uuid,
                         &key,
                         &json_val,
-                        "string",
+                        &ValueType::String,
                         email,
                         ts,
                     )?;
@@ -659,11 +694,11 @@ fn import_trails(
                         repo,
                         db,
                         dry_run,
-                        "branch",
+                        &TargetType::Branch,
                         &branch_uuid,
                         "review:checkpoints",
                         &encoded,
-                        "list",
+                        &ValueType::List,
                         email,
                         ts,
                     )?;
@@ -678,11 +713,11 @@ fn import_trails(
                         repo,
                         db,
                         dry_run,
-                        "branch",
+                        &TargetType::Branch,
                         &branch_uuid,
                         "review:discussion",
                         &json_encode_value(&disc)?,
-                        "string",
+                        &ValueType::String,
                         email,
                         ts,
                     )?;
@@ -701,20 +736,20 @@ fn set_value(
     repo: &Repository,
     db: Option<&Db>,
     dry_run: bool,
-    target_type: &str,
+    target_type: &TargetType,
     target_value: &str,
     key: &str,
     value: &str,
-    value_type: &str,
+    value_type: &ValueType,
     email: &str,
     timestamp: i64,
 ) -> Result<u64> {
-    let use_git_ref = value_type == "string" && value.len() > GIT_REF_THRESHOLD;
+    let use_git_ref = *value_type == ValueType::String && value.len() > GIT_REF_THRESHOLD;
 
     if dry_run {
         eprintln!(
             "    [dry-run] {}:{} {} = {}{}",
-            target_type,
+            target_type.as_str(),
             &target_value[..7.min(target_value.len())],
             key,
             truncate(value, 80),
@@ -929,7 +964,10 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
             // Check whether we already have data for this commit so we can
             // report skips without touching the DB on a real run.
             if let Some(db) = db {
-                if db.get("commit", &commit_sha, "agent.blame")?.is_some() {
+                if db
+                    .get(&TargetType::Commit, &commit_sha, "agent.blame")?
+                    .is_some()
+                {
                     skipped_exists += 1;
                     continue;
                 }
@@ -956,33 +994,33 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                 };
                 db.set_with_git_ref(
                     None,
-                    "commit",
+                    &TargetType::Commit,
                     &commit_sha,
                     "agent.blame",
                     &blame_val,
-                    "string",
+                    &ValueType::String,
                     email,
                     commit_ts,
                     is_ref,
                 )?;
 
                 db.set(
-                    "commit",
+                    &TargetType::Commit,
                     &commit_sha,
                     "agent.git-ai.schema-version",
                     &json_string(&parsed.schema_version),
-                    "string",
+                    &ValueType::String,
                     email,
                     commit_ts,
                 )?;
 
                 if let Some(ref ver) = parsed.git_ai_version {
                     db.set(
-                        "commit",
+                        &TargetType::Commit,
                         &commit_sha,
                         "agent.git-ai.version",
                         &json_string(ver),
-                        "string",
+                        &ValueType::String,
                         email,
                         commit_ts,
                     )?;
@@ -990,11 +1028,11 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
 
                 if parsed.model != "unknown" {
                     db.set(
-                        "commit",
+                        &TargetType::Commit,
                         &commit_sha,
                         "agent.model",
                         &json_string(&parsed.model),
-                        "string",
+                        &ValueType::String,
                         email,
                         commit_ts,
                     )?;

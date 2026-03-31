@@ -13,13 +13,14 @@ use crate::commands::serialize::{
 };
 use crate::context::CommandContext;
 use crate::git_utils;
+use crate::types::TargetType;
 
 pub fn run(dry_run: bool) -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
 
     // Read prune rules — need at least meta:prune:since
-    let since = match ctx.db.get("project", "", "meta:prune:since")? {
+    let since = match ctx.db.get(&TargetType::Project, "", "meta:prune:since")? {
         Some((value, _, _)) => {
             let s: String = serde_json::from_str(&value)?;
             s

@@ -6,7 +6,7 @@ use git2::Repository;
 use rusqlite::{params, Connection};
 
 use crate::list_value::{encode_entries, ensure_unique_timestamp, parse_entries, ListEntry};
-use crate::types::GIT_REF_THRESHOLD;
+use crate::types::{TargetType, ValueType, GIT_REF_THRESHOLD};
 
 /// The time to wait when the database is locked before giving up.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -168,11 +168,11 @@ impl Db {
     /// Set a value (upsert). JSON-encodes the value for storage.
     pub fn set(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
-        value_type: &str,
+        value_type: &ValueType,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
@@ -195,18 +195,21 @@ impl Db {
     pub fn set_with_git_ref(
         &self,
         repo: Option<&Repository>,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
-        value_type: &str,
+        value_type: &ValueType,
         email: &str,
         timestamp: i64,
         is_git_ref: bool,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
+        let value_type_str = value_type.as_str();
+
         // Validate that string values are proper JSON strings (not raw objects/arrays)
         // Skip validation for git refs (they store a SHA, not JSON)
-        if value_type == "string" && !is_git_ref {
+        if *value_type == ValueType::String && !is_git_ref {
             match serde_json::from_str::<serde_json::Value>(value) {
                 Ok(v) if !v.is_string() => {
                     bail!(
@@ -233,18 +236,18 @@ impl Db {
         let git_ref_val: i64 = if is_git_ref { 1 } else { 0 };
         let tx = self.conn.unchecked_transaction()?;
         match value_type {
-            "string" => {
+            ValueType::String => {
                 tx.execute(
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, ?4, 'string', ?5, ?6)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
                      SET value = excluded.value, value_type = 'string', last_timestamp = excluded.last_timestamp, is_git_ref = excluded.is_git_ref, is_promised = 0",
-                    params![target_type, target_value, key, value, timestamp, git_ref_val],
+                    params![target_type_str, target_value, key, value, timestamp, git_ref_val],
                 )?;
 
                 let metadata_id: i64 = tx.query_row(
                     "SELECT rowid FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                     |row| row.get(0),
                 )?;
                 tx.execute(
@@ -257,21 +260,21 @@ impl Db {
                 )?;
                 tx.execute(
                     "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                 )?;
             }
-            "list" => {
+            ValueType::List => {
                 tx.execute(
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, '[]', 'list', ?4, 0)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
                      SET value = '[]', value_type = 'list', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0",
-                    params![target_type, target_value, key, timestamp],
+                    params![target_type_str, target_value, key, timestamp],
                 )?;
 
                 let metadata_id: i64 = tx.query_row(
                     "SELECT rowid FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                     |row| row.get(0),
                 )?;
 
@@ -285,7 +288,7 @@ impl Db {
                 )?;
                 tx.execute(
                     "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                 )?;
 
                 for entry in parse_entries(value)? {
@@ -302,18 +305,18 @@ impl Db {
                     )?;
                 }
             }
-            "set" => {
+            ValueType::Set => {
                 tx.execute(
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, '[]', 'set', ?4, 0)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
                      SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0",
-                    params![target_type, target_value, key, timestamp],
+                    params![target_type_str, target_value, key, timestamp],
                 )?;
 
                 let metadata_id: i64 = tx.query_row(
                     "SELECT rowid FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                     |row| row.get(0),
                 )?;
 
@@ -343,7 +346,7 @@ impl Db {
                     )?;
                     tx.execute(
                         "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND member_id = ?4",
-                        params![target_type, target_value, key, crate::types::set_member_id(member)],
+                        params![target_type_str, target_value, key, crate::types::set_member_id(member)],
                     )?;
                 }
 
@@ -362,24 +365,23 @@ impl Db {
                              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                              ON CONFLICT(target_type, target_value, key, member_id) DO UPDATE
                              SET value = excluded.value, timestamp = excluded.timestamp, email = excluded.email",
-                            params![target_type, target_value, key, member_id, member_value, timestamp, email],
+                            params![target_type_str, target_value, key, member_id, member_value, timestamp, email],
                         )?;
                     }
                 }
             }
-            _ => bail!("unknown value type: {}", value_type),
         }
 
         tx.execute(
             "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
              VALUES (?1, ?2, ?3, ?4, ?5, 'set', ?6, ?7)",
-            params![target_type, target_value, key, value, value_type, email, timestamp],
+            params![target_type_str, target_value, key, value, value_type_str, email, timestamp],
         )?;
 
         tx.execute(
             "DELETE FROM metadata_tombstones
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-            params![target_type, target_value, key],
+            params![target_type_str, target_value, key],
         )?;
 
         tx.commit()?;
@@ -391,17 +393,17 @@ impl Db {
     /// Returns (value, value_type, is_git_ref).
     pub fn get(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
-    ) -> Result<Option<(String, String, bool)>> {
+    ) -> Result<Option<(String, ValueType, bool)>> {
         let mut stmt = self.conn.prepare(
             "SELECT rowid, value, value_type, is_git_ref FROM metadata
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
         )?;
 
         let result = stmt
-            .query_row(params![target_type, target_value, key], |row| {
+            .query_row(params![target_type.as_str(), target_value, key], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
@@ -412,27 +414,31 @@ impl Db {
             .optional()?;
 
         match result {
-            Some((metadata_id, _value, value_type, _is_git_ref)) if value_type == "list" => {
+            Some((metadata_id, _value, ref vt, _is_git_ref))
+                if ValueType::from_str(vt)? == ValueType::List =>
+            {
                 Ok(Some((
                     encode_list_entries_by_metadata_id(
                         &self.conn,
                         self.repo.as_ref(),
                         metadata_id,
                     )?,
-                    value_type,
+                    ValueType::List,
                     false,
                 )))
             }
-            Some((metadata_id, _value, value_type, _is_git_ref)) if value_type == "set" => {
+            Some((metadata_id, _value, ref vt, _is_git_ref))
+                if ValueType::from_str(vt)? == ValueType::Set =>
+            {
                 Ok(Some((
                     encode_set_values_by_metadata_id(&self.conn, metadata_id)?,
-                    value_type,
+                    ValueType::Set,
                     false,
                 )))
             }
-            Some((_, value, value_type, is_git_ref)) => {
+            Some((_, value, vt, is_git_ref)) => {
                 let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
-                Ok(Some((resolved, value_type, is_git_ref)))
+                Ok(Some((resolved, ValueType::from_str(&vt)?, is_git_ref)))
             }
             None => Ok(None),
         }
@@ -444,10 +450,10 @@ impl Db {
     /// if you need to see them.
     pub fn get_all(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key_prefix: Option<&str>,
-    ) -> Result<Vec<(String, String, String, bool)>> {
+    ) -> Result<Vec<(String, String, ValueType, bool)>> {
         Ok(self
             .get_all_with_target_prefix(target_type, target_value, false, key_prefix)?
             .into_iter()
@@ -460,11 +466,12 @@ impl Db {
     /// Returns (target_value, key, value, value_type, is_git_ref, is_promised).
     pub fn get_all_with_target_prefix(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         include_target_subtree: bool,
         key_prefix: Option<&str>,
-    ) -> Result<Vec<(String, String, String, String, bool, bool)>> {
+    ) -> Result<Vec<(String, String, String, ValueType, bool, bool)>> {
+        let target_type_str = target_type.as_str();
         let escaped_target = escape_like_pattern(target_value);
         let target_like = format!("{}/%", escaped_target);
 
@@ -476,7 +483,7 @@ impl Db {
                  AND (key = ?3 OR key LIKE ?4 ESCAPE '\\')
                  ORDER BY target_value, key",
                     vec![
-                        Box::new(target_type.to_string()),
+                        Box::new(target_type_str.to_string()),
                         Box::new(target_value.to_string()),
                         Box::new(prefix.to_string()),
                         Box::new(format!("{}:%", escape_like_pattern(prefix))),
@@ -487,7 +494,7 @@ impl Db {
                  WHERE target_type = ?1 AND target_value = ?2
                  ORDER BY target_value, key",
                     vec![
-                        Box::new(target_type.to_string()),
+                        Box::new(target_type_str.to_string()),
                         Box::new(target_value.to_string()),
                     ],
                 ),
@@ -497,7 +504,7 @@ impl Db {
                  AND (key = ?4 OR key LIKE ?5 ESCAPE '\\')
                  ORDER BY target_value, key",
                     vec![
-                        Box::new(target_type.to_string()),
+                        Box::new(target_type_str.to_string()),
                         Box::new(target_value.to_string()),
                         Box::new(target_like),
                         Box::new(prefix.to_string()),
@@ -509,7 +516,7 @@ impl Db {
                  WHERE target_type = ?1 AND (target_value = ?2 OR target_value LIKE ?3 ESCAPE '\\')
                  ORDER BY target_value, key",
                     vec![
-                        Box::new(target_type.to_string()),
+                        Box::new(target_type_str.to_string()),
                         Box::new(target_value.to_string()),
                         Box::new(target_like),
                     ],
@@ -533,22 +540,30 @@ impl Db {
 
         let mut results = Vec::new();
         for row in rows {
-            let (metadata_id, target_value, key, value, value_type, is_git_ref, is_promised) = row?;
+            let (metadata_id, target_value, key, value, value_type_str, is_git_ref, is_promised) =
+                row?;
+            let vt = ValueType::from_str(&value_type_str)?;
             if is_promised {
-                results.push((target_value, key, value, value_type, false, true));
-            } else if value_type == "list" {
-                let encoded = encode_list_entries_by_metadata_id(
-                    &self.conn,
-                    self.repo.as_ref(),
-                    metadata_id,
-                )?;
-                results.push((target_value, key, encoded, value_type, false, false));
-            } else if value_type == "set" {
-                let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-                results.push((target_value, key, encoded, value_type, false, false));
+                results.push((target_value, key, value, vt, false, true));
             } else {
-                let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
-                results.push((target_value, key, resolved, value_type, is_git_ref, false));
+                match vt {
+                    ValueType::List => {
+                        let encoded = encode_list_entries_by_metadata_id(
+                            &self.conn,
+                            self.repo.as_ref(),
+                            metadata_id,
+                        )?;
+                        results.push((target_value, key, encoded, vt, false, false));
+                    }
+                    ValueType::Set => {
+                        let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
+                        results.push((target_value, key, encoded, vt, false, false));
+                    }
+                    ValueType::String => {
+                        let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
+                        results.push((target_value, key, resolved, vt, is_git_ref, false));
+                    }
+                }
             }
         }
         Ok(results)
@@ -557,7 +572,7 @@ impl Db {
     /// Get authorship info for a key from the log (most recent entry).
     pub fn get_authorship(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
     ) -> Result<Option<(String, i64)>> {
@@ -568,7 +583,7 @@ impl Db {
         )?;
 
         let result = stmt
-            .query_row(params![target_type, target_value, key], |row| {
+            .query_row(params![target_type.as_str(), target_value, key], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })
             .optional()?;
@@ -582,15 +597,15 @@ impl Db {
     /// Returns Ok(true) if a row was inserted, Ok(false) if it already existed.
     pub fn insert_promised(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
-        value_type: &str,
+        value_type: &ValueType,
     ) -> Result<bool> {
         let rows = self.conn.execute(
             "INSERT OR IGNORE INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref, is_promised)
              VALUES (?1, ?2, ?3, '', ?4, 0, 0, 1)",
-            params![target_type, target_value, key, value_type],
+            params![target_type.as_str(), target_value, key, value_type.as_str()],
         )?;
         Ok(rows > 0)
     }
@@ -598,11 +613,11 @@ impl Db {
     /// Resolve a promised entry by filling in the real value and clearing the flag.
     pub fn resolve_promised(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
-        value_type: &str,
+        value_type: &ValueType,
         is_git_ref: bool,
     ) -> Result<()> {
         let git_ref_val: i64 = if is_git_ref { 1 } else { 0 };
@@ -610,11 +625,11 @@ impl Db {
             "UPDATE metadata SET value = ?4, value_type = ?5, is_git_ref = ?6, is_promised = 0
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND is_promised = 1",
             params![
-                target_type,
+                target_type.as_str(),
                 target_value,
                 key,
                 value,
-                value_type,
+                value_type.as_str(),
                 git_ref_val
             ],
         )?;
@@ -622,10 +637,15 @@ impl Db {
     }
 
     /// Delete a promised entry (e.g. if the key no longer exists in the tip tree).
-    pub fn delete_promised(&self, target_type: &str, target_value: &str, key: &str) -> Result<()> {
+    pub fn delete_promised(
+        &self,
+        target_type: &TargetType,
+        target_value: &str,
+        key: &str,
+    ) -> Result<()> {
         self.conn.execute(
             "DELETE FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND is_promised = 1",
-            params![target_type, target_value, key],
+            params![target_type.as_str(), target_value, key],
         )?;
         Ok(())
     }
@@ -633,19 +653,20 @@ impl Db {
     /// Remove a key.
     pub fn rm(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         email: &str,
         timestamp: i64,
     ) -> Result<bool> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
 
         let metadata_id = tx
             .query_row(
                 "SELECT rowid FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                params![target_type, target_value, key],
+                params![target_type_str, target_value, key],
                 |row| row.get::<_, i64>(0),
             )
             .optional()?;
@@ -673,20 +694,20 @@ impl Db {
                  VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(target_type, target_value, key) DO UPDATE
                  SET timestamp = excluded.timestamp, email = excluded.email",
-                params![target_type, target_value, key, timestamp, email],
+                params![target_type_str, target_value, key, timestamp, email],
             )?;
 
             // Clear per-entry list tombstones — the whole-key tombstone supersedes them
             tx.execute(
                 "DELETE FROM list_tombstones
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                params![target_type, target_value, key],
+                params![target_type_str, target_value, key],
             )?;
 
             tx.execute(
                 "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
                  VALUES (?1, ?2, ?3, '', '', 'rm', ?4, ?5)",
-                params![target_type, target_value, key, email, timestamp],
+                params![target_type_str, target_value, key, email, timestamp],
             )?;
         }
 
@@ -698,7 +719,7 @@ impl Db {
     /// Push a value onto a list. If the key is currently a string, convert to list first.
     pub fn list_push(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
@@ -720,13 +741,14 @@ impl Db {
     pub fn list_push_with_repo(
         &self,
         repo: Option<&Repository>,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
         let existing = {
             let mut stmt = tx.prepare(
@@ -734,7 +756,7 @@ impl Db {
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
             )?;
 
-            stmt.query_row(params![target_type, target_value, key], |row| {
+            stmt.query_row(params![target_type_str, target_value, key], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
@@ -775,7 +797,7 @@ impl Db {
                 tx.execute(
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp)
                      VALUES (?1, ?2, ?3, '[]', 'list', ?4)",
-                    params![target_type, target_value, key, timestamp],
+                    params![target_type_str, target_value, key, timestamp],
                 )?;
                 let metadata_id = tx.last_insert_rowid();
                 (metadata_id, Vec::new())
@@ -812,13 +834,13 @@ impl Db {
         tx.execute(
             "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
              VALUES (?1, ?2, ?3, ?4, 'list', 'push', ?5, ?6)",
-            params![target_type, target_value, key, &new_value, email, timestamp],
+            params![target_type_str, target_value, key, &new_value, email, timestamp],
         )?;
 
         tx.execute(
             "DELETE FROM metadata_tombstones
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-            params![target_type, target_value, key],
+            params![target_type_str, target_value, key],
         )?;
 
         tx.commit()?;
@@ -829,13 +851,14 @@ impl Db {
     /// Pop a value from a list.
     pub fn list_pop(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
         let existing = {
             let mut stmt = tx.prepare(
@@ -843,7 +866,7 @@ impl Db {
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
             )?;
 
-            stmt.query_row(params![target_type, target_value, key], |row| {
+            stmt.query_row(params![target_type_str, target_value, key], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })
             .optional()?
@@ -884,13 +907,13 @@ impl Db {
                 tx.execute(
                     "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
                      VALUES (?1, ?2, ?3, ?4, 'list', 'pop', ?5, ?6)",
-                    params![target_type, target_value, key, &new_value, email, timestamp],
+                    params![target_type_str, target_value, key, &new_value, email, timestamp],
                 )?;
 
                 tx.execute(
                     "DELETE FROM metadata_tombstones
                      WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                 )?;
 
                 tx.commit()?;
@@ -904,7 +927,7 @@ impl Db {
     /// Get list entries for display (resolved values with timestamps).
     pub fn list_entries(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
     ) -> Result<Vec<ListEntry>> {
@@ -913,7 +936,7 @@ impl Db {
             .query_row(
                 "SELECT rowid, value_type FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                params![target_type, target_value, key],
+                params![target_type.as_str(), target_value, key],
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
@@ -932,13 +955,14 @@ impl Db {
     /// Remove a list entry by index, creating a list tombstone for serialization.
     pub fn list_rm(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         index: usize,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
         let existing = {
             let mut stmt = tx.prepare(
@@ -946,7 +970,7 @@ impl Db {
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
             )?;
 
-            stmt.query_row(params![target_type, target_value, key], |row| {
+            stmt.query_row(params![target_type_str, target_value, key], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })
             .optional()?
@@ -985,7 +1009,7 @@ impl Db {
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                      ON CONFLICT(target_type, target_value, key, entry_name) DO UPDATE
                      SET timestamp = excluded.timestamp, email = excluded.email",
-                    params![target_type, target_value, key, entry_name, timestamp, email],
+                    params![target_type_str, target_value, key, entry_name, timestamp, email],
                 )?;
 
                 let list_entries: Vec<ListEntry> = list_rows
@@ -1007,13 +1031,13 @@ impl Db {
                 tx.execute(
                     "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
                      VALUES (?1, ?2, ?3, ?4, 'list', 'list:rm', ?5, ?6)",
-                    params![target_type, target_value, key, &new_value, email, timestamp],
+                    params![target_type_str, target_value, key, &new_value, email, timestamp],
                 )?;
 
                 tx.execute(
                     "DELETE FROM metadata_tombstones
                      WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                 )?;
 
                 tx.commit()?;
@@ -1054,13 +1078,14 @@ impl Db {
     /// Remove a member from a set.
     pub fn set_rm(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
         let existing = {
             let mut stmt = tx.prepare(
@@ -1068,7 +1093,7 @@ impl Db {
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
             )?;
 
-            stmt.query_row(params![target_type, target_value, key], |row| {
+            stmt.query_row(params![target_type_str, target_value, key], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })
             .optional()?
@@ -1102,7 +1127,7 @@ impl Db {
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                      ON CONFLICT(target_type, target_value, key, member_id) DO UPDATE
                      SET value = excluded.value, timestamp = excluded.timestamp, email = excluded.email",
-                    params![target_type, target_value, key, member_id, value, timestamp, email],
+                    params![target_type_str, target_value, key, member_id, value, timestamp, email],
                 )?;
 
                 let new_value = encode_set_values_by_metadata_id(&tx, metadata_id)?;
@@ -1110,13 +1135,13 @@ impl Db {
                 tx.execute(
                     "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
                      VALUES (?1, ?2, ?3, ?4, 'set', 'set:rm', ?5, ?6)",
-                    params![target_type, target_value, key, &new_value, email, timestamp],
+                    params![target_type_str, target_value, key, &new_value, email, timestamp],
                 )?;
 
                 tx.execute(
                     "DELETE FROM metadata_tombstones
                      WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                    params![target_type, target_value, key],
+                    params![target_type_str, target_value, key],
                 )?;
 
                 tx.commit()?;
@@ -1129,13 +1154,14 @@ impl Db {
     /// Add a member to a set.
     pub fn set_add(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         value: &str,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
         let existing = {
             let mut stmt = tx.prepare(
@@ -1143,7 +1169,7 @@ impl Db {
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
             )?;
 
-            stmt.query_row(params![target_type, target_value, key], |row| {
+            stmt.query_row(params![target_type_str, target_value, key], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })
             .optional()?
@@ -1167,7 +1193,7 @@ impl Db {
                 tx.execute(
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp)
                      VALUES (?1, ?2, ?3, '[]', 'set', ?4)",
-                    params![target_type, target_value, key, timestamp],
+                    params![target_type_str, target_value, key, timestamp],
                 )?;
                 tx.last_insert_rowid()
             }
@@ -1184,7 +1210,7 @@ impl Db {
 
         tx.execute(
             "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3 AND member_id = ?4",
-            params![target_type, target_value, key, member_id],
+            params![target_type_str, target_value, key, member_id],
         )?;
 
         let new_value = encode_set_values_by_metadata_id(&tx, metadata_id)?;
@@ -1192,13 +1218,13 @@ impl Db {
         tx.execute(
             "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
              VALUES (?1, ?2, ?3, ?4, 'set', 'set:add', ?5, ?6)",
-            params![target_type, target_value, key, &new_value, email, timestamp],
+            params![target_type_str, target_value, key, &new_value, email, timestamp],
         )?;
 
         tx.execute(
             "DELETE FROM metadata_tombstones
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-            params![target_type, target_value, key],
+            params![target_type_str, target_value, key],
         )?;
 
         tx.commit()?;
@@ -1209,19 +1235,20 @@ impl Db {
     /// remove current value (if any), record tombstone, and log the operation.
     pub fn apply_tombstone(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         target_value: &str,
         key: &str,
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let target_type_str = target_type.as_str();
         let tx = self.conn.unchecked_transaction()?;
 
         let metadata_id = tx
             .query_row(
                 "SELECT rowid FROM metadata
                  WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-                params![target_type, target_value, key],
+                params![target_type_str, target_value, key],
                 |row| row.get::<_, i64>(0),
             )
             .optional()?;
@@ -1241,7 +1268,7 @@ impl Db {
         }
         tx.execute(
             "DELETE FROM set_tombstones WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
-            params![target_type, target_value, key],
+            params![target_type_str, target_value, key],
         )?;
 
         tx.execute(
@@ -1249,13 +1276,13 @@ impl Db {
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(target_type, target_value, key) DO UPDATE
              SET timestamp = excluded.timestamp, email = excluded.email",
-            params![target_type, target_value, key, timestamp, email],
+            params![target_type_str, target_value, key, timestamp, email],
         )?;
 
         tx.execute(
             "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
              VALUES (?1, ?2, ?3, '', '', 'rm', ?4, ?5)",
-            params![target_type, target_value, key, email, timestamp],
+            params![target_type_str, target_value, key, email, timestamp],
         )?;
 
         tx.commit()?;
@@ -1266,7 +1293,7 @@ impl Db {
     /// Returns (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref).
     pub fn get_all_metadata(
         &self,
-    ) -> Result<Vec<(String, String, String, String, String, i64, bool)>> {
+    ) -> Result<Vec<(String, String, String, String, ValueType, i64, bool)>> {
         let mut stmt = self.conn.prepare(
             "SELECT rowid, target_type, target_value, key, value, value_type, last_timestamp, is_git_ref
              FROM metadata
@@ -1295,46 +1322,51 @@ impl Db {
                 target_value,
                 key,
                 value,
-                value_type,
+                value_type_str,
                 last_timestamp,
                 is_git_ref,
             ) = row?;
-            if value_type == "list" {
-                let encoded = encode_list_entries_by_metadata_id(
-                    &self.conn,
-                    self.repo.as_ref(),
-                    metadata_id,
-                )?;
-                results.push((
-                    target_type,
-                    target_value,
-                    key,
-                    encoded,
-                    value_type,
-                    last_timestamp,
-                    false,
-                ));
-            } else if value_type == "set" {
-                let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-                results.push((
-                    target_type,
-                    target_value,
-                    key,
-                    encoded,
-                    value_type,
-                    last_timestamp,
-                    false,
-                ));
-            } else {
-                results.push((
-                    target_type,
-                    target_value,
-                    key,
-                    value,
-                    value_type,
-                    last_timestamp,
-                    is_git_ref,
-                ));
+            let vt = ValueType::from_str(&value_type_str)?;
+            match vt {
+                ValueType::List => {
+                    let encoded = encode_list_entries_by_metadata_id(
+                        &self.conn,
+                        self.repo.as_ref(),
+                        metadata_id,
+                    )?;
+                    results.push((
+                        target_type,
+                        target_value,
+                        key,
+                        encoded,
+                        vt,
+                        last_timestamp,
+                        false,
+                    ));
+                }
+                ValueType::Set => {
+                    let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
+                    results.push((
+                        target_type,
+                        target_value,
+                        key,
+                        encoded,
+                        vt,
+                        last_timestamp,
+                        false,
+                    ));
+                }
+                ValueType::String => {
+                    results.push((
+                        target_type,
+                        target_value,
+                        key,
+                        value,
+                        vt,
+                        last_timestamp,
+                        is_git_ref,
+                    ));
+                }
             }
         }
         Ok(results)
@@ -1598,7 +1630,7 @@ impl Db {
     /// Returns at most `limit` matches.
     pub fn find_target_values_by_prefix(
         &self,
-        target_type: &str,
+        target_type: &TargetType,
         prefix: &str,
         limit: usize,
     ) -> Result<Vec<String>> {
@@ -1610,9 +1642,10 @@ impl Db {
              ORDER BY target_value
              LIMIT ?3",
         )?;
-        let rows = stmt.query_map(params![target_type, pattern, limit as i64], |row| {
-            row.get::<_, String>(0)
-        })?;
+        let rows = stmt.query_map(
+            params![target_type.as_str(), pattern, limit as i64],
+            |row| row.get::<_, String>(0),
+        )?;
         let mut results = Vec::new();
         for row in rows {
             results.push(row?);
@@ -1813,19 +1846,21 @@ mod tests {
     fn test_set_and_get() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "agent:model",
             "\"claude-4.6\"",
-            "string",
+            &ValueType::String,
             "test@test.com",
             1000,
         )
         .unwrap();
-        let result = db.get("commit", "abc123", "agent:model").unwrap();
+        let result = db
+            .get(&TargetType::Commit, "abc123", "agent:model")
+            .unwrap();
         assert_eq!(
             result,
-            Some(("\"claude-4.6\"".to_string(), "string".to_string(), false))
+            Some(("\"claude-4.6\"".to_string(), ValueType::String, false))
         );
     }
 
@@ -1833,17 +1868,29 @@ mod tests {
     fn test_set_upsert() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit", "abc123", "key", "\"v1\"", "string", "a@b.com", 1000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"v1\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
         )
         .unwrap();
         db.set(
-            "commit", "abc123", "key", "\"v2\"", "string", "a@b.com", 2000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"v2\"",
+            &ValueType::String,
+            "a@b.com",
+            2000,
         )
         .unwrap();
-        let result = db.get("commit", "abc123", "key").unwrap();
+        let result = db.get(&TargetType::Commit, "abc123", "key").unwrap();
         assert_eq!(
             result,
-            Some(("\"v2\"".to_string(), "string".to_string(), false))
+            Some(("\"v2\"".to_string(), ValueType::String, false))
         );
     }
 
@@ -1851,31 +1898,39 @@ mod tests {
     fn test_get_all_with_prefix() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "agent:model",
             "\"claude\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "agent:provider",
             "\"anthropic\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "commit", "abc123", "other", "\"val\"", "string", "a@b.com", 1000,
+            &TargetType::Commit,
+            "abc123",
+            "other",
+            "\"val\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
         )
         .unwrap();
 
-        let results = db.get_all("commit", "abc123", Some("agent")).unwrap();
+        let results = db
+            .get_all(&TargetType::Commit, "abc123", Some("agent"))
+            .unwrap();
         assert_eq!(results.len(), 2);
     }
 
@@ -1883,51 +1938,55 @@ mod tests {
     fn test_get_all_with_prefix_escapes_like_wildcards() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "a%:literal",
             "\"match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "abc:anything",
             "\"should-not-match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "a_:literal",
             "\"underscore-match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "ab:anything",
             "\"underscore-should-not-match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
 
-        let percent_results = db.get_all("commit", "abc123", Some("a%")).unwrap();
+        let percent_results = db
+            .get_all(&TargetType::Commit, "abc123", Some("a%"))
+            .unwrap();
         let percent_keys: Vec<String> = percent_results.into_iter().map(|r| r.0).collect();
         assert_eq!(percent_keys, vec!["a%:literal".to_string()]);
 
-        let underscore_results = db.get_all("commit", "abc123", Some("a_")).unwrap();
+        let underscore_results = db
+            .get_all(&TargetType::Commit, "abc123", Some("a_"))
+            .unwrap();
         let underscore_keys: Vec<String> = underscore_results.into_iter().map(|r| r.0).collect();
         assert_eq!(underscore_keys, vec!["a_:literal".to_string()]);
     }
@@ -1936,27 +1995,29 @@ mod tests {
     fn test_get_all_with_prefix_escapes_backslash() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             r"agent\name:model",
             "\"match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "agentxname:model",
             "\"should-not-match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
 
-        let results = db.get_all("commit", "abc123", Some(r"agent\name")).unwrap();
+        let results = db
+            .get_all(&TargetType::Commit, "abc123", Some(r"agent\name"))
+            .unwrap();
         let keys: Vec<String> = results.into_iter().map(|r| r.0).collect();
         assert_eq!(keys, vec![r"agent\name:model".to_string()]);
     }
@@ -1965,48 +2026,48 @@ mod tests {
     fn test_get_all_with_target_prefix_for_paths() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "path",
+            &TargetType::Path,
             "src/git",
             "owner",
             "\"schacon\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "path",
+            &TargetType::Path,
             "src/metrics",
             "owner",
             "\"kiril\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "path",
+            &TargetType::Path,
             "src/observability",
             "owner",
             "\"caleb\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
         db.set(
-            "path",
+            &TargetType::Path,
             "srcx/metrics",
             "owner",
             "\"should-not-match\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
 
         let results = db
-            .get_all_with_target_prefix("path", "src", true, Some("owner"))
+            .get_all_with_target_prefix(&TargetType::Path, "src", true, Some("owner"))
             .unwrap();
         let rows: Vec<(String, String)> = results.into_iter().map(|r| (r.0, r.1)).collect();
         assert_eq!(
@@ -2023,21 +2084,37 @@ mod tests {
     fn test_rm() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit", "abc123", "key", "\"val\"", "string", "a@b.com", 1000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"val\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
         )
         .unwrap();
-        assert!(db.rm("commit", "abc123", "key", "a@b.com", 2000).unwrap());
-        assert_eq!(db.get("commit", "abc123", "key").unwrap(), None);
+        assert!(db
+            .rm(&TargetType::Commit, "abc123", "key", "a@b.com", 2000)
+            .unwrap());
+        assert_eq!(db.get(&TargetType::Commit, "abc123", "key").unwrap(), None);
     }
 
     #[test]
     fn test_rm_creates_tombstone() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit", "abc123", "key", "\"val\"", "string", "a@b.com", 1000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"val\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
         )
         .unwrap();
-        assert!(db.rm("commit", "abc123", "key", "a@b.com", 2000).unwrap());
+        assert!(db
+            .rm(&TargetType::Commit, "abc123", "key", "a@b.com", 2000)
+            .unwrap());
 
         let tombstones = db.get_all_tombstones().unwrap();
         assert_eq!(tombstones.len(), 1);
@@ -2057,34 +2134,65 @@ mod tests {
     fn test_set_clears_tombstone() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit", "abc123", "key", "\"v1\"", "string", "a@b.com", 1000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"v1\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
         )
         .unwrap();
-        assert!(db.rm("commit", "abc123", "key", "a@b.com", 2000).unwrap());
+        assert!(db
+            .rm(&TargetType::Commit, "abc123", "key", "a@b.com", 2000)
+            .unwrap());
         assert_eq!(db.get_all_tombstones().unwrap().len(), 1);
 
         db.set(
-            "commit", "abc123", "key", "\"v2\"", "string", "a@b.com", 3000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"v2\"",
+            &ValueType::String,
+            "a@b.com",
+            3000,
         )
         .unwrap();
 
         assert_eq!(db.get_all_tombstones().unwrap().len(), 0);
-        let result = db.get("commit", "abc123", "key").unwrap();
+        let result = db.get(&TargetType::Commit, "abc123", "key").unwrap();
         assert_eq!(
             result,
-            Some(("\"v2\"".to_string(), "string".to_string(), false))
+            Some(("\"v2\"".to_string(), ValueType::String, false))
         );
     }
 
     #[test]
     fn test_list_push() {
         let db = Db::open_in_memory().unwrap();
-        db.list_push("commit", "abc123", "tags", "first", "a@b.com", 1000)
+        db.list_push(
+            &TargetType::Commit,
+            "abc123",
+            "tags",
+            "first",
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.list_push(
+            &TargetType::Commit,
+            "abc123",
+            "tags",
+            "second",
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+        let (val, vtype, _) = db
+            .get(&TargetType::Commit, "abc123", "tags")
+            .unwrap()
             .unwrap();
-        db.list_push("commit", "abc123", "tags", "second", "a@b.com", 2000)
-            .unwrap();
-        let (val, vtype, _) = db.get("commit", "abc123", "tags").unwrap().unwrap();
-        assert_eq!(vtype, "list");
+        assert_eq!(vtype, ValueType::List);
         let list = crate::list_value::list_values_from_json(&val).unwrap();
         assert_eq!(list, vec!["first", "second"]);
     }
@@ -2093,11 +2201,11 @@ mod tests {
     fn test_set_list_stores_rows_in_list_values_table() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "tags",
             r#"[{"value":"a","timestamp":1000},{"value":"b","timestamp":1001}]"#,
-            "list",
+            &ValueType::List,
             "a@b.com",
             2000,
         )
@@ -2121,8 +2229,11 @@ mod tests {
             .unwrap();
         assert_eq!(list_rows, 2);
 
-        let (val, vtype, _) = db.get("commit", "abc123", "tags").unwrap().unwrap();
-        assert_eq!(vtype, "list");
+        let (val, vtype, _) = db
+            .get(&TargetType::Commit, "abc123", "tags")
+            .unwrap()
+            .unwrap();
+        assert_eq!(vtype, ValueType::List);
         let list = crate::list_value::list_values_from_json(&val).unwrap();
         assert_eq!(list, vec!["a", "b"]);
     }
@@ -2131,21 +2242,21 @@ mod tests {
     fn test_set_list_replaces_existing_list_rows() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "tags",
             r#"[{"value":"a","timestamp":1000},{"value":"b","timestamp":1001}]"#,
-            "list",
+            &ValueType::List,
             "a@b.com",
             2000,
         )
         .unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "tags",
             r#"[{"value":"c","timestamp":3000}]"#,
-            "list",
+            &ValueType::List,
             "a@b.com",
             4000,
         )
@@ -2169,7 +2280,10 @@ mod tests {
             .unwrap();
         assert_eq!(list_rows, 1);
 
-        let (val, _, _) = db.get("commit", "abc123", "tags").unwrap().unwrap();
+        let (val, _, _) = db
+            .get(&TargetType::Commit, "abc123", "tags")
+            .unwrap()
+            .unwrap();
         let list = crate::list_value::list_values_from_json(&val).unwrap();
         assert_eq!(list, vec!["c"]);
     }
@@ -2178,19 +2292,29 @@ mod tests {
     fn test_list_push_converts_string() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "key",
             "\"original\"",
-            "string",
+            &ValueType::String,
             "a@b.com",
             1000,
         )
         .unwrap();
-        db.list_push("commit", "abc123", "key", "appended", "a@b.com", 2000)
+        db.list_push(
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "appended",
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+        let (val, vtype, _) = db
+            .get(&TargetType::Commit, "abc123", "key")
+            .unwrap()
             .unwrap();
-        let (val, vtype, _) = db.get("commit", "abc123", "key").unwrap().unwrap();
-        assert_eq!(vtype, "list");
+        assert_eq!(vtype, ValueType::List);
         let list = crate::list_value::list_values_from_json(&val).unwrap();
         assert_eq!(list, vec!["original", "appended"]);
     }
@@ -2198,13 +2322,16 @@ mod tests {
     #[test]
     fn test_list_pop() {
         let db = Db::open_in_memory().unwrap();
-        db.list_push("commit", "abc123", "tags", "a", "a@b.com", 1000)
+        db.list_push(&TargetType::Commit, "abc123", "tags", "a", "a@b.com", 1000)
             .unwrap();
-        db.list_push("commit", "abc123", "tags", "b", "a@b.com", 2000)
+        db.list_push(&TargetType::Commit, "abc123", "tags", "b", "a@b.com", 2000)
             .unwrap();
-        db.list_pop("commit", "abc123", "tags", "b", "a@b.com", 3000)
+        db.list_pop(&TargetType::Commit, "abc123", "tags", "b", "a@b.com", 3000)
             .unwrap();
-        let (val, _, _) = db.get("commit", "abc123", "tags").unwrap().unwrap();
+        let (val, _, _) = db
+            .get(&TargetType::Commit, "abc123", "tags")
+            .unwrap()
+            .unwrap();
         let list = crate::list_value::list_values_from_json(&val).unwrap();
         assert_eq!(list, vec!["a"]);
     }
@@ -2212,9 +2339,9 @@ mod tests {
     #[test]
     fn test_apply_tombstone_removes_list_values_rows() {
         let db = Db::open_in_memory().unwrap();
-        db.list_push("commit", "abc123", "tags", "a", "a@b.com", 1000)
+        db.list_push(&TargetType::Commit, "abc123", "tags", "a", "a@b.com", 1000)
             .unwrap();
-        db.list_push("commit", "abc123", "tags", "b", "a@b.com", 2000)
+        db.list_push(&TargetType::Commit, "abc123", "tags", "b", "a@b.com", 2000)
             .unwrap();
 
         let metadata_id: i64 = db
@@ -2235,8 +2362,14 @@ mod tests {
             .unwrap();
         assert_eq!(before_count, 2);
 
-        db.apply_tombstone("commit", "abc123", "tags", "user@example.com", 3000)
-            .unwrap();
+        db.apply_tombstone(
+            &TargetType::Commit,
+            "abc123",
+            "tags",
+            "user@example.com",
+            3000,
+        )
+        .unwrap();
 
         let after_count: i64 = db
             .conn
@@ -2247,24 +2380,24 @@ mod tests {
             )
             .unwrap();
         assert_eq!(after_count, 0);
-        assert_eq!(db.get("commit", "abc123", "tags").unwrap(), None);
+        assert_eq!(db.get(&TargetType::Commit, "abc123", "tags").unwrap(), None);
     }
 
     #[test]
     fn test_authorship() {
         let db = Db::open_in_memory().unwrap();
         db.set(
-            "commit",
+            &TargetType::Commit,
             "abc123",
             "key",
             "\"val\"",
-            "string",
+            &ValueType::String,
             "user@example.com",
             42000,
         )
         .unwrap();
         let (email, ts) = db
-            .get_authorship("commit", "abc123", "key")
+            .get_authorship(&TargetType::Commit, "abc123", "key")
             .unwrap()
             .unwrap();
         assert_eq!(email, "user@example.com");
@@ -2285,7 +2418,13 @@ mod tests {
 
         // set stores the timestamp
         db.set(
-            "commit", "abc123", "key", "\"val\"", "string", "a@b.com", 5000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"val\"",
+            &ValueType::String,
+            "a@b.com",
+            5000,
         )
         .unwrap();
         let entries = db.get_all_metadata().unwrap();
@@ -2294,24 +2433,51 @@ mod tests {
 
         // upsert updates the timestamp
         db.set(
-            "commit", "abc123", "key", "\"val2\"", "string", "a@b.com", 9000,
+            &TargetType::Commit,
+            "abc123",
+            "key",
+            "\"val2\"",
+            &ValueType::String,
+            "a@b.com",
+            9000,
         )
         .unwrap();
         let entries = db.get_all_metadata().unwrap();
         assert_eq!(entries[0].5, 9000);
 
         // list_push stores the timestamp
-        db.list_push("commit", "abc123", "tags", "first", "a@b.com", 11000)
-            .unwrap();
+        db.list_push(
+            &TargetType::Commit,
+            "abc123",
+            "tags",
+            "first",
+            "a@b.com",
+            11000,
+        )
+        .unwrap();
         let entries = db.get_all_metadata().unwrap();
         let tags = entries.iter().find(|e| e.2 == "tags").unwrap();
         assert_eq!(tags.5, 11000);
 
         // list_pop updates the timestamp
-        db.list_push("commit", "abc123", "tags", "second", "a@b.com", 12000)
-            .unwrap();
-        db.list_pop("commit", "abc123", "tags", "second", "a@b.com", 13000)
-            .unwrap();
+        db.list_push(
+            &TargetType::Commit,
+            "abc123",
+            "tags",
+            "second",
+            "a@b.com",
+            12000,
+        )
+        .unwrap();
+        db.list_pop(
+            &TargetType::Commit,
+            "abc123",
+            "tags",
+            "second",
+            "a@b.com",
+            13000,
+        )
+        .unwrap();
         let entries = db.get_all_metadata().unwrap();
         let tags = entries.iter().find(|e| e.2 == "tags").unwrap();
         assert_eq!(tags.5, 13000);

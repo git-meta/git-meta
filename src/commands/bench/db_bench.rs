@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::db::Db;
 use crate::git_utils;
+use crate::types::TargetType;
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -33,9 +34,16 @@ pub fn run() -> Result<()> {
     let mut sizes: Vec<usize> = Vec::with_capacity(total);
     let mut errors = 0u64;
 
-    for (target_type, target_value, key) in &keys {
+    for (target_type_str, target_value, key) in &keys {
         let t0 = Instant::now();
-        match db.get(target_type, target_value, key) {
+        let target_type = match TargetType::from_str(target_type_str) {
+            Ok(tt) => tt,
+            Err(_) => {
+                errors += 1;
+                continue;
+            }
+        };
+        match db.get(&target_type, target_value, key) {
             Ok(Some((value, _vtype, _is_git_ref))) => {
                 let elapsed = t0.elapsed();
                 let bytes = value.len();

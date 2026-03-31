@@ -6,6 +6,7 @@ use git2::{Oid, Repository, Sort};
 
 use crate::context::CommandContext;
 use crate::git_utils;
+use crate::types::TargetType;
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -45,7 +46,10 @@ pub fn run(
         let sha = oid.to_string();
 
         // Fetch metadata before deciding whether to print the commit
-        let entries = ctx.db.get_all("commit", &sha, None).unwrap_or_default();
+        let entries = ctx
+            .db
+            .get_all(&TargetType::Commit, &sha, None)
+            .unwrap_or_default();
         // get_all returns (key, value, value_type, is_git_ref)
         // value is a JSON-encoded string for string types
         let meta: Vec<(String, String)> = entries

@@ -3,6 +3,7 @@ use rusqlite::params;
 
 use super::auto::{parse_since_to_cutoff_ms, read_prune_rules};
 use crate::context::CommandContext;
+use crate::types::TargetType;
 
 pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
     let ctx = CommandContext::open_gix(None)?;
@@ -19,7 +20,7 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
             Some(ref r) => r.since.clone(),
             None => {
                 // Check if at least meta:prune:since is set (triggers may be absent)
-                match ctx.db.get("project", "", "meta:prune:since")? {
+                match ctx.db.get(&TargetType::Project, "", "meta:prune:since")? {
                     Some((value, _, _)) => {
                         let s: String = serde_json::from_str(&value)?;
                         s
