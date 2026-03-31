@@ -41,24 +41,16 @@ pub fn run(dry_run: bool) -> Result<()> {
 
     // Find the current serialized tree
     let ref_name = git_utils::git2_local_ref(&repo)?;
-    let current_commit = match repo.find_reference(&ref_name) {
-        Ok(r) => match r.peel_to_commit() {
-            Ok(c) => c,
-            Err(_) => {
-                eprintln!(
-                    "No serialized metadata found at {}. Run `gmeta serialize` first.",
-                    ref_name
-                );
-                return Ok(());
-            }
-        },
-        Err(_) => {
-            eprintln!(
-                "No serialized metadata found at {}. Run `gmeta serialize` first.",
-                ref_name
-            );
-            return Ok(());
-        }
+    let Some(current_commit) = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok())
+    else {
+        eprintln!(
+            "No serialized metadata found at {}. Run `gmeta serialize` first.",
+            ref_name
+        );
+        return Ok(());
     };
 
     let tree_oid = current_commit.tree()?.id();

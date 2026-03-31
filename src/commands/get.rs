@@ -159,16 +159,16 @@ fn hydrate_promised_entries(
             if let Some(dir_oid) = git_utils::find_blob_oid_in_tree(repo, &tip_tree, &path)? {
                 // dir_oid is a tree — collect all blob entries in it
                 if let Ok(list_tree) = repo.find_tree(dir_oid) {
-                    let mut oids = Vec::new();
-                    for entry in list_tree.iter() {
-                        let name = entry.name().unwrap_or("");
-                        if name == types::TOMBSTONE_ROOT || name.starts_with("__") {
-                            continue;
-                        }
-                        if entry.kind() == Some(git2::ObjectType::Blob) {
-                            oids.push(entry.id());
-                        }
-                    }
+                    let oids: Vec<_> = list_tree
+                        .iter()
+                        .filter(|e| {
+                            let name = e.name().unwrap_or("");
+                            !name.starts_with("__")
+                                && name != types::TOMBSTONE_ROOT
+                                && e.kind() == Some(git2::ObjectType::Blob)
+                        })
+                        .map(|e| e.id())
+                        .collect();
                     if !oids.is_empty() {
                         pending.push(PendingEntry {
                             idx,
@@ -186,16 +186,16 @@ fn hydrate_promised_entries(
             let set_path = format!("{}/{}", key_path, types::SET_VALUE_DIR);
             if let Some(dir_oid) = git_utils::find_blob_oid_in_tree(repo, &tip_tree, &set_path)? {
                 if let Ok(set_tree) = repo.find_tree(dir_oid) {
-                    let mut oids = Vec::new();
-                    for entry in set_tree.iter() {
-                        let name = entry.name().unwrap_or("");
-                        if name == types::TOMBSTONE_ROOT || name.starts_with("__") {
-                            continue;
-                        }
-                        if entry.kind() == Some(git2::ObjectType::Blob) {
-                            oids.push(entry.id());
-                        }
-                    }
+                    let oids: Vec<_> = set_tree
+                        .iter()
+                        .filter(|e| {
+                            let name = e.name().unwrap_or("");
+                            !name.starts_with("__")
+                                && name != types::TOMBSTONE_ROOT
+                                && e.kind() == Some(git2::ObjectType::Blob)
+                        })
+                        .map(|e| e.id())
+                        .collect();
                     if !oids.is_empty() {
                         pending.push(PendingEntry {
                             idx,
