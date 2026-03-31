@@ -6,8 +6,8 @@ use crate::db::Db;
 use crate::git_utils;
 
 pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
-    let repo = git_utils::git2_discover_repo()?;
-    let db_path = git_utils::git2_db_path(&repo)?;
+    let repo = git_utils::discover_repo()?;
+    let db_path = git_utils::db_path(&repo)?;
     let db = Db::open(&db_path)?;
 
     let cutoff_ms = if skip_date {

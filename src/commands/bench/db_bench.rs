@@ -14,10 +14,10 @@ const RED: &str = "\x1b[31m";
 const BLUE: &str = "\x1b[34m";
 
 pub fn run() -> Result<()> {
-    let repo = git_utils::git2_discover_repo()?;
-    let db_path = git_utils::git2_db_path(&repo)?;
-    let repo2 = git_utils::git2_discover_repo()?;
-    let db = Db::open_with_repo(&db_path, repo2)?;
+    let repo = git_utils::discover_repo()?;
+    let db_path = git_utils::db_path(&repo)?;
+    let git2_repo = git_utils::git2_discover_repo()?;
+    let db = Db::open_with_repo(&db_path, git2_repo)?;
 
     let keys = db.get_all_keys()?;
     let total = keys.len();
