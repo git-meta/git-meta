@@ -327,6 +327,7 @@ pub fn get_email(repo: &gix::Repository) -> Result<String> {
 }
 
 /// Get the user's name from Git config.
+#[allow(dead_code)]
 pub fn get_name(repo: &gix::Repository) -> Result<String> {
     let config = repo.config_snapshot();
     Ok(config
@@ -345,12 +346,14 @@ pub fn get_namespace(repo: &gix::Repository) -> Result<String> {
 }
 
 /// Get the local ref name for serialization.
+#[allow(dead_code)]
 pub fn local_ref(repo: &gix::Repository) -> Result<String> {
     let ns = get_namespace(repo)?;
     Ok(format!("refs/{}/local/main", ns))
 }
 
 /// Get the ref name for a named destination (e.g. "private" -> "refs/meta/local/private").
+#[allow(dead_code)]
 pub fn destination_ref(repo: &gix::Repository, destination: &str) -> Result<String> {
     let ns = get_namespace(repo)?;
     Ok(format!("refs/{}/local/{}", ns, destination))
@@ -364,6 +367,7 @@ pub fn remote_ref(repo: &gix::Repository, remote: &str) -> Result<String> {
 }
 
 /// Run a git CLI command in the repository's working directory.
+#[allow(dead_code)]
 pub fn run_git(repo: &gix::Repository, args: &[&str]) -> Result<String> {
     let workdir = repo.workdir().unwrap_or_else(|| repo.git_dir());
 
