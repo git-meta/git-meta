@@ -22,6 +22,10 @@ This is a reference implementation of the gmeta spec ([docs](https://schacon.git
 - Prefer guard clauses (early returns) over nested `if` blocks.
 - Prefer iterators/combinators over manual loops. Use `Cow<'_, str>` when allocation is conditional.
 
+## Dependencies
+
+- **Use `gix` (gitoxide), not `git2` (libgit2).** `gix` is the preferred Git library for this project. Do not introduce `git2` dependencies or suggest `git2`-based solutions. If existing code uses `git2`, prefer migrating it to `gix` when touching that code.
+
 ## Architecture and Design
 
 - For code that you create, **always** include doc comments for all public functions, structs, enums, and methods and also document function parameters, return values, and errors.
