@@ -7,7 +7,6 @@ use git2::{Oid, Repository, Sort};
 use crate::context::CommandContext;
 use crate::git_utils;
 
-// ── ANSI colours ──────────────────────────────────────────────────────────────
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -68,7 +67,6 @@ pub fn run(
         }
         printed += 1;
 
-        // ── Header line ───────────────────────────────────────────────────────
         let short_sha = &sha[..10];
         let author = commit.author();
         let author_name = author.name().unwrap_or("unknown");
@@ -79,7 +77,6 @@ pub fn run(
              {GREEN}{author_name}{RESET} {DIM}<{author_email}>{RESET}"
         );
 
-        // ── Commit message (first 4 non-empty lines) ──────────────────────────
         let message = commit.message().unwrap_or("").trim().to_string();
         let nonempty_lines: Vec<&str> = message.lines().filter(|l| !l.trim().is_empty()).collect();
         let shown = nonempty_lines.len().min(4);
@@ -91,7 +88,6 @@ pub fn run(
             println!("  {DIM}... ({extra} more lines){RESET}");
         }
 
-        // ── Metadata block ────────────────────────────────────────────────────
         if !meta.is_empty() {
             println!("  {CYAN}╶── metadata ──{RESET}");
             for (key, value) in &meta {
@@ -112,9 +108,6 @@ pub fn run(
 
     Ok(())
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 /// Resolve a ref name or commit-ish to an OID.  Falls back to HEAD.
 fn resolve_start(repo: &Repository, start_ref: Option<&str>) -> Result<Oid> {
     let spec = start_ref.unwrap_or("HEAD");

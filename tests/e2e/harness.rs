@@ -11,9 +11,6 @@ use assert_cmd::Command;
 use sha1::{Digest, Sha1};
 use std::path::Path;
 use tempfile::TempDir;
-
-// ── Environment isolation ────────────────────────────────────────────────────
-
 #[cfg(not(windows))]
 const NULL_DEVICE: &str = "/dev/null";
 #[cfg(windows)]
@@ -60,9 +57,6 @@ fn isolate_cmd(cmd: &mut Command) {
         .env("GIT_CONFIG_KEY_2", "init.defaultBranch")
         .env("GIT_CONFIG_VALUE_2", "main");
 }
-
-// ── Command helpers ──────────────────────────────────────────────────────────
-
 /// Build an isolated `gmeta` [`Command`] pointed at `dir`.
 ///
 /// The command has full environment isolation applied so tests are reproducible.
@@ -72,9 +66,6 @@ pub fn gmeta(dir: &Path) -> Command {
     isolate_cmd(&mut cmd);
     cmd
 }
-
-// ── Fixture helpers ──────────────────────────────────────────────────────────
-
 /// Get a writable copy of the `tests/fixtures/{name}.sh` fixture.
 ///
 /// Returns `(TempDir, initial_commit_sha)`. The `TempDir` owns the working
@@ -114,9 +105,6 @@ fn head_sha(path: &std::path::Path) -> String {
         .id();
     oid.to_string()
 }
-
-// ── Target helpers ───────────────────────────────────────────────────────────
-
 /// Build a `commit:<sha>` target string.
 pub fn commit_target(sha: &str) -> String {
     format!("commit:{sha}")
@@ -130,9 +118,6 @@ pub fn target_fanout(value: &str) -> String {
     let hash = format!("{:x}", hasher.finalize());
     hash[..2].to_string()
 }
-
-// ── Repo setup helpers (for tests that need custom repo configurations) ──────
-
 /// Create a fresh git repository in a new temp directory with user config set.
 ///
 /// Returns `(TempDir, initial_commit_sha)`. Use this when a test needs a repo
@@ -383,9 +368,6 @@ pub fn setup_bare_with_history_retained() -> TempDir {
 
     bare_dir
 }
-
-// ── Object transfer helpers (simulate push/pull without network) ─────────────
-
 /// Copy all git objects from `src` repo into a bare repo at `bare_dir`.
 ///
 /// Simulates a push by copying loose objects and pack files.

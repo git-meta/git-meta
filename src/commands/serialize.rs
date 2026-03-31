@@ -19,9 +19,6 @@ struct TombstoneBlob<'a> {
     timestamp: i64,
     email: &'a str,
 }
-
-// ── Filter rules ─────────────────────────────────────────────────────────────
-
 const META_LOCAL_PREFIX: &str = "meta:local:";
 /// The "main" destination name used for the primary ref.
 pub const MAIN_DEST: &str = "main";
@@ -370,7 +367,6 @@ pub fn run(verbose: bool) -> Result<()> {
         return Ok(());
     }
 
-    // ── Pre-filter by prune cutoff ────────────────────────────────────────
     // If meta:prune:since is configured, drop entries older than the cutoff
     // before building the tree. This avoids building a large tree only to
     // prune it, and keeps the summary counts accurate.
@@ -400,7 +396,6 @@ pub fn run(verbose: bool) -> Result<()> {
         metadata_entries
     };
 
-    // ── Read filter rules ───────────────────────────────────────────────────
     let filter_rules = parse_filter_rules(&ctx.db)?;
     if verbose && !filter_rules.is_empty() {
         eprintln!("[verbose] filter rules: {}", filter_rules.len());
@@ -409,7 +404,6 @@ pub fn run(verbose: bool) -> Result<()> {
         }
     }
 
-    // ── Partition entries by destination ─────────────────────────────────────
     type MetaEntry = (String, String, String, String, String, i64, bool);
     type TombEntry = (String, String, String, i64, String);
     type SetTombEntry = (String, String, String, String, String, i64, String);
@@ -489,7 +483,6 @@ pub fn run(verbose: bool) -> Result<()> {
     all_dests.extend(dest_set_tombstones.keys().cloned());
     all_dests.extend(dest_list_tombstones.keys().cloned());
 
-    // ── Summarize ───────────────────────────────────────────────────────────
     {
         let mut string_count = 0u64;
         let mut list_count = 0u64;
@@ -552,7 +545,6 @@ pub fn run(verbose: bool) -> Result<()> {
         }
     }
 
-    // ── Build and commit trees per destination ──────────────────────────────
     let name = git_utils::git2_get_name(repo)?;
     let email = git_utils::git2_get_email(repo)?;
     let sig = git2::Signature::now(&name, &email)?;

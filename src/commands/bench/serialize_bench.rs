@@ -13,7 +13,6 @@ use std::time::Instant;
 
 use crate::db::Db;
 
-// ── ANSI colours ─────────────────────────────────────────────────────────────
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -24,7 +23,6 @@ const RED: &str = "\x1b[31m";
 const BLUE: &str = "\x1b[34m";
 const MAGENTA: &str = "\x1b[35m";
 
-// ── Deterministic PRNG ───────────────────────────────────────────────────────
 // Simple splitmix64 — no external dependency needed.
 
 struct Rng(u64);
@@ -64,9 +62,6 @@ fn fake_value(rng: &mut Rng, min_len: usize, max_len: usize) -> String {
         })
         .collect()
 }
-
-// ── Per-round stats ──────────────────────────────────────────────────────────
-
 struct RoundStats {
     round: usize,
     keys_inserted: usize,
@@ -74,9 +69,6 @@ struct RoundStats {
     serialize_secs: f64,
     cumulative_keys: usize,
 }
-
-// ── Git ODB statistics ───────────────────────────────────────────────────────
-
 struct OdbStats {
     loose_blobs: usize,
     loose_trees: usize,
@@ -154,7 +146,6 @@ fn fmt_ms(secs: f64) -> String {
     }
 }
 
-// ── Serialize logic (extracted from commands/serialize.rs) ────────────────────
 // We reuse the same DB and tree-building approach but in a self-contained
 // benchmark context.
 
@@ -265,9 +256,6 @@ fn build_tree_from_paths(
     }
     build_dir(repo, &root)
 }
-
-// ── Entry point ──────────────────────────────────────────────────────────────
-
 pub fn run(rounds: usize) -> Result<()> {
     let mut rng = Rng(0xdeadbeef_cafebabe);
 
@@ -383,7 +371,6 @@ pub fn run(rounds: usize) -> Result<()> {
 
     let wall_secs = wall_t0.elapsed().as_secs_f64();
 
-    // ── Summary ──────────────────────────────────────────────────────────────
     println!("\n{}── Summary ──{}", BOLD, RESET);
     println!("  total keys:       {}{}{}", CYAN, total_keys, RESET);
     println!(
@@ -456,7 +443,6 @@ pub fn run(rounds: usize) -> Result<()> {
         println!("    slowdown: {}{:.1}x{}", color, slowdown, RESET);
     }
 
-    // ── Git ODB stats ────────────────────────────────────────────────────────
     println!("\n{}── Git ODB ──{}", BOLD, RESET);
 
     let odb = count_odb_stats(&repo_path)?;
