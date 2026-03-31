@@ -27,6 +27,9 @@ pub struct CommandContext {
     pub email: String,
     /// Millisecond-precision timestamp for this command invocation.
     pub timestamp: i64,
+    /// The metadata namespace from git config (e.g. `"meta"`).
+    /// Used to construct ref paths like `refs/{ns}/local/main`.
+    pub namespace: String,
 }
 
 impl CommandContext {
@@ -43,6 +46,7 @@ impl CommandContext {
         let repo = git_utils::discover_repo()?;
         let db_path = git_utils::db_path(&repo)?;
         let email = git_utils::get_email(&repo)?;
+        let namespace = git_utils::get_namespace(&repo)?;
         let timestamp = timestamp_override.unwrap_or_else(|| Utc::now().timestamp_millis());
         let db = Db::open(&db_path)?;
 
@@ -56,6 +60,7 @@ impl CommandContext {
             db,
             email,
             timestamp,
+            namespace,
         })
     }
 
@@ -71,6 +76,7 @@ impl CommandContext {
         let repo = git_utils::git2_discover_repo()?;
         let db_path = git_utils::git2_db_path(&repo)?;
         let email = git_utils::git2_get_email(&repo)?;
+        let namespace = git_utils::git2_get_namespace(&repo)?;
         let timestamp = timestamp_override.unwrap_or_else(|| Utc::now().timestamp_millis());
         let db = Db::open(&db_path)?;
 
@@ -83,6 +89,7 @@ impl CommandContext {
             db,
             email,
             timestamp,
+            namespace,
         })
     }
 
@@ -115,6 +122,16 @@ impl CommandContext {
         self.gix_repo
             .get()
             .ok_or_else(|| anyhow::anyhow!("gix repository cell unexpectedly empty after set"))
+    }
+
+    /// The local serialization ref, e.g. `refs/meta/local/main`.
+    pub fn local_ref(&self) -> String {
+        format!("refs/{}/local/main", self.namespace)
+    }
+
+    /// A ref for a named destination, e.g. `refs/meta/local/{destination}`.
+    pub fn destination_ref(&self, destination: &str) -> String {
+        format!("refs/{}/local/{}", self.namespace, destination)
     }
 
     /// Resolve a target's partial commit SHA using the `git2` repository.

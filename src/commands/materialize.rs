@@ -115,8 +115,8 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
 
-    let ns = git_utils::git2_get_namespace(repo)?;
-    let local_ref_name = git_utils::git2_local_ref(repo)?;
+    let ns = &ctx.namespace;
+    let local_ref_name = ctx.local_ref();
 
     if verbose {
         eprintln!("[verbose] namespace: {}", ns);
@@ -131,7 +131,7 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
     }
 
     // Find remote refs to materialize
-    let remote_refs = find_remote_refs(repo, &ns, remote)?;
+    let remote_refs = find_remote_refs(repo, ns, remote)?;
 
     if remote_refs.is_empty() {
         println!("no remote metadata refs found");

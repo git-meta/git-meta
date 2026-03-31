@@ -20,9 +20,9 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let meta_url = config
         .get_string(&format!("remote.{}.url", remote_name))
         .unwrap_or_else(|_| "unknown".to_string());
-    let ns = git_utils::git2_get_namespace(repo)?;
+    let ns = &ctx.namespace;
 
-    let readme_content = generate_readme(&origin_url, &meta_url, &ns);
+    let readme_content = generate_readme(&origin_url, &meta_url, ns);
 
     if verbose {
         eprintln!("[verbose] remote: {}", remote_name);
@@ -157,11 +157,11 @@ const MAX_RETRIES: u32 = 5;
 pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
-    let ns = git_utils::git2_get_namespace(repo)?;
+    let ns = &ctx.namespace;
 
     // Resolve which remote to push to
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
-    let local_ref = git_utils::git2_local_ref(repo)?;
+    let local_ref = ctx.local_ref();
     let remote_refspec = format!("refs/{}/main", ns);
 
     if verbose {

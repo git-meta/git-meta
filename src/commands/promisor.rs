@@ -1,12 +1,11 @@
 use anyhow::{bail, Result};
 
 use crate::context::CommandContext;
-use crate::git_utils;
 
 pub fn run() -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
-    let ns = git_utils::git2_get_namespace(repo)?;
+    let ns = &ctx.namespace;
 
     let tracking_ref = format!("refs/{}/remotes/main", ns);
     let tip_commit = match repo.find_reference(&tracking_ref) {

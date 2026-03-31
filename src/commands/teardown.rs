@@ -6,7 +6,7 @@ use crate::git_utils;
 pub fn run() -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
-    let ns = git_utils::git2_get_namespace(repo)?;
+    let ns = &ctx.namespace;
 
     // Remove the SQLite database
     let db_path = git_utils::git2_db_path(repo)?;

@@ -9,7 +9,7 @@ use crate::types;
 pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
-    let ns = git_utils::git2_get_namespace(repo)?;
+    let ns = &ctx.namespace;
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
     let remote_refspec = format!("refs/{}/main", ns);
@@ -41,10 +41,8 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
 
     // Check if we need to materialize even if no new commits were fetched
     // (e.g. remote add fetched but never materialized)
-    let needs_materialize = ctx.db.get_last_materialized()?.is_none()
-        || repo
-            .find_reference(&git_utils::git2_local_ref(repo)?)
-            .is_err();
+    let needs_materialize =
+        ctx.db.get_last_materialized()?.is_none() || repo.find_reference(&ctx.local_ref()).is_err();
 
     // Count new commits
     match (old_tip, new_tip) {

@@ -39,7 +39,7 @@ pub fn run(dry_run: bool) -> Result<()> {
         .unwrap_or_else(|| "?".to_string());
 
     // Find the current serialized tree
-    let ref_name = git_utils::git2_local_ref(repo)?;
+    let ref_name = ctx.local_ref();
     let Some(current_commit) = repo
         .find_reference(&ref_name)
         .ok()

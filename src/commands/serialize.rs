@@ -203,7 +203,7 @@ pub fn run(verbose: bool) -> Result<()> {
     let ctx = CommandContext::open_git2(None)?;
     let repo = ctx.git2_repo()?;
 
-    let local_ref_name = git_utils::git2_local_ref(repo)?;
+    let local_ref_name = ctx.local_ref();
     let last_materialized = ctx.db.get_last_materialized()?;
 
     if verbose {
@@ -558,7 +558,7 @@ pub fn run(verbose: bool) -> Result<()> {
     let sig = git2::Signature::now(&name, &email)?;
 
     for dest in &all_dests {
-        let ref_name = git_utils::git2_destination_ref(repo, dest)?;
+        let ref_name = ctx.destination_ref(dest);
         let empty_meta: Vec<MetaEntry> = Vec::new();
         let empty_tomb: Vec<TombEntry> = Vec::new();
         let empty_set_tomb: Vec<SetTombEntry> = Vec::new();
@@ -660,8 +660,7 @@ pub fn run(verbose: bool) -> Result<()> {
                         );
                     }
 
-                    let prune_tree_oid =
-                        prune_tree(repo, tree_oid, prune_rules, &ctx.db, verbose)?;
+                    let prune_tree_oid = prune_tree(repo, tree_oid, prune_rules, &ctx.db, verbose)?;
 
                     if prune_tree_oid != tree_oid {
                         if verbose {

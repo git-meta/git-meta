@@ -44,25 +44,6 @@ pub fn git2_get_namespace(repo: &Repository) -> Result<String> {
     Ok(ns)
 }
 
-/// Get the local ref name for serialization (git2).
-pub fn git2_local_ref(repo: &Repository) -> Result<String> {
-    let ns = git2_get_namespace(repo)?;
-    Ok(format!("refs/{}/local/main", ns))
-}
-
-/// Get the ref name for a named destination (git2).
-pub fn git2_destination_ref(repo: &Repository, destination: &str) -> Result<String> {
-    let ns = git2_get_namespace(repo)?;
-    Ok(format!("refs/{}/local/{}", ns, destination))
-}
-
-/// Get the ref pattern for remote metadata (git2).
-#[allow(dead_code)]
-pub fn git2_remote_ref(repo: &Repository, remote: &str) -> Result<String> {
-    let ns = git2_get_namespace(repo)?;
-    Ok(format!("refs/{}/{}", ns, remote))
-}
-
 /// Expand a partial commit SHA to the full 40-char hex string (git2).
 pub fn git2_resolve_commit_sha(repo: &Repository, partial: &str) -> Result<String> {
     let obj = repo
