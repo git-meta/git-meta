@@ -65,11 +65,8 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
     let url = expand_url(url);
 
     // Check if this remote name already exists
-    let existing = repo.remotes()?;
-    for existing_name in existing.iter().flatten() {
-        if existing_name == name {
-            bail!("remote '{}' already exists", name);
-        }
+    if repo.remotes()?.iter().flatten().any(|n| n == name) {
+        bail!("remote '{}' already exists", name);
     }
 
     // Check the remote for meta refs before configuring
@@ -210,9 +207,8 @@ pub fn run_remove(name: &str) -> Result<()> {
     // Verify this is a meta remote
     let config = repo.config()?;
     let meta_key = format!("remote.{}.meta", name);
-    match config.get_bool(&meta_key) {
-        Ok(true) => {}
-        _ => bail!("'{}' is not a metadata remote (no meta = true)", name),
+    if !matches!(config.get_bool(&meta_key), Ok(true)) {
+        bail!("'{}' is not a metadata remote (no meta = true)", name);
     }
 
     // Remove the git config section for this remote
