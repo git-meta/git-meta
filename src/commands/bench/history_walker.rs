@@ -41,7 +41,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
-// ── ANSI colours (same palette as fanout_bench) ───────────────────────────────
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -51,12 +50,8 @@ const GREEN: &str = "\x1b[32m";
 const MAGENTA: &str = "\x1b[35m";
 const RED: &str = "\x1b[31m";
 
-// ── Thresholds (match the spec) ───────────────────────────────────────────────
 const PRUNE_THRESHOLD: usize = 5_000;
 const PRUNE_KEEP: usize = 500;
-
-// ── Deterministic PRNG (xor-shift-64, same as fanout_bench) ──────────────────
-
 fn xorshift(state: &mut u64) -> u64 {
     let mut x = *state;
     x ^= x << 13;
@@ -96,9 +91,6 @@ fn sample_change_count(rng: &mut u64) -> usize {
     let count = (200.0 * u.powf(2.5)).ceil() as usize;
     count.clamp(1, 200)
 }
-
-// ── Tree helpers (mirrors fanout_bench / serialize.rs) ───────────────────────
-
 #[derive(Default)]
 struct Dir {
     files: BTreeMap<String, Vec<u8>>,
@@ -254,9 +246,6 @@ fn write_commit(
     let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
     Ok(repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)?)
 }
-
-// ── Generation phase ──────────────────────────────────────────────────────────
-
 struct GenerationStats {
     n_normal_commits: usize,
     n_prune_commits: usize,
@@ -435,9 +424,6 @@ fn generate_history(repo: &Repository, n_commits: usize, rng: &mut u64) -> Resul
         elapsed_secs: elapsed,
     })
 }
-
-// ── Walk phase ────────────────────────────────────────────────────────────────
-
 struct WalkStats {
     commits_visited: usize,
     shas_recovered: usize,
@@ -520,9 +506,6 @@ fn walk_history(repo: &Repository, tip_oid: Oid) -> Result<WalkStats> {
         elapsed_secs: elapsed,
     })
 }
-
-// ── Report ────────────────────────────────────────────────────────────────────
-
 fn fmt_ms(secs: f64) -> String {
     format!("{:.1} ms", secs * 1000.0)
 }
@@ -530,9 +513,6 @@ fn fmt_ms(secs: f64) -> String {
 fn fmt_us(secs: f64) -> String {
     format!("{:.2} µs", secs * 1_000_000.0)
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────────
-
 pub fn run(n_commits: usize) -> Result<()> {
     println!(
         "\n{}gmeta history-walker benchmark{}  —  {}{} commits to generate{}",
@@ -572,7 +552,6 @@ pub fn run(n_commits: usize) -> Result<()> {
         RESET
     );
 
-    // ── Generation ────────────────────────────────────────────────────────────
     println!("\n{}generating {} commits…{}", BOLD, n_commits, RESET);
 
     let mut rng: u64 = 0xdeadbeef_cafebabe;
@@ -613,7 +592,6 @@ pub fn run(n_commits: usize) -> Result<()> {
         RESET
     );
 
-    // ── Flush mempack → packfile, set refs/meta/local + HEAD ─────────────────
     print!("\n{}flushing mempack to packfile…{}", BOLD, RESET);
     let _ = std::io::stdout().flush();
     let t_pack = Instant::now();
@@ -649,7 +627,6 @@ pub fn run(n_commits: usize) -> Result<()> {
         RESET,
     );
 
-    // ── Walk ──────────────────────────────────────────────────────────────────
     print!("\n{}walking history from tip…{}", BOLD, RESET);
     let _ = std::io::stdout().flush();
 
@@ -695,7 +672,6 @@ pub fn run(n_commits: usize) -> Result<()> {
     };
     println!("  {}correctness{}            {}", DIM, RESET, match_str);
 
-    // ── Timing summary ────────────────────────────────────────────────────────
     println!("\n{}timing summary{}", BOLD, RESET);
     let gen_per_commit = gen.elapsed_secs / gen.commit_chain.len() as f64;
     let walk_per_commit = walk.elapsed_secs / walk.commits_visited.max(1) as f64;

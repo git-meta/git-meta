@@ -284,9 +284,6 @@ pub fn resolve_meta_remote(repo: &Repository, remote: Option<&str>) -> Result<St
         None => Ok(meta_remotes[0].0.clone()),
     }
 }
-
-// ── gix-based helpers (primary API) ──────────────────────────────────────────
-
 fn gix_config_string(repo: &gix::Repository, key: &str, default: &str) -> String {
     let config = repo.config_snapshot();
     config

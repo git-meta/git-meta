@@ -17,7 +17,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-// ── ANSI colours ─────────────────────────────────────────────────────────────
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -27,9 +26,6 @@ const GREEN: &str = "\x1b[32m";
 const RED: &str = "\x1b[31m";
 const BLUE: &str = "\x1b[34m";
 const MAGENTA: &str = "\x1b[35m";
-
-// ── Fanout schemes ────────────────────────────────────────────────────────────
-
 #[derive(Clone, Copy, Debug)]
 pub enum Scheme {
     First2,      // commit/{aa}/{full_sha}
@@ -64,9 +60,6 @@ impl Scheme {
         }
     }
 }
-
-// ── Tree builder (mirrors serialize.rs) ──────────────────────────────────────
-
 #[derive(Default)]
 struct Dir {
     files: BTreeMap<String, Vec<u8>>,
@@ -231,7 +224,6 @@ fn write_commit(repo: &Repository, tree_oid: Oid, parent_oid: Option<Oid>) -> Re
     Ok(repo.commit(None, &sig, &sig, "bench", &tree, &parent_refs)?)
 }
 
-// ── SHA generation ────────────────────────────────────────────────────────────
 //
 // Deterministic fake SHAs: we hash an integer with a simple xor-shift so every
 // "SHA" looks like a real 40-hex-char commit hash and has uniform distribution
@@ -249,9 +241,6 @@ fn fake_sha(n: u64) -> String {
         .wrapping_add(0x62b821756295c58d);
     format!("{:016x}{:016x}{:08x}", x, y, (x ^ y) as u32)
 }
-
-// ── Pretty printing ───────────────────────────────────────────────────────────
-
 fn print_header(label: &str) {
     println!(
         "\n{}{} ══════════════════════════════════════════════{}\n",
@@ -271,9 +260,6 @@ fn bar(value: f64, max: f64, width: usize, color: &str) -> String {
     let filled = ((value / max) * width as f64).round() as usize;
     format!("{}{}{}", color, "█".repeat(filled.min(width)), RESET)
 }
-
-// ── Diff: count paths present in new_tree but not base_tree, or with different OID ──
-
 fn diff_trees(repo: &Repository, base_oid: Oid, new_oid: Oid) -> Result<usize> {
     let base_tree = repo.find_tree(base_oid)?;
     let new_tree = repo.find_tree(new_oid)?;
@@ -281,9 +267,6 @@ fn diff_trees(repo: &Repository, base_oid: Oid, new_oid: Oid) -> Result<usize> {
     let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&new_tree), Some(&mut diff_opts))?;
     Ok(diff.deltas().count())
 }
-
-// ── Pack size ─────────────────────────────────────────────────────────────────
-
 fn pack_size_bytes(repo_path: &std::path::Path) -> Result<u64> {
     let pack_dir = repo_path.join("objects").join("pack");
     let mut total = 0u64;
@@ -331,9 +314,6 @@ fn count_loose_objects(repo_path: &std::path::Path) -> Result<usize> {
     }
     Ok(count)
 }
-
-// ── Per-scheme benchmark ──────────────────────────────────────────────────────
-
 struct SchemeResult {
     scheme: Scheme,
     /// Batch write: incremental tree update inserting SAMPLE entries at once
@@ -370,7 +350,6 @@ fn bench_scheme(
     std::fs::create_dir_all(&repo_path)?;
     let repo = Repository::init_bare(&repo_path)?;
 
-    // ── 1. Build base tree with n_base objects (full build, done once) ────────
     let base_files: BTreeMap<String, Vec<u8>> = shas[..n_base]
         .iter()
         .map(|sha| (scheme.shard_path(sha), entry_content(sha)))
@@ -390,7 +369,6 @@ fn bench_scheme(
     // Commit the base tree so sequential writes have a real parent chain.
     let base_commit_oid = write_commit(&repo, base_tree_oid, None)?;
 
-    // ── 2a. Write test — BATCH ────────────────────────────────────────────────
     // Incremental: apply SAMPLE new entries onto the existing base tree in one
     // shot. Only the shard subtrees touched by the new entries are rebuilt;
     // everything else is reused by OID. This is what a correct gmeta serialize
@@ -416,7 +394,6 @@ fn bench_scheme(
         RESET
     ));
 
-    // ── 2b. Write test — SEQUENTIAL ───────────────────────────────────────────
     // Add 1 entry, write an incremental tree, write a commit with the previous
     // commit as parent — repeat SAMPLE times. Models frequent single-change
     // serializes (e.g. one gmeta set → serialize per user action).
@@ -439,7 +416,6 @@ fn bench_scheme(
         (write_seq_secs * 1_000_000.0 / SAMPLE as f64) as u64,
     ));
 
-    // ── 3. Read benchmark ─────────────────────────────────────────────────────
     let read_shas: Vec<&String> = shas[..n_base]
         .iter()
         .step_by((n_base / SAMPLE).max(1))
@@ -465,7 +441,6 @@ fn bench_scheme(
         read_shas.len()
     ));
 
-    // ── 4. Diff benchmark ─────────────────────────────────────────────────────
     let t0 = Instant::now();
     let diff_count = diff_trees(&repo, base_tree_oid, batch_tree_oid)?;
     let diff_secs = t0.elapsed().as_secs_f64();
@@ -477,7 +452,6 @@ fn bench_scheme(
         diff_count
     ));
 
-    // ── 5. Pack size ──────────────────────────────────────────────────────────
     let loose_before = count_loose_objects(&repo_path)?;
     let t0 = Instant::now();
     run_git_gc(&repo_path)?;
@@ -506,9 +480,6 @@ fn bench_scheme(
         log,
     })
 }
-
-// ── Report ────────────────────────────────────────────────────────────────────
-
 fn print_report(results: &[SchemeResult], n_base: usize) {
     print_header("RESULTS SUMMARY");
 
@@ -537,7 +508,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
     let max_loose = maxu!(loose_objects_before_gc);
     let max_diff = maxf!(diff_secs);
 
-    // ── Write A: batch ────────────────────────────────────────────────────────
     println!(
         "{}Write A — batch: {} new entries → 1 incremental tree (into {}-object base){}",
         BOLD, SAMPLE, n_base, RESET
@@ -558,7 +528,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Write B: sequential ───────────────────────────────────────────────────
     println!(
         "\n{}Write B — sequential: 1 entry → incremental tree → commit × {} (chained parents){}",
         BOLD, SAMPLE, RESET
@@ -583,7 +552,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Read throughput ───────────────────────────────────────────────────────
     println!("\n{}Read 1 000 objects by known SHA{}", BOLD, RESET);
     println!(
         "  {}(lower = faster; tree.get_path() walk per lookup){}",
@@ -601,7 +569,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Diff speed ────────────────────────────────────────────────────────────
     println!("\n{}Diff base tree vs base + 1 000 changes{}", BOLD, RESET);
     println!(
         "  {}(lower = faster; git diff_tree_to_tree){}  [changed blobs: {}{}{}]",
@@ -623,7 +590,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Pack size ─────────────────────────────────────────────────────────────
     println!(
         "\n{}Pack file size (after git gc --aggressive){}",
         BOLD, RESET
@@ -642,7 +608,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Loose object count ────────────────────────────────────────────────────
     println!("\n{}Loose object count (before gc){}", BOLD, RESET);
     println!(
         "  {}(tree objects + blob objects written to ODB){}",
@@ -665,7 +630,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Per-object read latency ───────────────────────────────────────────────
     println!(
         "\n{}Per-object read latency (avg over 1 000){}",
         BOLD, RESET
@@ -681,7 +645,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    // ── Verdict ───────────────────────────────────────────────────────────────
     println!("\n{} ── Verdict ──{}  (bucket counts: ", BOLD, RESET);
     for r in results {
         print!(
@@ -735,9 +698,6 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         RESET
     );
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────────
-
 pub fn run(n_objects: usize) -> Result<()> {
     let schemes = [Scheme::First2, Scheme::First3, Scheme::First2Next2];
 
@@ -774,7 +734,6 @@ pub fn run(n_objects: usize) -> Result<()> {
     std::fs::create_dir_all(&tmp_path).context("failed to create temp dir")?;
     println!("{}repos in: {}{}{}", DIM, RESET, tmp_path.display(), RESET);
 
-    // ── Spawn one thread per scheme ───────────────────────────────────────────
     println!(
         "\n{}  {:<20}  {:<12}  {:<14}  {:<14}  {:<12}  {:<10}{}",
         DIM, "scheme", "base build", "write batch", "write seq", "read 1k", "diff", RESET
@@ -831,7 +790,6 @@ pub fn run(n_objects: usize) -> Result<()> {
         Scheme::First2Next2 => 2,
     });
 
-    // ── Print per-scheme logs ─────────────────────────────────────────────────
     // Move cursor up past the "running…" lines we printed earlier, then
     // overwrite with actual results. Fall back to plain sequential output if
     // the terminal doesn't support ANSI cursor movement.
@@ -876,7 +834,6 @@ pub fn run(n_objects: usize) -> Result<()> {
         RESET
     );
 
-    // ── Verbose per-scheme logs ───────────────────────────────────────────────
     for r in &results {
         println!("\n{}── {} ──{}", DIM, r.scheme.name(), RESET);
         for line in &r.log {

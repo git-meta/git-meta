@@ -13,7 +13,6 @@ use crate::context::CommandContext;
 use crate::db::Db;
 use crate::list_value::list_values_from_json;
 
-// ── ANSI colours ──────────────────────────────────────────────────────────────
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";

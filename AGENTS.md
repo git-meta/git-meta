@@ -21,6 +21,7 @@ This is a reference implementation of the gmeta spec ([docs](https://schacon.git
 - Use `time` crate (workspace dep) for date/time — no manual epoch math or magic constants like `86400`.
 - Prefer guard clauses (early returns) over nested `if` blocks.
 - Prefer iterators/combinators over manual loops. Use `Cow<'_, str>` when allocation is conditional.
+- **No banner/separator comments.** Do not use decorative divider comments like `// ── Section ───`. Use normal `//` comments or doc comments to explain *why*, not to visually partition files.
 
 ## Dependencies
 

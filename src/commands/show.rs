@@ -8,7 +8,6 @@ use git2::Repository;
 
 use crate::context::CommandContext;
 
-// ── ANSI colours ──────────────────────────────────────────────────────────────
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -30,7 +29,6 @@ pub fn run(commit_ref: &str) -> Result<()> {
         .with_context(|| format!("'{}' does not point to a commit", commit_ref))?;
     let sha = commit.id().to_string();
 
-    // ── Header ──────────────────────────────────────────────────────────────
     println!("{YELLOW}Commit:{RESET}     {CYAN}{sha}{RESET}");
 
     // Try to get change-id from GitButler
@@ -60,7 +58,6 @@ pub fn run(commit_ref: &str) -> Result<()> {
         local_time.format("%Y-%m-%d %H:%M:%S %z")
     );
 
-    // ── Commit message ──────────────────────────────────────────────────────
     println!();
     if let Some(message) = commit.message() {
         for line in message.trim_end().lines() {
@@ -68,7 +65,6 @@ pub fn run(commit_ref: &str) -> Result<()> {
         }
     }
 
-    // ── Files changed ───────────────────────────────────────────────────────
     let parent = commit.parent(0).ok();
     let parent_tree = parent.as_ref().and_then(|p| p.tree().ok());
     let commit_tree = commit.tree()?;
@@ -103,7 +99,6 @@ pub fn run(commit_ref: &str) -> Result<()> {
         }
     }
 
-    // ── Metadata ────────────────────────────────────────────────────────────
     // Collect metadata from both commit SHA and change-id
     let mut meta_entries: Vec<(String, String, String)> = Vec::new(); // (source, key, display_value)
 

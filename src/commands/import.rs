@@ -785,7 +785,6 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-// ── git-ai notes importer ─────────────────────────────────────────────────────
 //
 // Reads the git-ai authorship notes stored in refs/remotes/notes/ai (or the
 // local mirror refs/notes/ai).  Each blob in that fanout tree is a note for
