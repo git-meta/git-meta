@@ -138,12 +138,12 @@ fn main() -> Result<()> {
             value,
         } => commands::config::run(list, unset, key.as_deref(), value.as_deref()),
 
-        Commands::ConfigPrune => commands::config_prune::run(),
+        Commands::ConfigPrune => commands::prune::config::run(),
 
-        Commands::Prune { dry_run } => commands::prune::run(dry_run),
+        Commands::Prune { dry_run } => commands::prune::tree::run(dry_run),
 
         Commands::LocalPrune { dry_run, skip_date } => {
-            commands::local_prune::run(dry_run, skip_date)
+            commands::prune::local::run(dry_run, skip_date)
         }
 
         Commands::Teardown => commands::teardown::run(),

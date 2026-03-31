@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 
-use crate::commands::auto_prune::parse_since_to_cutoff_ms;
+use super::auto::parse_since_to_cutoff_ms;
 use crate::commands::serialize::{
     build_filtered_tree, classify_key, count_prune_stats, parse_filter_rules, MAIN_DEST,
 };

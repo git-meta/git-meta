@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusqlite::params;
 
-use crate::commands::auto_prune::{parse_since_to_cutoff_ms, read_prune_rules};
+use super::auto::{parse_since_to_cutoff_ms, read_prune_rules};
 use crate::context::CommandContext;
 
 pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {

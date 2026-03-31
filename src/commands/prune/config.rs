@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select};
 
-use crate::commands::auto_prune::{parse_size, read_prune_rules};
+use super::auto::{parse_size, read_prune_rules};
 use crate::context::CommandContext;
 
 pub fn run() -> Result<()> {

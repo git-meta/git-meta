@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 
-use crate::commands::auto_prune::{self, parse_since_to_cutoff_ms};
+use crate::commands::prune::auto::{self, parse_since_to_cutoff_ms};
 use crate::context::CommandContext;
 use crate::db::Db;
 use crate::git_utils;
@@ -378,7 +378,7 @@ pub fn run(verbose: bool) -> Result<()> {
         .db
         .get("project", "", "meta:prune:since")?
         .and_then(|(value, _, _)| serde_json::from_str::<String>(&value).ok());
-    let prune_rules = auto_prune::read_prune_rules(&ctx.db)?;
+    let prune_rules = auto::read_prune_rules(&ctx.db)?;
     let prune_cutoff_ms = prune_since
         .as_deref()
         .map(parse_since_to_cutoff_ms)
@@ -643,7 +643,7 @@ pub fn run(verbose: bool) -> Result<()> {
                             .unwrap_or_else(|| "none".to_string())
                     );
                 }
-                if auto_prune::should_prune(repo, tree_oid, prune_rules)? {
+                if auto::should_prune(repo, tree_oid, prune_rules)? {
                     eprintln!(
                         "Auto-prune triggered, pruning with --since={}...",
                         prune_rules.since
@@ -1100,7 +1100,7 @@ fn merge_dir_into_tree(
 pub fn prune_tree(
     repo: &git2::Repository,
     tree_oid: git2::Oid,
-    rules: &auto_prune::PruneRules,
+    rules: &auto::PruneRules,
     db: &Db,
     verbose: bool,
 ) -> Result<git2::Oid> {
@@ -1130,7 +1130,7 @@ pub fn prune_tree(
 
             // Check min-size: if the subtree is smaller than the threshold, keep it
             if min_size > 0 {
-                let size = auto_prune::compute_tree_size_for(repo, &subtree)?;
+                let size = auto::compute_tree_size_for(repo, &subtree)?;
                 if size < min_size {
                     if verbose {
                         eprintln!(
