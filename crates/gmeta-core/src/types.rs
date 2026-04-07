@@ -389,6 +389,7 @@ pub fn build_set_member_tombstone_tree_path(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
