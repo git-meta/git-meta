@@ -21,7 +21,6 @@ use crate::tree::merge::{
     two_way_merge_no_common_ancestor, ConflictDecision,
 };
 use crate::tree::model::{Key, ParsedTree, Tombstone, TreeValue};
-use crate::types::TargetType;
 
 /// How a remote ref was materialized.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -302,10 +301,13 @@ fn materialize_merge(
     if let Some(base_values) = &legacy_base_values {
         for key in base_values.keys() {
             if !merged_values.contains_key(key) && !merged_tombstones.contains_key(key) {
-                let tt = key.target_type.parse::<TargetType>()?;
-                session
-                    .store()
-                    .apply_tombstone(&tt, &key.target_value, &key.key, email, now)?;
+                session.store().apply_tombstone(
+                    &key.target_type,
+                    &key.target_value,
+                    &key.key,
+                    email,
+                    now,
+                )?;
             }
         }
     }
@@ -479,10 +481,13 @@ fn apply_legacy_deletes(
 ) -> Result<()> {
     for key in local_values.keys() {
         if !remote_entries.values.contains_key(key) {
-            let tt = key.target_type.parse::<TargetType>()?;
-            session
-                .store()
-                .apply_tombstone(&tt, &key.target_value, &key.key, email, now)?;
+            session.store().apply_tombstone(
+                &key.target_type,
+                &key.target_value,
+                &key.key,
+                email,
+                now,
+            )?;
         }
     }
     Ok(())

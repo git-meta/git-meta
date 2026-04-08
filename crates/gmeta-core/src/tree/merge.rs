@@ -511,7 +511,7 @@ mod tests {
 
     fn key(name: &str) -> Key {
         Key {
-            target_type: "commit".to_string(),
+            target_type: crate::types::TargetType::Commit,
             target_value: "abc123".to_string(),
             key: name.to_string(),
         }

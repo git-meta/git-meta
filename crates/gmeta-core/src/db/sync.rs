@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension};
 use crate::error::Result;
 use crate::list_value::{encode_entries, parse_timestamp_from_entry_name, ListEntry};
 use crate::tree::model::{Key, Tombstone, TreeValue};
-use crate::types::{set_member_id, TargetType, ValueType, GIT_REF_THRESHOLD};
+use crate::types::{set_member_id, ValueType, GIT_REF_THRESHOLD};
 
 use super::{encode_list_entries_by_metadata_id, encode_set_values_by_metadata_id, Store};
 
@@ -163,7 +163,7 @@ impl Store {
         now: i64,
     ) -> Result<()> {
         for (k, tree_val) in values {
-            let tt = k.target_type.parse::<TargetType>()?;
+            let tt = &k.target_type;
             match tree_val {
                 TreeValue::String(s) => {
                     if s.len() > GIT_REF_THRESHOLD {
@@ -174,11 +174,11 @@ impl Store {
                                     crate::error::Error::Other(format!("failed to write blob: {e}"))
                                 })?
                                 .to_string();
-                            let existing = self.get(&tt, &k.target_value, &k.key)?;
+                            let existing = self.get(tt, &k.target_value, &k.key)?;
                             if existing.as_ref().map(|e| e.value.as_str()) != Some(&blob_oid) {
                                 self.set_with_git_ref(
                                     None,
-                                    &tt,
+                                    tt,
                                     &k.target_value,
                                     &k.key,
                                     &blob_oid,
@@ -191,10 +191,10 @@ impl Store {
                         }
                     } else {
                         let json_val = serde_json::to_string(s)?;
-                        let existing = self.get(&tt, &k.target_value, &k.key)?;
+                        let existing = self.get(tt, &k.target_value, &k.key)?;
                         if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                             self.set(
-                                &tt,
+                                tt,
                                 &k.target_value,
                                 &k.key,
                                 &json_val,
@@ -229,10 +229,10 @@ impl Store {
                         });
                     }
                     let json_val = encode_entries(&items)?;
-                    let existing = self.get(&tt, &k.target_value, &k.key)?;
+                    let existing = self.get(tt, &k.target_value, &k.key)?;
                     if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                         self.set(
-                            &tt,
+                            tt,
                             &k.target_value,
                             &k.key,
                             &json_val,
@@ -260,10 +260,10 @@ impl Store {
                         .collect();
                     visible.sort();
                     let json_val = serde_json::to_string(&visible)?;
-                    let existing = self.get(&tt, &k.target_value, &k.key)?;
+                    let existing = self.get(tt, &k.target_value, &k.key)?;
                     if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                         self.set(
-                            &tt,
+                            tt,
                             &k.target_value,
                             &k.key,
                             &json_val,
@@ -280,9 +280,8 @@ impl Store {
             if values.contains_key(key) {
                 continue;
             }
-            let tt = key.target_type.parse::<TargetType>()?;
             self.apply_tombstone(
-                &tt,
+                &key.target_type,
                 &key.target_value,
                 &key.key,
                 &tombstone.email,
