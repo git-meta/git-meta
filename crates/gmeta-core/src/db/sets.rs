@@ -2,12 +2,12 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::{Error, Result};
 
-use super::{encode_set_values_by_metadata_id, Db};
+use super::{encode_set_values_by_metadata_id, Store};
 use crate::types::TargetType;
 
-impl Db {
+impl Store {
     /// Remove a member from a set.
-    pub fn set_rm(
+    pub fn set_remove(
         &self,
         target_type: &TargetType,
         target_value: &str,

@@ -22,8 +22,8 @@ pub fn run(dry_run: bool) -> Result<()> {
 
     // Read prune rules -- need at least meta:prune:since
     let since = match ctx.db.get(&TargetType::Project, "", "meta:prune:since")? {
-        Some((value, _, _)) => {
-            let s: String = serde_json::from_str(&value)?;
+        Some(entry) => {
+            let s: String = serde_json::from_str(&entry.value)?;
             s
         }
         None => {
@@ -98,11 +98,11 @@ pub fn run(dry_run: bool) -> Result<()> {
     let mut pruned_meta = 0u64;
     let metadata: Vec<_> = all_metadata
         .into_iter()
-        .filter(|(tt, _, key, _, _, ts, _)| {
-            if !is_main_dest(key) {
+        .filter(|e| {
+            if !is_main_dest(&e.key) {
                 return false;
             }
-            if tt != "project" && *ts < cutoff_ms {
+            if e.target_type != "project" && e.last_timestamp < cutoff_ms {
                 pruned_meta += 1;
                 return false;
             }

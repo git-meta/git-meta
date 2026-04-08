@@ -50,7 +50,7 @@ pub fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
             }
         }
         Some(idx) => {
-            ctx.db.list_rm(
+            ctx.db.list_remove(
                 &target.target_type,
                 target.value_str(),
                 key,

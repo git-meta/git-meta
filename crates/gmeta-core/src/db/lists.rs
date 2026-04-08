@@ -4,12 +4,12 @@ use crate::error::{Error, Result};
 
 use super::{
     blob_if_large, load_list_entries_by_metadata_id, load_list_entries_by_metadata_id_tx,
-    load_list_rows_by_metadata_id_tx, Db,
+    load_list_rows_by_metadata_id_tx, Store,
 };
 use crate::list_value::{encode_entries, ensure_unique_timestamp, ListEntry};
 use crate::types::TargetType;
 
-impl Db {
+impl Store {
     /// Push a value onto a list. If the key is currently a string, convert to list first.
     pub fn list_push(
         &self,
@@ -257,7 +257,7 @@ impl Db {
     }
 
     /// Remove a list entry by index, creating a list tombstone for serialization.
-    pub fn list_rm(
+    pub fn list_remove(
         &self,
         target_type: &TargetType,
         target_value: &str,

@@ -2,10 +2,10 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::Result;
 
-use super::Db;
+use super::Store;
 use crate::types::TargetType;
 
-impl Db {
+impl Store {
     /// Apply a tombstone from exchange data:
     /// remove current value (if any), record tombstone, and log the operation.
     pub fn apply_tombstone(

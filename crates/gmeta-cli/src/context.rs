@@ -1,7 +1,7 @@
 use anyhow::Result;
 use time::OffsetDateTime;
 
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::types::Target;
 
@@ -14,7 +14,7 @@ use gmeta_core::types::Target;
 pub struct CommandContext {
     repo: gix::Repository,
     /// The gmeta SQLite database.
-    pub db: Db,
+    pub db: Store,
     /// The user's email from git config, used for authorship tracking.
     pub email: String,
     /// Millisecond-precision timestamp for this command invocation.
@@ -38,7 +38,7 @@ impl CommandContext {
         let namespace = git_utils::get_namespace(&repo)?;
         let timestamp = timestamp_override
             .unwrap_or_else(|| OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000);
-        let db = Db::open(&db_path)?;
+        let db = Store::open(&db_path)?;
 
         Ok(Self {
             repo,

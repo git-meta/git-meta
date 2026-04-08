@@ -110,6 +110,99 @@ impl Target {
         Ok(())
     }
 
+    /// Build the common tree path prefix for any key.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn key_tree_path(&self, key: &str) -> Result<String> {
+        build_key_tree_path(self, key)
+    }
+
+    /// Build the full tree path for a string value.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn tree_path(&self, key: &str) -> Result<String> {
+        let key_path = build_key_tree_path(self, key)?;
+        Ok(format!("{}/{}", key_path, STRING_VALUE_BLOB))
+    }
+
+    /// Build the list directory path for a key.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn list_dir_path(&self, key: &str) -> Result<String> {
+        let key_path = build_key_tree_path(self, key)?;
+        Ok(format!("{}/{}", key_path, LIST_VALUE_DIR))
+    }
+
+    /// Build the set directory path for a key.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn set_dir_path(&self, key: &str) -> Result<String> {
+        let key_path = build_key_tree_path(self, key)?;
+        Ok(format!("{}/{}", key_path, SET_VALUE_DIR))
+    }
+
+    /// Build the tombstone blob path for a key.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn tombstone_path(&self, key: &str) -> Result<String> {
+        validate_key(key)?;
+        let base = self.tree_base_path();
+        let segments = key_to_path_segments(key).join("/");
+        Ok(format!(
+            "{}/{}/{}/{}",
+            base, TOMBSTONE_ROOT, segments, TOMBSTONE_BLOB
+        ))
+    }
+
+    /// Build the tombstone path for a specific list entry.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    /// - `entry`: the list entry name
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn list_entry_tombstone_path(&self, key: &str, entry: &str) -> Result<String> {
+        let key_path = build_key_tree_path(self, key)?;
+        Ok(format!(
+            "{}/{}/{}/{}",
+            key_path, LIST_VALUE_DIR, TOMBSTONE_ROOT, entry
+        ))
+    }
+
+    /// Build the tombstone path for a specific set member.
+    ///
+    /// # Parameters
+    /// - `key`: the metadata key name
+    /// - `member`: the set member ID
+    ///
+    /// # Errors
+    /// Returns an error if the key is invalid.
+    pub fn set_member_tombstone_path(&self, key: &str, member: &str) -> Result<String> {
+        let key_path = build_key_tree_path(self, key)?;
+        Ok(format!("{}/{}/{}", key_path, TOMBSTONE_ROOT, member))
+    }
+
     /// Build the tree base path for serialization.
     ///
     /// Scheme per target type:
@@ -163,27 +256,6 @@ impl ValueType {
             "list" => Ok(ValueType::List),
             "set" => Ok(ValueType::Set),
             _ => Err(Error::UnknownValueType(s.to_string())),
-        }
-    }
-}
-
-/// Supported import source formats.
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
-pub enum ImportFormat {
-    /// Import the entire git history.
-    Entire,
-    /// Import from git-ai format.
-    GitAi,
-}
-
-impl ImportFormat {
-    /// Parse an import format string.
-    pub fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "entire" => Ok(ImportFormat::Entire),
-            "git-ai" => Ok(ImportFormat::GitAi),
-            _ => Err(Error::UnsupportedFormat(s.to_string())),
         }
     }
 }

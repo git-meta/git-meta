@@ -2,10 +2,10 @@ use rusqlite::params;
 
 use crate::error::Result;
 
-use super::Db;
+use super::Store;
 use crate::types::{TargetType, ValueType};
 
-impl Db {
+impl Store {
     /// Insert a "promised" entry -- we know this key exists in the remote history
     /// but we haven't fetched the blob data yet. Uses INSERT OR IGNORE so existing
     /// entries (e.g. from tip materialization) are never overwritten.

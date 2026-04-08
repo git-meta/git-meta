@@ -4,17 +4,15 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::Result;
 use crate::list_value::{encode_entries, parse_timestamp_from_entry_name, ListEntry};
-use crate::tree::model::{Key, TombstoneEntry, TreeValue};
+use crate::tree::model::{Key, Tombstone, TreeValue};
 use crate::types::{set_member_id, TargetType, ValueType, GIT_REF_THRESHOLD};
 
-use super::{encode_list_entries_by_metadata_id, encode_set_values_by_metadata_id, Db};
+use super::{encode_list_entries_by_metadata_id, encode_set_values_by_metadata_id, Store};
 
-impl Db {
+impl Store {
     /// Get all metadata entries (for serialization).
-    /// Returns (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref).
-    pub fn get_all_metadata(
-        &self,
-    ) -> Result<Vec<(String, String, String, String, ValueType, i64, bool)>> {
+    pub fn get_all_metadata(&self) -> Result<Vec<super::types::SerializableEntry>> {
+        use super::types::SerializableEntry;
         let mut stmt = self.conn.prepare(
             "SELECT rowid, target_type, target_value, key, value, value_type, last_timestamp, is_git_ref
              FROM metadata
@@ -55,38 +53,38 @@ impl Db {
                         self.repo.as_ref(),
                         metadata_id,
                     )?;
-                    results.push((
+                    results.push(SerializableEntry {
                         target_type,
                         target_value,
                         key,
-                        encoded,
-                        vt,
+                        value: encoded,
+                        value_type: vt,
                         last_timestamp,
-                        false,
-                    ));
+                        is_git_ref: false,
+                    });
                 }
                 ValueType::Set => {
                     let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-                    results.push((
+                    results.push(SerializableEntry {
                         target_type,
                         target_value,
                         key,
-                        encoded,
-                        vt,
+                        value: encoded,
+                        value_type: vt,
                         last_timestamp,
-                        false,
-                    ));
+                        is_git_ref: false,
+                    });
                 }
                 ValueType::String => {
-                    results.push((
+                    results.push(SerializableEntry {
                         target_type,
                         target_value,
                         key,
                         value,
-                        vt,
+                        value_type: vt,
                         last_timestamp,
                         is_git_ref,
-                    ));
+                    });
                 }
             }
         }
@@ -154,18 +152,18 @@ impl Db {
     /// corresponding tombstones are filtered out before writing.
     ///
     /// Large string values (exceeding [`GIT_REF_THRESHOLD`]) are stored as git blob
-    /// references if a repository is attached to this `Db` instance.
+    /// references if a repository is attached to this `Store` instance.
     pub fn apply_tree(
         &self,
         values: &BTreeMap<Key, TreeValue>,
-        tombstones: &BTreeMap<Key, TombstoneEntry>,
+        tombstones: &BTreeMap<Key, Tombstone>,
         set_tombstones: &BTreeMap<(Key, String), String>,
-        list_tombstones: &BTreeMap<(Key, String), TombstoneEntry>,
+        list_tombstones: &BTreeMap<(Key, String), Tombstone>,
         email: &str,
         now: i64,
     ) -> Result<()> {
-        for ((target_type, target_value, key_name), tree_val) in values {
-            let tt = TargetType::from_str(target_type)?;
+        for (k, tree_val) in values {
+            let tt = TargetType::from_str(&k.target_type)?;
             match tree_val {
                 TreeValue::String(s) => {
                     if s.len() > GIT_REF_THRESHOLD {
@@ -176,13 +174,13 @@ impl Db {
                                     crate::error::Error::Other(format!("failed to write blob: {e}"))
                                 })?
                                 .to_string();
-                            let existing = self.get(&tt, target_value, key_name)?;
-                            if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&blob_oid) {
+                            let existing = self.get(&tt, &k.target_value, &k.key)?;
+                            if existing.as_ref().map(|e| e.value.as_str()) != Some(&blob_oid) {
                                 self.set_with_git_ref(
                                     None,
                                     &tt,
-                                    target_value,
-                                    key_name,
+                                    &k.target_value,
+                                    &k.key,
                                     &blob_oid,
                                     &ValueType::String,
                                     email,
@@ -193,12 +191,12 @@ impl Db {
                         }
                     } else {
                         let json_val = serde_json::to_string(s)?;
-                        let existing = self.get(&tt, target_value, key_name)?;
-                        if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
+                        let existing = self.get(&tt, &k.target_value, &k.key)?;
+                        if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                             self.set(
                                 &tt,
-                                target_value,
-                                key_name,
+                                &k.target_value,
+                                &k.key,
                                 &json_val,
                                 &ValueType::String,
                                 email,
@@ -208,11 +206,10 @@ impl Db {
                     }
                 }
                 TreeValue::List(list_entries) => {
-                    let key = (target_type.clone(), target_value.clone(), key_name.clone());
                     let tombstoned_names: BTreeSet<String> = list_tombstones
                         .iter()
-                        .filter_map(|((k, entry_name), _)| {
-                            if *k == key {
+                        .filter_map(|((tk, entry_name), _)| {
+                            if *tk == *k {
                                 Some(entry_name.clone())
                             } else {
                                 None
@@ -232,12 +229,12 @@ impl Db {
                         });
                     }
                     let json_val = encode_entries(&items)?;
-                    let existing = self.get(&tt, target_value, key_name)?;
-                    if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
+                    let existing = self.get(&tt, &k.target_value, &k.key)?;
+                    if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                         self.set(
                             &tt,
-                            target_value,
-                            key_name,
+                            &k.target_value,
+                            &k.key,
                             &json_val,
                             &ValueType::List,
                             email,
@@ -246,11 +243,10 @@ impl Db {
                     }
                 }
                 TreeValue::Set(set_members) => {
-                    let key = (target_type.clone(), target_value.clone(), key_name.clone());
                     let tombstoned: BTreeSet<String> = set_tombstones
                         .iter()
-                        .filter_map(|((k, member_id), _)| {
-                            if *k == key {
+                        .filter_map(|((tk, member_id), _)| {
+                            if *tk == *k {
                                 Some(member_id.clone())
                             } else {
                                 None
@@ -264,12 +260,12 @@ impl Db {
                         .collect();
                     visible.sort();
                     let json_val = serde_json::to_string(&visible)?;
-                    let existing = self.get(&tt, target_value, key_name)?;
-                    if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
+                    let existing = self.get(&tt, &k.target_value, &k.key)?;
+                    if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                         self.set(
                             &tt,
-                            target_value,
-                            key_name,
+                            &k.target_value,
+                            &k.key,
                             &json_val,
                             &ValueType::Set,
                             email,
@@ -284,8 +280,14 @@ impl Db {
             if values.contains_key(key) {
                 continue;
             }
-            let tt = TargetType::from_str(&key.0)?;
-            self.apply_tombstone(&tt, &key.1, &key.2, &tombstone.email, tombstone.timestamp)?;
+            let tt = TargetType::from_str(&key.target_type)?;
+            self.apply_tombstone(
+                &tt,
+                &key.target_value,
+                &key.key,
+                &tombstone.email,
+                tombstone.timestamp,
+            )?;
         }
 
         Ok(())

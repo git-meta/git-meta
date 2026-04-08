@@ -1,5 +1,4 @@
 use anyhow::Result;
-use rusqlite::params;
 
 use super::auto::{parse_since_to_cutoff_ms, read_prune_rules};
 use crate::context::CommandContext;
@@ -21,8 +20,8 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
             None => {
                 // Check if at least meta:prune:since is set (triggers may be absent)
                 match ctx.db.get(&TargetType::Project, "", "meta:prune:since")? {
-                    Some((value, _, _)) => {
-                        let s: String = serde_json::from_str(&value)?;
+                    Some(entry) => {
+                        let s: String = serde_json::from_str(&entry.value)?;
                         s
                     }
                     None => {
@@ -66,62 +65,15 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
     eprintln!();
 
     // Count what will be pruned (never prune project target_type)
-
-    let metadata_count: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM metadata
-         WHERE target_type != 'project' AND last_timestamp < ?1",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
-
-    let list_values_count: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM list_values
-         WHERE timestamp < ?1
-           AND metadata_id IN (
-               SELECT rowid FROM metadata WHERE target_type != 'project'
-           )",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
-
-    let tombstone_count: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM metadata_tombstones
-         WHERE target_type != 'project' AND timestamp < ?1",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
-
-    let set_tombstone_count: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM set_tombstones
-         WHERE target_type != 'project' AND timestamp < ?1",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
-
-    let log_count: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM metadata_log
-         WHERE target_type != 'project' AND timestamp < ?1",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
+    let metadata_count = ctx.db.count_metadata_before(cutoff_ms)?;
+    let list_values_count = ctx.db.count_list_values_before(cutoff_ms)?;
+    let tombstone_count = ctx.db.count_tombstones_before(cutoff_ms)?;
+    let set_tombstone_count = ctx.db.count_set_tombstones_before(cutoff_ms)?;
+    let log_count = ctx.db.count_log_entries_before(cutoff_ms)?;
 
     // Count what will survive
-    let metadata_remaining: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM metadata
-         WHERE target_type = 'project' OR last_timestamp >= ?1",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
-
-    let list_values_remaining: u64 = ctx.db.conn.query_row(
-        "SELECT COUNT(*) FROM list_values
-         WHERE timestamp >= ?1
-            OR metadata_id IN (
-                SELECT rowid FROM metadata WHERE target_type = 'project'
-            )",
-        params![cutoff_ms],
-        |row| row.get(0),
-    )?;
+    let metadata_remaining = ctx.db.count_metadata_remaining(cutoff_ms)?;
+    let list_values_remaining = ctx.db.count_list_values_remaining(cutoff_ms)?;
 
     let total =
         metadata_count + list_values_count + tombstone_count + set_tombstone_count + log_count;
@@ -153,64 +105,11 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Delete in the right order: child rows first, then parent rows
-
-    // 1. Delete list_values and set_values for metadata rows being pruned
-    ctx.db.conn.execute(
-        "DELETE FROM list_values
-         WHERE metadata_id IN (
-             SELECT rowid FROM metadata
-             WHERE target_type != 'project' AND last_timestamp < ?1
-         )",
-        params![cutoff_ms],
-    )?;
-
-    ctx.db.conn.execute(
-        "DELETE FROM set_values
-         WHERE metadata_id IN (
-             SELECT rowid FROM metadata
-             WHERE target_type != 'project' AND last_timestamp < ?1
-         )",
-        params![cutoff_ms],
-    )?;
-
-    // 2. Delete old list entries from lists that survive (entries older than cutoff)
-    ctx.db.conn.execute(
-        "DELETE FROM list_values
-         WHERE timestamp < ?1
-           AND metadata_id IN (
-               SELECT rowid FROM metadata WHERE target_type != 'project'
-           )",
-        params![cutoff_ms],
-    )?;
-
-    // 3. Delete the metadata rows themselves
-    ctx.db.conn.execute(
-        "DELETE FROM metadata
-         WHERE target_type != 'project' AND last_timestamp < ?1",
-        params![cutoff_ms],
-    )?;
-
-    // 4. Delete old tombstones
-    ctx.db.conn.execute(
-        "DELETE FROM metadata_tombstones
-         WHERE target_type != 'project' AND timestamp < ?1",
-        params![cutoff_ms],
-    )?;
-
-    // 5. Delete old set tombstones
-    ctx.db.conn.execute(
-        "DELETE FROM set_tombstones
-         WHERE target_type != 'project' AND timestamp < ?1",
-        params![cutoff_ms],
-    )?;
-
-    // 6. Delete old log entries
-    ctx.db.conn.execute(
-        "DELETE FROM metadata_log
-         WHERE target_type != 'project' AND timestamp < ?1",
-        params![cutoff_ms],
-    )?;
+    // Delete via Store methods
+    ctx.db.prune_metadata_before(cutoff_ms)?;
+    ctx.db.prune_tombstones_before(cutoff_ms)?;
+    ctx.db.prune_set_tombstones_before(cutoff_ms)?;
+    ctx.db.prune_log_before(cutoff_ms)?;
 
     println!();
     println!("Pruned {} rows.", total);

@@ -3,7 +3,7 @@
 //! Determines which keys should be serialized and to which destinations,
 //! based on user-configured filter rules stored in the database.
 
-use crate::db::Db;
+use crate::db::Store;
 use crate::error::{Error, Result};
 use crate::types::{TargetType, ValueType};
 
@@ -55,13 +55,13 @@ pub enum PatternSegment {
 /// # Errors
 ///
 /// Returns an error if a rule is syntactically invalid.
-pub fn parse_filter_rules(db: &Db) -> Result<Vec<FilterRule>> {
+pub fn parse_filter_rules(db: &Store) -> Result<Vec<FilterRule>> {
     let mut rules = Vec::new();
 
     // meta:local:filter rules first (higher priority)
-    if let Some((value, value_type, _)) = db.get(&TargetType::Project, "", "meta:local:filter")? {
-        if value_type == ValueType::Set {
-            let members: Vec<String> = serde_json::from_str(&value)?;
+    if let Some(entry) = db.get(&TargetType::Project, "", "meta:local:filter")? {
+        if entry.value_type == ValueType::Set {
+            let members: Vec<String> = serde_json::from_str(&entry.value)?;
             for member in members {
                 rules.push(parse_rule(&member)?);
             }
@@ -69,9 +69,9 @@ pub fn parse_filter_rules(db: &Db) -> Result<Vec<FilterRule>> {
     }
 
     // Then meta:filter rules (shared/corporate)
-    if let Some((value, value_type, _)) = db.get(&TargetType::Project, "", "meta:filter")? {
-        if value_type == ValueType::Set {
-            let members: Vec<String> = serde_json::from_str(&value)?;
+    if let Some(entry) = db.get(&TargetType::Project, "", "meta:filter")? {
+        if entry.value_type == ValueType::Set {
+            let members: Vec<String> = serde_json::from_str(&entry.value)?;
             for member in members {
                 rules.push(parse_rule(&member)?);
             }

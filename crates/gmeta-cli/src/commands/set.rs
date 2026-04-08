@@ -136,7 +136,7 @@ pub fn run_rm(
     let ctx = CommandContext::open(timestamp)?;
     ctx.resolve_target(&mut target)?;
 
-    ctx.db.set_rm(
+    ctx.db.set_remove(
         &target.target_type,
         target.value_str(),
         key,

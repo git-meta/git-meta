@@ -101,7 +101,7 @@ fn main() -> Result<()> {
             dry_run,
             since,
         } => {
-            let fmt = gmeta_core::types::ImportFormat::from_str(&format)?;
+            let fmt = commands::import::ImportFormat::from_str(&format)?;
             commands::import::run(fmt, dry_run, since.as_deref())
         }
 

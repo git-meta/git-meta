@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Result;
 
-use super::model::{Key, TombstoneEntry, TreeValue};
+use super::model::{Key, Tombstone, TreeValue};
 
 /// Reason a merge conflict occurred.
 #[non_exhaustive]
@@ -77,7 +77,7 @@ pub struct ConflictDecision {
 enum MergeState {
     Absent,
     Value(TreeValue),
-    Tombstone(TombstoneEntry),
+    Tombstone(Tombstone),
 }
 
 /// Three-way merge: base vs local vs remote.
@@ -243,12 +243,12 @@ pub fn three_way_merge(
 /// A tuple of `(merged_values, merged_tombstones, conflict_decisions)`.
 pub fn two_way_merge_no_common_ancestor(
     local_values: &BTreeMap<Key, TreeValue>,
-    local_tombstones: &BTreeMap<Key, TombstoneEntry>,
+    local_tombstones: &BTreeMap<Key, Tombstone>,
     remote_values: &BTreeMap<Key, TreeValue>,
-    remote_tombstones: &BTreeMap<Key, TombstoneEntry>,
+    remote_tombstones: &BTreeMap<Key, Tombstone>,
 ) -> (
     BTreeMap<Key, TreeValue>,
-    BTreeMap<Key, TombstoneEntry>,
+    BTreeMap<Key, Tombstone>,
     Vec<ConflictDecision>,
 ) {
     let mut merged_values = BTreeMap::new();
@@ -329,11 +329,11 @@ pub fn two_way_merge_no_common_ancestor(
 ///
 /// The merged tombstone map.
 pub fn merge_tombstones(
-    base: &BTreeMap<Key, TombstoneEntry>,
-    local: &BTreeMap<Key, TombstoneEntry>,
-    remote: &BTreeMap<Key, TombstoneEntry>,
+    base: &BTreeMap<Key, Tombstone>,
+    local: &BTreeMap<Key, Tombstone>,
+    remote: &BTreeMap<Key, Tombstone>,
     merged_values: &BTreeMap<Key, TreeValue>,
-) -> BTreeMap<Key, TombstoneEntry> {
+) -> BTreeMap<Key, Tombstone> {
     let mut merged = BTreeMap::new();
 
     let mut all_keys: BTreeMap<&Key, ()> = BTreeMap::new();
@@ -389,7 +389,7 @@ pub fn merge_tombstones(
 }
 
 /// Select the preferred tombstone when both sides have one. Currently always picks local.
-fn select_preferred_tombstone(local: &TombstoneEntry, _remote: &TombstoneEntry) -> TombstoneEntry {
+fn select_preferred_tombstone(local: &Tombstone, _remote: &Tombstone) -> Tombstone {
     local.clone()
 }
 
@@ -440,10 +440,10 @@ pub fn merge_set_member_tombstones(
 ///
 /// The merged list-entry tombstone map.
 pub fn merge_list_tombstones(
-    local: &BTreeMap<(Key, String), TombstoneEntry>,
-    remote: &BTreeMap<(Key, String), TombstoneEntry>,
+    local: &BTreeMap<(Key, String), Tombstone>,
+    remote: &BTreeMap<(Key, String), Tombstone>,
     merged_values: &BTreeMap<Key, TreeValue>,
-) -> BTreeMap<(Key, String), TombstoneEntry> {
+) -> BTreeMap<(Key, String), Tombstone> {
     let mut merged = remote.clone();
     for (key, entry) in local {
         merged
@@ -521,7 +521,11 @@ mod tests {
     use super::*;
 
     fn key(name: &str) -> Key {
-        ("commit".to_string(), "abc123".to_string(), name.to_string())
+        Key {
+            target_type: "commit".to_string(),
+            target_value: "abc123".to_string(),
+            key: name.to_string(),
+        }
     }
 
     fn string_value(value: &str) -> TreeValue {

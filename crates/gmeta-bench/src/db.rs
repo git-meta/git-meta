@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::types::TargetType;
 
@@ -17,7 +17,7 @@ const BLUE: &str = "\x1b[34m";
 pub fn run() -> Result<()> {
     let repo = git_utils::discover_repo()?;
     let db_path = git_utils::db_path(&repo)?;
-    let db = Db::open_with_repo(&db_path, repo)?;
+    let db = Store::open_with_repo(&db_path, repo)?;
 
     let keys = db.get_all_keys()?;
     let total = keys.len();
@@ -43,10 +43,10 @@ pub fn run() -> Result<()> {
             }
         };
         match db.get(&target_type, target_value, key) {
-            Ok(Some((value, _vtype, _is_git_ref))) => {
+            Ok(Some(mv)) => {
                 let elapsed = t0.elapsed();
-                let bytes = value.len();
-                drop(value);
+                let bytes = mv.value.len();
+                drop(mv);
                 durations.push(elapsed);
                 sizes.push(bytes);
             }

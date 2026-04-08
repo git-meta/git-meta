@@ -10,7 +10,7 @@ use anyhow::Result;
 use time::{Duration, OffsetDateTime};
 
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::list_value::list_values_from_json;
 
 const RESET: &str = "\x1b[0m";
@@ -43,7 +43,7 @@ pub fn run(
 }
 
 /// Show key counts per target type.
-fn run_overview(db: &Db) -> Result<()> {
+fn run_overview(db: &Store) -> Result<()> {
     let keys = db.get_all_keys()?;
     let promised = db.count_promised_keys()?;
     let promised_map: BTreeMap<String, u64> = promised.into_iter().collect();
@@ -102,7 +102,7 @@ fn run_overview(db: &Db) -> Result<()> {
 }
 
 /// List promisor (not-yet-fetched) keys, optionally filtered by target type.
-fn run_promisor_list(db: &Db, target_type: Option<&str>) -> Result<()> {
+fn run_promisor_list(db: &Store, target_type: Option<&str>) -> Result<()> {
     let all = db.get_promised_keys()?;
 
     let entries: Vec<&(String, String, String)> = match target_type {
@@ -163,21 +163,13 @@ fn run_promisor_list(db: &Db, target_type: Option<&str>) -> Result<()> {
 }
 
 /// List keys for a specific target type, optionally fuzzy-filtered.
-fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
+fn run_list(db: &Store, target_type: &str, term: Option<&str>) -> Result<()> {
     let all = db.get_all_metadata()?;
 
     // Filter to target type
-    let mut entries: Vec<&(
-        String,
-        String,
-        String,
-        String,
-        gmeta_core::types::ValueType,
-        i64,
-        bool,
-    )> = all
+    let mut entries: Vec<&gmeta_core::db::types::SerializableEntry> = all
         .iter()
-        .filter(|(tt, _, _, _, _, _, _)| tt == target_type)
+        .filter(|e| e.target_type == target_type)
         .collect();
 
     if entries.is_empty() {
@@ -188,11 +180,11 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
     // Fuzzy filter if term is provided
     if let Some(term) = term {
         let lower_term = term.to_lowercase();
-        entries.retain(|(_tt, tv, key, value, vtype, _, _)| {
-            fuzzy_matches(&lower_term, tv)
-                || fuzzy_matches(&lower_term, key)
-                || (*vtype == gmeta_core::types::ValueType::String
-                    && fuzzy_matches(&lower_term, &decode_string_value(value)))
+        entries.retain(|e| {
+            fuzzy_matches(&lower_term, &e.target_value)
+                || fuzzy_matches(&lower_term, &e.key)
+                || (e.value_type == gmeta_core::types::ValueType::String
+                    && fuzzy_matches(&lower_term, &decode_string_value(&e.value)))
         });
     }
 
@@ -205,20 +197,13 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
     let term_width = terminal_width();
 
     // Group by target_value
-    let mut by_target: BTreeMap<
-        &str,
-        Vec<&(
-            String,
-            String,
-            String,
-            String,
-            gmeta_core::types::ValueType,
-            i64,
-            bool,
-        )>,
-    > = BTreeMap::new();
+    let mut by_target: BTreeMap<&str, Vec<&&gmeta_core::db::types::SerializableEntry>> =
+        BTreeMap::new();
     for entry in &entries {
-        by_target.entry(&entry.1).or_default().push(entry);
+        by_target
+            .entry(&entry.target_value)
+            .or_default()
+            .push(entry);
     }
 
     let mut first = true;
@@ -237,12 +222,9 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
         println!("{}", display_target);
 
         for entry in target_entries {
-            let key = &entry.2;
-            let value = &entry.3;
-            let value_type = &entry.4;
-
-            let preview = format_value_oneline(value, value_type, term_width, key.len());
-            println!("  {BOLD}{key}{RESET}  {DIM}{preview}{RESET}");
+            let preview =
+                format_value_oneline(&entry.value, &entry.value_type, term_width, entry.key.len());
+            println!("  {BOLD}{}{RESET}  {DIM}{preview}{RESET}", entry.key);
         }
     }
 
@@ -250,7 +232,7 @@ fn run_list(db: &Db, target_type: &str, term: Option<&str>) -> Result<()> {
 }
 
 /// Show a weekly histogram of metadata entries over the last 20 weeks.
-fn run_timeline(db: &Db) -> Result<()> {
+fn run_timeline(db: &Store) -> Result<()> {
     let all = db.get_all_metadata()?;
 
     if all.is_empty() {
@@ -268,12 +250,12 @@ fn run_timeline(db: &Db) -> Result<()> {
     let mut buckets = vec![0u64; weeks];
     let mut older = 0u64;
 
-    for (_tt, _tv, _key, _value, _vtype, ts, _is_ref) in &all {
-        if *ts < start_ms {
+    for e in &all {
+        if e.last_timestamp < start_ms {
             older += 1;
             continue;
         }
-        let offset_ms = ts - start_ms;
+        let offset_ms = e.last_timestamp - start_ms;
         let week_ms = week_duration.whole_milliseconds() as i64;
         let bucket = (offset_ms / week_ms) as usize;
         if bucket < weeks {

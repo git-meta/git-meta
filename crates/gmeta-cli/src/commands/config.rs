@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::types::{validate_key, TargetType, ValueType};
 
 const CONFIG_PREFIX: &str = "meta:";
@@ -55,28 +55,28 @@ fn run_set(ctx: &CommandContext, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_get(db: &Db, key: &str) -> Result<()> {
+fn run_get(db: &Store, key: &str) -> Result<()> {
     let result = db.get(&TargetType::Project, "", key)?;
-    if let Some((value, _value_type, _is_git_ref)) = result {
-        let s: String = serde_json::from_str(&value)?;
+    if let Some(entry) = result {
+        let s: String = serde_json::from_str(&entry.value)?;
         println!("{}", s);
     }
     Ok(())
 }
 
-fn run_list(db: &Db) -> Result<()> {
+fn run_list(db: &Store) -> Result<()> {
     // Use "meta" (without trailing colon) as the prefix, since get_all
     // appends ":" for LIKE matching: "meta" → matches "meta" OR "meta:%"
     let entries = db.get_all(&TargetType::Project, "", Some("meta"))?;
-    for (key, value, value_type, _is_git_ref) in entries {
-        let display = match value_type {
+    for entry in entries {
+        let display = match entry.value_type {
             ValueType::String => {
-                let s: String = serde_json::from_str(&value)?;
+                let s: String = serde_json::from_str(&entry.value)?;
                 s
             }
-            _ => value,
+            _ => entry.value,
         };
-        println!("{} = {}", key, display);
+        println!("{} = {}", entry.key, display);
     }
     Ok(())
 }
@@ -84,7 +84,7 @@ fn run_list(db: &Db) -> Result<()> {
 fn run_unset(ctx: &CommandContext, key: &str) -> Result<()> {
     let removed = ctx
         .db
-        .rm(&TargetType::Project, "", key, &ctx.email, ctx.timestamp)?;
+        .remove(&TargetType::Project, "", key, &ctx.email, ctx.timestamp)?;
     if !removed {
         eprintln!("key '{}' not found", key);
     }
