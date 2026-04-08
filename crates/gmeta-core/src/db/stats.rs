@@ -17,7 +17,7 @@ impl Store {
         )?;
         let lengths: Vec<usize> = stmt
             .query_map([], |row| row.get::<_, i64>(0))?
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .map(|n| n as usize)
             .collect();
 
@@ -125,7 +125,7 @@ impl Store {
         limit: usize,
     ) -> Result<Vec<String>> {
         let escaped = escape_like_pattern(prefix);
-        let pattern = format!("{}%", escaped);
+        let pattern = format!("{escaped}%");
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT target_value FROM metadata
              WHERE target_type = ?1 AND target_value LIKE ?2 ESCAPE '\\'

@@ -197,7 +197,7 @@ fn generate_history(
     let mut meta_counter: u64 = 0;
     let next_meta = |c: &mut u64| -> Vec<u8> {
         *c += 1;
-        format!("meta-value-{}", c).into_bytes()
+        format!("meta-value-{c}").into_bytes()
     };
 
     let mut commit_chain: Vec<gix::ObjectId> = Vec::with_capacity(n_commits);
@@ -434,12 +434,10 @@ fn fmt_us(secs: f64) -> String {
 }
 pub fn run(n_commits: usize) -> Result<()> {
     println!(
-        "\n{}gmeta history-walker benchmark{}  —  {}{} commits to generate{}",
-        BOLD, RESET, CYAN, n_commits, RESET,
+        "\n{BOLD}gmeta history-walker benchmark{RESET}  —  {CYAN}{n_commits} commits to generate{RESET}",
     );
     println!(
-        "{}rules: 95% introduce / 5% modify, 1–200 values/commit (low-weighted), prune at >{} values (keep {}){}\n",
-        DIM, PRUNE_THRESHOLD, PRUNE_KEEP, RESET,
+        "{DIM}rules: 95% introduce / 5% modify, 1–200 values/commit (low-weighted), prune at >{PRUNE_THRESHOLD} values (keep {PRUNE_KEEP}){RESET}\n",
     );
 
     // Temp bare repo — gix uses on-disk ODB (no mempack equivalent).
@@ -454,7 +452,7 @@ pub fn run(n_commits: usize) -> Result<()> {
     let repo = gix::init_bare(&tmp_path)?;
     println!("{}repo: {} (on-disk ODB){}", DIM, tmp_path.display(), RESET);
 
-    println!("\n{}generating {} commits…{}", BOLD, n_commits, RESET);
+    println!("\n{BOLD}generating {n_commits} commits…{RESET}");
 
     let mut rng: u64 = 0xdeadbeef_cafebabe;
     let gen = generate_history(&repo, n_commits, &mut rng)?;
@@ -498,7 +496,7 @@ pub fn run(n_commits: usize) -> Result<()> {
     );
 
     // Run git gc to pack loose objects (replaces the mempack flush).
-    print!("\n{}packing objects (git gc)…{}", BOLD, RESET);
+    print!("\n{BOLD}packing objects (git gc)…{RESET}");
     let _ = std::io::stdout().flush();
     let t_pack = Instant::now();
 
@@ -516,7 +514,7 @@ pub fn run(n_commits: usize) -> Result<()> {
         if let Ok(entries) = std::fs::read_dir(&pack_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "pack").unwrap_or(false) {
+                if path.extension().is_some_and(|e| e == "pack") {
                     pack_bytes += entry.metadata().map(|m| m.len()).unwrap_or(0);
                 }
             }
@@ -536,7 +534,7 @@ pub fn run(n_commits: usize) -> Result<()> {
             RESET,
         );
     } else {
-        println!(" {}skipped{} (git gc not available)", DIM, RESET);
+        println!(" {DIM}skipped{RESET} (git gc not available)");
     }
 
     // Point refs/meta/local at the tip commit.
@@ -547,7 +545,7 @@ pub fn run(n_commits: usize) -> Result<()> {
         "history-walker: generation complete",
     )?;
 
-    print!("\n{}walking history from tip…{}", BOLD, RESET);
+    print!("\n{BOLD}walking history from tip…{RESET}");
     let _ = std::io::stdout().flush();
 
     let walk = walk_history(&repo, tip_oid)?;
@@ -560,7 +558,7 @@ pub fn run(n_commits: usize) -> Result<()> {
         fmt_ms(walk.elapsed_secs),
         RESET
     );
-    println!("\n{}walk results{}", BOLD, RESET);
+    println!("\n{BOLD}walk results{RESET}");
     println!(
         "  {}commits visited{}        {}{}{}",
         DIM, RESET, CYAN, walk.commits_visited, RESET
@@ -578,17 +576,16 @@ pub fn run(n_commits: usize) -> Result<()> {
     let expected = gen.total_shas_written;
     let recovered = walk.shas_recovered;
     let match_str = if recovered == expected {
-        format!("{}✓ exact match ({} SHAs){}", GREEN, recovered, RESET)
+        format!("{GREEN}✓ exact match ({recovered} SHAs){RESET}")
     } else {
         let diff = recovered as isize - expected as isize;
         format!(
-            "{}✗ mismatch: expected {} got {} ({:+}) — check walk logic{}",
-            RED, expected, recovered, diff, RESET
+            "{RED}✗ mismatch: expected {expected} got {recovered} ({diff:+}) — check walk logic{RESET}"
         )
     };
-    println!("  {}correctness{}            {}", DIM, RESET, match_str);
+    println!("  {DIM}correctness{RESET}            {match_str}");
 
-    println!("\n{}timing summary{}", BOLD, RESET);
+    println!("\n{BOLD}timing summary{RESET}");
     let gen_per_commit = gen.elapsed_secs / gen.commit_chain.len() as f64;
     let walk_per_commit = walk.elapsed_secs / walk.commits_visited.max(1) as f64;
     println!(

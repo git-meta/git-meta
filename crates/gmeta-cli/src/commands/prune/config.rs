@@ -14,13 +14,13 @@ pub fn run() -> Result<()> {
         println!("Current auto-prune configuration:");
         println!("  since:    {}", rules.since);
         if let Some(max_keys) = rules.max_keys {
-            println!("  max-keys: {}", max_keys);
+            println!("  max-keys: {max_keys}");
         }
         if let Some(max_size) = rules.max_size {
-            println!("  max-size: {} bytes", max_size);
+            println!("  max-size: {max_size} bytes");
         }
         if let Some(min_size) = rules.min_size {
-            println!("  min-size: {} bytes", min_size);
+            println!("  min-size: {min_size} bytes");
         }
         println!();
     } else {
@@ -75,7 +75,7 @@ pub fn run() -> Result<()> {
             .interact_text()?;
         // Validate
         val.parse::<u64>()
-            .map_err(|_| anyhow::anyhow!("invalid number: {}", val))?;
+            .map_err(|_| anyhow::anyhow!("invalid number: {val}"))?;
         Some(val)
     } else {
         None
@@ -96,8 +96,7 @@ pub fn run() -> Result<()> {
         let default = existing
             .as_ref()
             .and_then(|r| r.max_size)
-            .map(format_size)
-            .unwrap_or_else(|| "10m".to_string());
+            .map_or_else(|| "10m".to_string(), format_size);
         let val = Input::<String>::new()
             .with_prompt("Max size")
             .default(default)
@@ -133,8 +132,7 @@ pub fn run() -> Result<()> {
         let default = existing
             .as_ref()
             .and_then(|r| r.min_size)
-            .map(format_size)
-            .unwrap_or_else(|| "1k".to_string());
+            .map_or_else(|| "1k".to_string(), format_size);
         let val = Input::<String>::new()
             .with_prompt("Min size")
             .default(default)
@@ -148,15 +146,15 @@ pub fn run() -> Result<()> {
     // -- summary --
     println!();
     println!("Configuration to save:");
-    println!("  meta:prune:since    = {}", since);
+    println!("  meta:prune:since    = {since}");
     if let Some(ref v) = max_keys {
-        println!("  meta:prune:max-keys = {}", v);
+        println!("  meta:prune:max-keys = {v}");
     }
     if let Some(ref v) = max_size {
-        println!("  meta:prune:max-size = {}", v);
+        println!("  meta:prune:max-size = {v}");
     }
     if let Some(ref v) = min_size {
-        println!("  meta:prune:min-size = {}", v);
+        println!("  meta:prune:min-size = {v}");
     }
 
     let confirm = Confirm::new()

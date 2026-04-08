@@ -17,7 +17,7 @@ pub fn run() -> Result<()> {
     }
 
     // Remove all refs under refs/{namespace}/
-    let ref_prefix = format!("refs/{}/", ns);
+    let ref_prefix = format!("refs/{ns}/");
     let mut deleted_refs = Vec::new();
 
     let platform = repo.references()?;
@@ -30,12 +30,12 @@ pub fn run() -> Result<()> {
     }
 
     if deleted_refs.is_empty() {
-        println!("No meta refs found under {}", ref_prefix);
+        println!("No meta refs found under {ref_prefix}");
     } else {
         for refname in &deleted_refs {
             let reference = repo.find_reference(refname)?;
             reference.delete().map_err(|e| anyhow::anyhow!("{e}"))?;
-            println!("Deleted ref {}", refname);
+            println!("Deleted ref {refname}");
         }
     }
 

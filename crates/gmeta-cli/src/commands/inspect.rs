@@ -72,29 +72,22 @@ fn run_overview(db: &Store) -> Result<()> {
     for target_type in &all_types {
         let (hydrated_count, targets) = type_stats
             .get(target_type)
-            .map(|(k, t)| (*k, t.len()))
-            .unwrap_or((0, 0));
+            .map_or((0, 0), |(k, t)| (*k, t.len()));
         let promised_count = promised_map.get(target_type).copied().unwrap_or(0);
         let total = hydrated_count + promised_count;
         let targets_label = if targets <= 1 && target_type == "project" {
             String::new()
         } else if targets > 0 {
-            format!(" across {} targets", targets)
+            format!(" across {targets} targets")
         } else {
             String::new()
         };
         let breakdown = if promised_count > 0 {
-            format!(
-                " {DIM}({} hydrated, {} pending){RESET}",
-                hydrated_count, promised_count
-            )
+            format!(" {DIM}({hydrated_count} hydrated, {promised_count} pending){RESET}")
         } else {
             String::new()
         };
-        println!(
-            "{YELLOW}{}{RESET}  {} keys{}{}",
-            target_type, total, targets_label, breakdown
-        );
+        println!("{YELLOW}{target_type}{RESET}  {total} keys{targets_label}{breakdown}");
     }
 
     Ok(())
@@ -144,7 +137,7 @@ fn run_promisor_list(db: &Store, target_type: Option<&str>) -> Result<()> {
             } else {
                 format!("{CYAN}{tt}{RESET}:{GREEN}{tv}{RESET}")
             };
-            println!("{}", display_target);
+            println!("{display_target}");
 
             for key in keys {
                 println!("  {DIM}{key}{RESET}");
@@ -173,7 +166,7 @@ fn run_list(db: &Store, target_type: &str, term: Option<&str>) -> Result<()> {
         .collect();
 
     if entries.is_empty() {
-        println!("no metadata for target type '{}'", target_type);
+        println!("no metadata for target type '{target_type}'");
         return Ok(());
     }
 
@@ -219,7 +212,7 @@ fn run_list(db: &Store, target_type: &str, term: Option<&str>) -> Result<()> {
         } else {
             format!("{CYAN}{target_type}{RESET}:{GREEN}{short_target}{RESET}")
         };
-        println!("{}", display_target);
+        println!("{display_target}");
 
         for entry in target_entries {
             let preview =
@@ -266,10 +259,7 @@ fn run_timeline(db: &Store) -> Result<()> {
     let max_count = *buckets.iter().max().unwrap_or(&1).max(&1);
     let bar_width = 30usize;
 
-    println!(
-        "{BOLD}Metadata entries per week (last {} weeks){RESET}",
-        weeks
-    );
+    println!("{BOLD}Metadata entries per week (last {weeks} weeks){RESET}");
     println!();
 
     for (i, count) in buckets.iter().enumerate() {
@@ -291,15 +281,12 @@ fn run_timeline(db: &Store) -> Result<()> {
 
     if older > 0 {
         println!();
-        println!(
-            "{DIM}  + {} entries older than {} weeks{RESET}",
-            older, weeks
-        );
+        println!("{DIM}  + {older} entries older than {weeks} weeks{RESET}");
     }
 
     let total: u64 = buckets.iter().sum::<u64>() + older;
     println!();
-    println!("  {BOLD}{}{RESET} total entries", total);
+    println!("  {BOLD}{total}{RESET} total entries");
 
     Ok(())
 }

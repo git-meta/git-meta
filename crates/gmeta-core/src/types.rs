@@ -286,7 +286,7 @@ pub enum MetaValue {
 impl fmt::Display for MetaValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MetaValue::String(s) => write!(f, "{}", s),
+            MetaValue::String(s) => write!(f, "{s}"),
             MetaValue::List(entries) => write!(f, "[{} entries]", entries.len()),
             MetaValue::Set(members) => write!(f, "{{{} members}}", members.len()),
         }

@@ -284,7 +284,7 @@ fn serialize_wipe_db_materialize_restores_all_data() {
 
     // Spot-check: the commit target path should exist in the re-serialized tree.
     let first2 = &sha[..2];
-    let expected_path = format!("commit/{}/{}/agent/model/__value", first2, sha);
+    let expected_path = format!("commit/{first2}/{sha}/agent/model/__value");
     let mut found = false;
     let mut results = Vec::new();
     walk_tree(&repo, tree.id, "", &mut results);
@@ -298,7 +298,7 @@ fn serialize_wipe_db_materialize_restores_all_data() {
 
     // Spot-check: the list entries should exist in the re-serialized tree.
     let fanout = target_fanout("sc-feature-abc123");
-    let list_prefix = format!("branch/{}/sc-feature-abc123/agent/chat/__list/", fanout);
+    let list_prefix = format!("branch/{fanout}/sc-feature-abc123/agent/chat/__list/");
     let list_count = results
         .iter()
         .filter(|(path, _)| path.starts_with(&list_prefix))

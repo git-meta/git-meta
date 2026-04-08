@@ -120,7 +120,7 @@ fn hydrate_promised_entries(
     let repo = session.repo();
     let db = session.store();
     let ns = session.namespace();
-    let tracking_ref = format!("refs/{}/remotes/main", ns);
+    let tracking_ref = format!("refs/{ns}/remotes/main");
 
     let tip_commit = match repo.find_reference(&tracking_ref) {
         Ok(r) => r.into_fully_peeled_id()?,
@@ -144,9 +144,8 @@ fn hydrate_promised_entries(
         } else {
             format!("{}:{}", target_type.as_str(), target_value)
         };
-        let parsed_target = match Target::parse(&target_str) {
-            Ok(t) => t,
-            Err(_) => continue,
+        let Ok(parsed_target) = Target::parse(&target_str) else {
+            continue;
         };
 
         // Try __value (string) first
@@ -198,7 +197,7 @@ fn hydrate_promised_entries(
 
         // Try __set directory
         if let Ok(key_path) = tree_paths::key_tree_path(&parsed_target, key) {
-            let set_path = format!("{}/{}", key_path, SET_VALUE_DIR);
+            let set_path = format!("{key_path}/{SET_VALUE_DIR}");
             if let Some(dir_oid) =
                 gmeta_core::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &set_path)?
             {
@@ -286,9 +285,8 @@ fn hydrate_promised_entries(
                     Ok(b) => b.into_blob(),
                     Err(_) => continue,
                 };
-                let content = match std::str::from_utf8(&blob.data) {
-                    Ok(s) => s,
-                    Err(_) => continue,
+                let Ok(content) = std::str::from_utf8(&blob.data) else {
+                    continue;
                 };
                 let json_value = serde_json::to_string(content)?;
                 db.resolve_promised(&entry_target, key, &json_value, &ValueType::String, false)?;
@@ -335,14 +333,14 @@ fn hydrate_promised_entries(
 /// Resolve a git blob SHA to its content as a UTF-8 string.
 fn resolve_git_ref(repo: &gix::Repository, sha: &str) -> Result<String> {
     let oid = gix::ObjectId::from_hex(sha.as_bytes())
-        .with_context(|| format!("invalid git blob SHA: {}", sha))?;
+        .with_context(|| format!("invalid git blob SHA: {sha}"))?;
     let obj = oid
         .attach(repo)
         .object()
-        .with_context(|| format!("git blob not found: {}", sha))?;
+        .with_context(|| format!("git blob not found: {sha}"))?;
     let blob = obj.into_blob();
     let content = std::str::from_utf8(&blob.data)
-        .with_context(|| format!("git blob {} is not valid UTF-8", sha))?;
+        .with_context(|| format!("git blob {sha} is not valid UTF-8"))?;
     Ok(content.to_string())
 }
 
@@ -351,7 +349,7 @@ fn truncate_str(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         let truncated: String = s.chars().take(max - 3).collect();
-        format!("{}...", truncated)
+        format!("{truncated}...")
     }
 }
 
@@ -372,18 +370,22 @@ fn print_plain(
         .iter()
         .map(|(tv, k, _, _)| {
             if *target.target_type() == TargetType::Path {
-                format!("{};{}", tv, k)
+                format!("{tv};{k}")
             } else {
                 k.clone()
             }
         })
         .collect();
-    let max_width = labels.iter().map(|l| l.len()).max().unwrap_or(0);
+    let max_width = labels
+        .iter()
+        .map(std::string::String::len)
+        .max()
+        .unwrap_or(0);
 
     for (label, (_, _, value, value_type)) in labels.iter().zip(entries.iter()) {
         let display_value = format_value_compact(value, value_type)?;
         let truncated = truncate_str(&display_value, 50);
-        println!("{:width$}  {}", label, truncated, width = max_width);
+        println!("{label:max_width$}  {truncated}");
     }
 
     Ok(())
@@ -394,18 +396,18 @@ fn print_value_only(value: &str, value_type: &ValueType) -> Result<()> {
     match value_type {
         ValueType::String => {
             let s: String = serde_json::from_str(value)?;
-            println!("{}", s);
+            println!("{s}");
         }
         ValueType::List => {
             for item in extract_list_values(value)? {
-                println!("{}", item);
+                println!("{item}");
             }
         }
         ValueType::Set => {
             let mut set: Vec<String> = serde_json::from_str(value)?;
             set.sort();
             for item in set {
-                println!("{}", item);
+                println!("{item}");
             }
         }
         _ => anyhow::bail!("unsupported value type"),
@@ -480,7 +482,7 @@ fn print_json(
     }
 
     let output = serde_json::to_string_pretty(&Value::Object(root))?;
-    println!("{}", output);
+    println!("{output}");
     Ok(())
 }
 
@@ -516,7 +518,7 @@ fn extract_list_values(raw: &str) -> Result<Vec<String>> {
             Value::Object(ref map) => map
                 .get("value")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .ok_or_else(|| anyhow::anyhow!("list entry missing 'value' field")),
             other => anyhow::bail!("unexpected list entry type: {other:?}"),
         })

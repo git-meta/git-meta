@@ -16,6 +16,7 @@ use crate::session::Session;
 ///
 /// Contains all the information needed by a CLI or other consumer
 /// to report what happened, without performing any I/O itself.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullOutput {
     /// The remote that was pulled from.
@@ -56,9 +57,9 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     let ns = session.namespace();
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
-    let remote_refspec = format!("refs/{}/main", ns);
-    let tracking_ref = format!("refs/{}/remotes/main", ns);
-    let fetch_refspec = format!("{}:{}", remote_refspec, tracking_ref);
+    let remote_refspec = format!("refs/{ns}/main");
+    let tracking_ref = format!("refs/{ns}/remotes/main");
+    let fetch_refspec = format!("{remote_refspec}:{tracking_ref}");
 
     // Record the old tip so we can count new commits
     let old_tip = repo
@@ -99,14 +100,14 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     };
 
     // Hydrate tip tree blobs so gix can read them
-    let short_ref = format!("{}/remotes/main", ns);
+    let short_ref = format!("{ns}/remotes/main");
     git_utils::hydrate_tip_blobs(repo, &remote_name, &short_ref)?;
 
     // Serialize local state so materialize can do a proper 3-way merge
-    crate::serialize::run(session, now)?;
+    let _ = crate::serialize::run(session, now)?;
 
     // Materialize: merge remote tree into local DB
-    crate::materialize::run(session, None, now)?;
+    let _ = crate::materialize::run(session, None, now)?;
 
     // Insert promisor entries from non-tip commits so we know what keys exist
     // in the history even though we haven't fetched their blob data yet.
@@ -115,7 +116,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
         let walk_from = if needs_materialize {
             None
         } else {
-            old_tip.map(|id| id.detach())
+            old_tip.map(gix::Id::detach)
         };
         session.index_history(new.detach(), walk_from)?
     } else {
@@ -135,7 +136,10 @@ fn count_commits_between(repo: &gix::Repository, old: gix::ObjectId, new: gix::O
     let walk = repo.rev_walk(Some(new)).with_boundary(Some(old));
     match walk.all() {
         // Subtract the boundary commit itself
-        Ok(iter) => iter.filter(|r| r.is_ok()).count().saturating_sub(1),
+        Ok(iter) => iter
+            .filter(std::result::Result::is_ok)
+            .count()
+            .saturating_sub(1),
         Err(_) => 0,
     }
 }

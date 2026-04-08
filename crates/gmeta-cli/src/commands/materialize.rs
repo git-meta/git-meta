@@ -75,16 +75,16 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
 fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Result<()> {
     let repo = ctx.session.repo();
     let ns = ctx.session.namespace();
-    let local_ref_name = format!("refs/{}/local/main", ns);
+    let local_ref_name = format!("refs/{ns}/local/main");
 
     if verbose {
-        eprintln!("[verbose] namespace: {}", ns);
-        eprintln!("[verbose] local ref: {}", local_ref_name);
+        eprintln!("[verbose] namespace: {ns}");
+        eprintln!("[verbose] local ref: {local_ref_name}");
         eprintln!(
             "[verbose] searching for remote refs matching: {}",
             match remote {
-                Some(r) => format!("refs/{}/{}", ns, r),
-                None => format!("refs/{}/*/", ns),
+                Some(r) => format!("refs/{ns}/{r}"),
+                None => format!("refs/{ns}/*/"),
             }
         );
     }
@@ -105,7 +105,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
 
     for (ref_name, remote_oid) in &remote_refs {
         if verbose {
-            eprintln!("\n[verbose] === processing {} ===", ref_name);
+            eprintln!("\n[verbose] === processing {ref_name} ===");
         }
 
         let remote_commit_obj = remote_oid.attach(repo).object()?.into_commit();
@@ -121,7 +121,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
             .find_reference(&local_ref_name)
             .ok()
             .and_then(|r| r.into_fully_peeled_id().ok())
-            .map(|id| id.detach());
+            .map(gix::Id::detach);
 
         if verbose {
             match &local_commit_oid {
@@ -139,7 +139,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
             }
             Some(local_oid) => {
                 if *local_oid == *remote_oid {
-                    println!("dry-run: {} already up to date", ref_name);
+                    println!("dry-run: {ref_name} already up to date");
                     continue;
                 }
                 match repo.merge_base(*local_oid, *remote_oid) {
@@ -282,8 +282,7 @@ fn dry_run_merge(
 
     if verbose {
         eprintln!(
-            "[verbose] commit timestamps: local={}, remote={}",
-            local_timestamp, remote_timestamp
+            "[verbose] commit timestamps: local={local_timestamp}, remote={remote_timestamp}"
         );
     }
 
@@ -442,10 +441,7 @@ fn dry_run_merge(
     }
 
     if merge_strategy == "two-way-no-common-ancestor" {
-        println!(
-            "dry-run: no common ancestor between local metadata ref and {}",
-            ref_name
-        );
+        println!("dry-run: no common ancestor between local metadata ref and {ref_name}");
     }
     print_dry_run_report(
         ref_name,
@@ -471,7 +467,7 @@ fn print_verbose_tree_info(entries: &ParsedTree) {
                 if s.len() > 50 {
                     format!("string ({} bytes)", s.len())
                 } else {
-                    format!("string = {}", s)
+                    format!("string = {s}")
                 }
             }
             TreeValue::List(l) => format!("list ({} entries)", l.len()),
@@ -502,7 +498,7 @@ fn print_verbose_ff_delta(local_entries: &ParsedTree, remote_entries: &ParsedTre
                     .get(key)
                     .is_some_and(|v| local_val != v) =>
             {
-                changed += 1
+                changed += 1;
             }
             _ => {}
         }
@@ -512,10 +508,7 @@ fn print_verbose_ff_delta(local_entries: &ParsedTree, remote_entries: &ParsedTre
             removed += 1;
         }
     }
-    eprintln!(
-        "[verbose] fast-forward delta: {} added, {} changed, {} removed",
-        added, changed, removed
-    );
+    eprintln!("[verbose] fast-forward delta: {added} added, {changed} changed, {removed} removed");
 }
 
 fn print_verbose_merge_breakdown(
@@ -558,14 +551,14 @@ fn print_verbose_merge_breakdown(
         }
     }
     eprintln!("[verbose] merge breakdown:");
-    eprintln!("  unchanged:     {}", unchanged);
-    eprintln!("  local changed: {}", local_only_changed);
-    eprintln!("  remote changed:{}", remote_only_changed);
-    eprintln!("  new (local):   {}", new_local);
-    eprintln!("  new (remote):  {}", new_remote);
-    eprintln!("  new (both):    {}", new_both);
-    eprintln!("  removed:       {}", removed);
-    eprintln!("  conflicts:     {}", conflicted);
+    eprintln!("  unchanged:     {unchanged}");
+    eprintln!("  local changed: {local_only_changed}");
+    eprintln!("  remote changed:{remote_only_changed}");
+    eprintln!("  new (local):   {new_local}");
+    eprintln!("  new (remote):  {new_remote}");
+    eprintln!("  new (both):    {new_both}");
+    eprintln!("  removed:       {removed}");
+    eprintln!("  conflicts:     {conflicted}");
 }
 
 fn collect_db_changes_from_tree(
@@ -697,8 +690,8 @@ fn print_dry_run_report(
     planned_changes: &[PlannedDbChange],
     conflicts: &[ConflictDecision],
 ) {
-    println!("dry-run: {}", ref_name);
-    println!("dry-run: strategy={}", strategy);
+    println!("dry-run: {ref_name}");
+    println!("dry-run: strategy={strategy}");
 
     if conflicts.is_empty() {
         println!("dry-run: no conflict resolutions");
@@ -728,10 +721,7 @@ fn print_dry_run_report(
                     value_preview,
                 } => {
                     let target_display = format_target_for_display(target_type, target_value);
-                    println!(
-                        "  set {} {} ({}) = {}",
-                        target_display, key, value_type, value_preview
-                    );
+                    println!("  set {target_display} {key} ({value_type}) = {value_preview}");
                 }
                 PlannedDbChange::Remove {
                     target_type,
@@ -739,7 +729,7 @@ fn print_dry_run_report(
                     key,
                 } => {
                     let target_display = format_target_for_display(target_type, target_value);
-                    println!("  rm {} {}", target_display, key);
+                    println!("  rm {target_display} {key}");
                 }
             }
         }
@@ -750,7 +740,7 @@ fn format_target_for_display(target_type: &TargetType, target_value: &str) -> St
     if *target_type == TargetType::Project {
         "project".to_string()
     } else {
-        format!("{}:{}", target_type, target_value)
+        format!("{target_type}:{target_value}")
     }
 }
 

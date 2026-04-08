@@ -449,7 +449,7 @@ fn set_type_round_trips_and_serializes_members() {
     let tree = commit_obj.tree().unwrap();
     let fanout = harness::target_fanout("sc-branch-1-deadbeef");
 
-    let set_prefix = format!("branch/{}/sc-branch-1-deadbeef/reviewer/__set/", fanout);
+    let set_prefix = format!("branch/{fanout}/sc-branch-1-deadbeef/reviewer/__set/");
 
     let mut set_members = Vec::new();
     let mut results = Vec::new();

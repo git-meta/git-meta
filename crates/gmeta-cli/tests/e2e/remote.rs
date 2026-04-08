@@ -55,8 +55,7 @@ fn remote_add_with_namespace_override() {
     let fetch_str = fetch.to_string();
     assert!(
         fetch_str.contains("refs/altmeta/"),
-        "fetch refspec should use altmeta namespace, got: {}",
-        fetch_str
+        "fetch refspec should use altmeta namespace, got: {fetch_str}"
     );
     let meta_ns = config
         .string("remote.meta.metanamespace")

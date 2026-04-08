@@ -95,13 +95,11 @@ fn push_commit_message_format() {
     let msg = commit.message_raw_sloppy().to_string();
     assert!(
         msg.contains("gmeta: serialize"),
-        "commit message should start with 'gmeta: serialize', got: {}",
-        msg
+        "commit message should start with 'gmeta: serialize', got: {msg}"
     );
     assert!(
         msg.contains("agent:model"),
-        "commit message should contain changed key, got: {}",
-        msg
+        "commit message should contain changed key, got: {msg}"
     );
 }
 

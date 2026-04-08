@@ -166,10 +166,7 @@ fn fake_sha(n: u64) -> String {
     format!("{:016x}{:016x}{:08x}", x, y, (x ^ y) as u32)
 }
 fn print_header(label: &str) {
-    println!(
-        "\n{}{} ══════════════════════════════════════════════{}\n",
-        BOLD, label, RESET
-    );
+    println!("\n{BOLD}{label} ══════════════════════════════════════════════{RESET}\n");
 }
 
 fn fmt_ms(secs: f64) -> String {
@@ -228,7 +225,7 @@ fn pack_size_bytes(repo_path: &std::path::Path) -> Result<u64> {
         for entry in std::fs::read_dir(&pack_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map(|e| e == "pack").unwrap_or(false) {
+            if path.extension().is_some_and(|e| e == "pack") {
                 total += entry.metadata()?.len();
             }
         }
@@ -285,7 +282,7 @@ struct SchemeResult {
 const SAMPLE: usize = 1_000;
 
 fn entry_content(sha: &str) -> Vec<u8> {
-    format!("{{\"sha\":\"{}\"}}", sha).into_bytes()
+    format!("{{\"sha\":\"{sha}\"}}").into_bytes()
 }
 
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -499,12 +496,10 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
     let max_diff = maxf!(diff_secs);
 
     println!(
-        "{}Write A — batch: {} new entries → 1 incremental tree (into {}-object base){}",
-        BOLD, SAMPLE, n_base, RESET
+        "{BOLD}Write A — batch: {SAMPLE} new entries → 1 incremental tree (into {n_base}-object base){RESET}"
     );
     println!(
-        "  {}(only the touched shard subtrees are rebuilt; unchanged subtrees reused by OID){}",
-        DIM, RESET
+        "  {DIM}(only the touched shard subtrees are rebuilt; unchanged subtrees reused by OID){RESET}"
     );
     for r in results {
         let b = bar(r.write_batch_secs, max_write_batch, bar_w, YELLOW);
@@ -519,12 +514,10 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
     }
 
     println!(
-        "\n{}Write B — sequential: 1 entry → incremental tree → commit × {} (chained parents){}",
-        BOLD, SAMPLE, RESET
+        "\n{BOLD}Write B — sequential: 1 entry → incremental tree → commit × {SAMPLE} (chained parents){RESET}"
     );
     println!(
-        "  {}(models frequent single-change serializes; total time for {} commits){}",
-        DIM, SAMPLE, RESET
+        "  {DIM}(models frequent single-change serializes; total time for {SAMPLE} commits){RESET}"
     );
     for r in results {
         let b = bar(r.write_seq_secs, max_write_seq, bar_w, YELLOW);
@@ -542,11 +535,8 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    println!("\n{}Read 1 000 objects by known SHA{}", BOLD, RESET);
-    println!(
-        "  {}(lower = faster; tree.get_path() walk per lookup){}",
-        DIM, RESET
-    );
+    println!("\n{BOLD}Read 1 000 objects by known SHA{RESET}");
+    println!("  {DIM}(lower = faster; tree.get_path() walk per lookup){RESET}");
     for r in results {
         let b = bar(r.read_1k_secs, max_read, bar_w, GREEN);
         println!(
@@ -559,13 +549,13 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    println!("\n{}Diff base tree vs base + 1 000 changes{}", BOLD, RESET);
+    println!("\n{BOLD}Diff base tree vs base + 1 000 changes{RESET}");
     println!(
         "  {}(lower = faster; git diff-tree subprocess){}  [changed blobs: {}{}{}]",
         DIM,
         RESET,
         CYAN,
-        results.first().map(|r| r.diff_count).unwrap_or(0),
+        results.first().map_or(0, |r| r.diff_count),
         RESET
     );
     for r in results {
@@ -580,11 +570,8 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    println!(
-        "\n{}Pack file size (after git gc --aggressive){}",
-        BOLD, RESET
-    );
-    println!("  {}(lower = better compression){}", DIM, RESET);
+    println!("\n{BOLD}Pack file size (after git gc --aggressive){RESET}");
+    println!("  {DIM}(lower = better compression){RESET}");
     for r in results {
         let mb = r.pack_bytes as f64 / 1_048_576.0;
         let b = bar(r.pack_bytes as f64, max_pack, bar_w, MAGENTA);
@@ -598,11 +585,8 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    println!("\n{}Loose object count (before gc){}", BOLD, RESET);
-    println!(
-        "  {}(tree objects + blob objects written to ODB){}",
-        DIM, RESET
-    );
+    println!("\n{BOLD}Loose object count (before gc){RESET}");
+    println!("  {DIM}(tree objects + blob objects written to ODB){RESET}");
     for r in results {
         let b = bar(
             r.loose_objects_before_gc as f64,
@@ -620,10 +604,7 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    println!(
-        "\n{}Per-object read latency (avg over 1 000){}",
-        BOLD, RESET
-    );
+    println!("\n{BOLD}Per-object read latency (avg over 1 000){RESET}");
     for r in results {
         let per_obj = r.read_1k_secs / SAMPLE as f64;
         println!(
@@ -635,7 +616,7 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
 
-    println!("\n{} ── Verdict ──{}  (bucket counts: ", BOLD, RESET);
+    println!("\n{BOLD} ── Verdict ──{RESET}  (bucket counts: ");
     for r in results {
         print!(
             "  {}{}{} → {}{}{} buckets",
@@ -648,7 +629,7 @@ fn print_report(results: &[SchemeResult], n_base: usize) {
         );
     }
     println!(")\n");
-    println!("{} ── Verdict ──{}", BOLD, RESET);
+    println!("{BOLD} ── Verdict ──{RESET}");
     let fastest_write = results
         .iter()
         .min_by(|a, b| {
@@ -707,17 +688,13 @@ pub fn run(n_objects: usize) -> Result<()> {
     let schemes = [Scheme::First2, Scheme::First3, Scheme::First2Next2];
 
     println!(
-        "\n{}gmeta fanout benchmark{}  —  {}{} base objects{}, {} new per test",
-        BOLD, RESET, CYAN, n_objects, RESET, SAMPLE
+        "\n{BOLD}gmeta fanout benchmark{RESET}  —  {CYAN}{n_objects} base objects{RESET}, {SAMPLE} new per test"
     );
-    println!("{}running all three schemes in parallel{}\n", DIM, RESET);
+    println!("{DIM}running all three schemes in parallel{RESET}\n");
 
     // Pre-generate all SHAs we'll ever need (base + SAMPLE extra for write test)
     let total_needed = n_objects + SAMPLE;
-    print!(
-        "{}generating {} synthetic SHAs...{} ",
-        DIM, total_needed, RESET
-    );
+    print!("{DIM}generating {total_needed} synthetic SHAs...{RESET} ");
     let _ = std::io::stdout().flush();
     let t0 = Instant::now();
     let shas: Arc<Vec<String>> = Arc::new((0..total_needed as u64).map(fake_sha).collect());
@@ -774,7 +751,7 @@ pub fn run(n_objects: usize) -> Result<()> {
     for handle in handles {
         match handle.join() {
             Ok(Ok(r)) => results.push(r),
-            Ok(Err(e)) => errors.push(format!("{:?}", e)),
+            Ok(Err(e)) => errors.push(format!("{e:?}")),
             Err(_) => errors.push("thread panicked".to_string()),
         }
     }
@@ -783,7 +760,7 @@ pub fn run(n_objects: usize) -> Result<()> {
 
     if !errors.is_empty() {
         for e in &errors {
-            eprintln!("{}error:{} {}", RED, RESET, e);
+            eprintln!("{RED}error:{RESET} {e}");
         }
         anyhow::bail!("one or more scheme benchmarks failed");
     }
@@ -800,7 +777,7 @@ pub fn run(n_objects: usize) -> Result<()> {
     // the terminal doesn't support ANSI cursor movement.
     let n_lines = schemes.len() as u16 + 1; // +1 for the separator row
                                             // Move cursor up n_lines
-    print!("\x1b[{}A", n_lines);
+    print!("\x1b[{n_lines}A");
 
     println!(
         "  {}{:<20}  {:<12}  {:<14}  {:<14}  {:<12}  {:<10}{}",
@@ -842,7 +819,7 @@ pub fn run(n_objects: usize) -> Result<()> {
     for r in &results {
         println!("\n{}── {} ──{}", DIM, r.scheme.name(), RESET);
         for line in &r.log {
-            println!("{}", line);
+            println!("{line}");
         }
     }
 

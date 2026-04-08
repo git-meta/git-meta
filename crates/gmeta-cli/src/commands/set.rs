@@ -20,7 +20,7 @@ fn print_result(action: &str, key: &str, target: &Target, json: bool) {
         });
         println!("{}", serde_json::to_string(&json_obj).unwrap_or_default());
     } else {
-        println!("{} key {} for {}", action, key, target_str);
+        println!("{action} key {key} for {target_str}");
     }
 }
 
@@ -44,7 +44,7 @@ pub fn run(
         (None, None) => bail!("must specify either a value or -F/--file"),
         (Some(v), None) => v.to_string(),
         (None, Some(path)) => {
-            fs::read_to_string(path).with_context(|| format!("failed to read file: {}", path))?
+            fs::read_to_string(path).with_context(|| format!("failed to read file: {path}"))?
         }
     };
 

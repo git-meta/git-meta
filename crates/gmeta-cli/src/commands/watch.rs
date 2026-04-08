@@ -50,10 +50,7 @@ pub fn run(agent: &str, debounce_secs: u64) -> Result<()> {
         RESET,
         git_dir.join("refs").display()
     );
-    eprintln!(
-        "{}{}[watch]{} Debounce: {}s -- press Ctrl+C to stop\n",
-        BOLD, CYAN, RESET, debounce_secs
-    );
+    eprintln!("{BOLD}{CYAN}[watch]{RESET} Debounce: {debounce_secs}s -- press Ctrl+C to stop\n");
 
     // Set up file watcher
     let (tx, rx) = mpsc::channel();
@@ -70,10 +67,7 @@ pub fn run(agent: &str, debounce_secs: u64) -> Result<()> {
     if transcripts_dir.exists() {
         watcher.watch(&transcripts_dir, RecursiveMode::Recursive)?;
     } else {
-        eprintln!(
-            "  {}[warn]{} Transcripts dir does not exist yet, watching parent...",
-            YELLOW, RESET
-        );
+        eprintln!("  {YELLOW}[warn]{RESET} Transcripts dir does not exist yet, watching parent...");
         // Watch parent so we catch when the directory is created
         if let Some(parent) = transcripts_dir.parent() {
             if parent.exists() {
@@ -116,7 +110,7 @@ pub fn run(agent: &str, debounce_secs: u64) -> Result<()> {
                 }
             }
             Ok(Err(e)) => {
-                eprintln!("{}[error]{} Watch error: {}", RED, RESET, e);
+                eprintln!("{RED}[error]{RESET} Watch error: {e}");
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 state.tick(debounce_secs)?;
@@ -134,12 +128,9 @@ fn resolve_transcripts_dir(agent: &str, workdir: &Path) -> Result<PathBuf> {
             let home = std::env::var("HOME").context("HOME not set")?;
             // Claude uses the absolute path with / replaced by -
             let dir_name = workdir.to_string_lossy().replace('/', "-");
-            Ok(PathBuf::from(format!(
-                "{}/.claude/projects/{}",
-                home, dir_name
-            )))
+            Ok(PathBuf::from(format!("{home}/.claude/projects/{dir_name}")))
         }
-        _ => bail!("unsupported agent: {} (supported: claude)", agent),
+        _ => bail!("unsupported agent: {agent} (supported: claude)"),
     }
 }
 
@@ -208,9 +199,8 @@ impl WatchState {
     fn handle_transcript_change(&mut self, path: &Path) -> Result<()> {
         let last_pos = self.file_positions.get(path).copied().unwrap_or(0);
 
-        let file = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => return Ok(()), // File might have been deleted
+        let Ok(file) = std::fs::File::open(path) else {
+            return Ok(()); // File might have been deleted
         };
         let file_size = file.metadata()?.len();
 
@@ -259,10 +249,7 @@ impl WatchState {
             if self.active_session_id.as_deref() != Some(&session_id) {
                 let short_id = &session_id[..8.min(session_id.len())];
                 let ts = parsed["timestamp"].as_str().unwrap_or("");
-                eprintln!(
-                    "\n{}{}[session]{} {} {}{}{}",
-                    BOLD, YELLOW, RESET, short_id, DIM, ts, RESET
-                );
+                eprintln!("\n{BOLD}{YELLOW}[session]{RESET} {short_id} {DIM}{ts}{RESET}");
                 self.active_session_id = Some(session_id.clone());
             }
             self.session_lines
@@ -283,7 +270,7 @@ impl WatchState {
                                         continue;
                                     }
                                     let preview = truncate(text, 100).replace('\n', " ");
-                                    eprintln!("  {}[text]{} {}", DIM, RESET, preview);
+                                    eprintln!("  {DIM}[text]{RESET} {preview}");
                                 }
                             }
                             Some("tool_use") => {
@@ -299,12 +286,12 @@ impl WatchState {
                 if !is_meta {
                     for text in extract_content_texts(&parsed["message"]["content"]) {
                         let preview = truncate(&text, 100).replace('\n', " ");
-                        eprintln!("  {}{}[user]{} {}", BOLD, MAGENTA, RESET, preview);
+                        eprintln!("  {BOLD}{MAGENTA}[user]{RESET} {preview}");
                     }
                 }
             }
             "last-prompt" => {
-                eprintln!("  {}[turn complete]{}", DIM, RESET);
+                eprintln!("  {DIM}[turn complete]{RESET}");
             }
             _ => {}
         }
@@ -344,10 +331,7 @@ impl WatchState {
             .last_transcript_activity
             .map_or(0, |t| t.elapsed().as_secs());
 
-        eprintln!(
-            "\n{}{}[idle]{} Agent stopped ({}s) -- committing...",
-            BOLD, YELLOW, RESET, idle_secs
-        );
+        eprintln!("\n{BOLD}{YELLOW}[idle]{RESET} Agent stopped ({idle_secs}s) -- committing...");
 
         // Run but commit --ai --json
         let output = Command::new("but")
@@ -415,9 +399,8 @@ impl WatchState {
     }
 
     fn process_status_update(&mut self, status: &serde_json::Value) -> Result<()> {
-        let stacks = match status["stacks"].as_array() {
-            Some(s) => s,
-            None => return Ok(()),
+        let Some(stacks) = status["stacks"].as_array() else {
+            return Ok(());
         };
 
         let session = Session::discover()?;
@@ -425,9 +408,8 @@ impl WatchState {
         let email = session.email();
 
         for stack in stacks {
-            let branches = match stack["branches"].as_array() {
-                Some(b) => b,
-                None => continue,
+            let Some(branches) = stack["branches"].as_array() else {
+                continue;
             };
 
             for branch in branches {
@@ -436,9 +418,8 @@ impl WatchState {
                     None => continue,
                 };
 
-                let commits = match branch["commits"].as_array() {
-                    Some(c) => c,
-                    None => continue,
+                let Some(commits) = branch["commits"].as_array() else {
+                    continue;
                 };
 
                 for commit in commits {
@@ -471,8 +452,7 @@ impl WatchState {
                     let msg_preview = truncate(msg, 60);
 
                     eprintln!(
-                        "  {}{}[commit]{} {}{}{} {} \"{}\"",
-                        BOLD, GREEN, RESET, BOLD, short_sha, RESET, branch_name, msg_preview
+                        "  {BOLD}{GREEN}[commit]{RESET} {BOLD}{short_sha}{RESET} {branch_name} \"{msg_preview}\""
                     );
 
                     if let Some(ref cid) = change_id {
@@ -482,7 +462,7 @@ impl WatchState {
                             .branch_first_seen
                             .entry(branch_name.clone())
                             .or_insert(ts);
-                        let branch_id = format!("{}@{}", branch_name, first_seen);
+                        let branch_id = format!("{branch_name}@{first_seen}");
                         let value = serde_json::to_string(&branch_id)?;
                         let cid_target =
                             Target::from_parts(TargetType::ChangeId, Some(cid.clone()));
@@ -497,8 +477,7 @@ impl WatchState {
 
                         let short_cid = &cid[..16.min(cid.len())];
                         eprintln!(
-                            "  {}[meta]{} change-id:{}... branch:id = {}",
-                            CYAN, RESET, short_cid, branch_id
+                            "  {CYAN}[meta]{RESET} change-id:{short_cid}... branch:id = {branch_id}"
                         );
 
                         // Attach new user prompts to the change-id
@@ -516,8 +495,7 @@ impl WatchState {
                                 )?;
                             }
                             eprintln!(
-                                "  {}[meta]{} change-id:{}... agent:prompts += {} prompt(s)",
-                                CYAN, RESET, short_cid, prompt_count
+                                "  {CYAN}[meta]{RESET} change-id:{short_cid}... agent:prompts += {prompt_count} prompt(s)"
                             );
                         }
                     }
@@ -530,14 +508,13 @@ impl WatchState {
 
     /// Extract user prompt texts from session lines that haven't been attached yet.
     fn extract_new_user_prompts(&mut self) -> Vec<String> {
-        let session_id = match &self.active_session_id {
-            Some(id) => id.clone(),
-            None => return Vec::new(),
+        let Some(session_id) = &self.active_session_id else {
+            return Vec::new();
         };
+        let session_id = session_id.clone();
 
-        let lines = match self.session_lines.get(&session_id) {
-            Some(l) => l,
-            None => return Vec::new(),
+        let Some(lines) = self.session_lines.get(&session_id) else {
+            return Vec::new();
         };
 
         let start = self
@@ -585,10 +562,7 @@ impl WatchState {
         let branch_name = match &self.last_committed_branch {
             Some(b) => b.clone(),
             None => {
-                eprintln!(
-                    "  {}[warn]{} No branch found to attach transcript to",
-                    YELLOW, RESET
-                );
+                eprintln!("  {YELLOW}[warn]{RESET} No branch found to attach transcript to");
                 return Ok(());
             }
         };
@@ -600,7 +574,7 @@ impl WatchState {
             .branch_first_seen
             .entry(branch_name.clone())
             .or_insert(ts);
-        let branch_id = format!("{}@{}", branch_name, first_seen);
+        let branch_id = format!("{branch_name}@{first_seen}");
 
         let session = Session::discover()?;
         let db = session.store();

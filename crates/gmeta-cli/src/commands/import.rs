@@ -35,7 +35,7 @@ pub fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<(
             let date_fmt =
                 time::format_description::parse("[year]-[month]-[day]").unwrap_or_default();
             let date = time::Date::parse(date_str, &date_fmt).with_context(|| {
-                format!("invalid --since date '{}', expected YYYY-MM-DD", date_str)
+                format!("invalid --since date '{date_str}', expected YYYY-MM-DD")
             })?;
             let odt = time::OffsetDateTime::new_utc(date, time::Time::MIDNIGHT);
             Some(odt.unix_timestamp())
@@ -82,10 +82,7 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                     .ok()
                 })
                 .unwrap_or_else(|| "unknown".to_string());
-            eprintln!(
-                "Scanning commits for Entire-Checkpoint trailers (since {})...",
-                date_str
-            );
+            eprintln!("Scanning commits for Entire-Checkpoint trailers (since {date_str})...");
         } else {
             eprintln!("Scanning commits for Entire-Checkpoint trailers...");
         }
@@ -102,9 +99,9 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     }
 
     if dry_run {
-        eprintln!("Dry run: would have imported {} keys", imported_count);
+        eprintln!("Dry run: would have imported {imported_count} keys");
     } else {
-        eprintln!("Imported {} keys", imported_count);
+        eprintln!("Imported {imported_count} keys");
     }
 
     Ok(())
@@ -113,14 +110,14 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
 /// Resolve an entire ref to the tree OID of its tip commit.
 fn resolve_entire_ref(repo: &gix::Repository, refname: &str) -> Result<Option<gix::ObjectId>> {
     let reference = repo
-        .find_reference(&format!("refs/heads/{}", refname))
-        .or_else(|_| repo.find_reference(&format!("refs/remotes/origin/{}", refname)))
+        .find_reference(&format!("refs/heads/{refname}"))
+        .or_else(|_| repo.find_reference(&format!("refs/remotes/origin/{refname}")))
         .or_else(|_| repo.find_reference(refname));
 
     match reference {
         Ok(r) => {
             let refname_used = r.name().as_bstr().to_string();
-            eprintln!("  Resolved {} via {}", refname, refname_used);
+            eprintln!("  Resolved {refname} via {refname_used}");
             let commit_id = r.into_fully_peeled_id()?.detach();
             let commit_obj = commit_id.attach(repo).object()?.into_commit();
             let tree_id = commit_obj.tree_id()?.detach();
@@ -163,15 +160,13 @@ fn import_checkpoints_from_commits(
     let mut scanned = 0u64;
     for start_oid in &start_oids {
         let walk = repo.rev_walk(Some(*start_oid));
-        let iter = match walk.all() {
-            Ok(it) => it,
-            Err(_) => continue,
+        let Ok(iter) = walk.all() else {
+            continue;
         };
 
         for info_result in iter {
-            let info = match info_result {
-                Ok(i) => i,
-                Err(_) => continue,
+            let Ok(info) = info_result else {
+                continue;
             };
             let oid = info.id;
             if !seen_commits.insert(oid) {
@@ -198,10 +193,10 @@ fn import_checkpoints_from_commits(
             // Look for Entire-Checkpoint trailer(s)
             for line in msg.lines() {
                 let line = line.trim();
-                let checkpoint_id = match line.strip_prefix("Entire-Checkpoint:") {
-                    Some(id) => id.trim(),
-                    None => continue,
+                let Some(checkpoint_id) = line.strip_prefix("Entire-Checkpoint:") else {
+                    continue;
                 };
+                let checkpoint_id = checkpoint_id.trim();
                 if checkpoint_id.is_empty() {
                     continue;
                 }
@@ -225,24 +220,20 @@ fn import_checkpoints_from_commits(
                 let rest = &checkpoint_id[2.min(checkpoint_id.len())..];
 
                 let checkpoint_tree_id = (|| -> Result<Option<gix::ObjectId>> {
-                    let shard_id = match entry_to_tree_id(repo, checkpoints_tree_id, shard)? {
-                        Some(t) => t,
-                        None => return Ok(None),
+                    let Some(shard_id) = entry_to_tree_id(repo, checkpoints_tree_id, shard)? else {
+                        return Ok(None);
                     };
                     entry_to_tree_id(repo, shard_id, rest)
                 })()?;
 
-                let checkpoint_tree_id = match checkpoint_tree_id {
-                    Some(t) => t,
-                    None => {
-                        missing += 1;
-                        eprintln!(
-                            "  Commit {} has Entire-Checkpoint: {} but checkpoint not found in tree",
-                            &commit_sha[..7],
-                            checkpoint_id
-                        );
-                        continue;
-                    }
+                let Some(checkpoint_tree_id) = checkpoint_tree_id else {
+                    missing += 1;
+                    eprintln!(
+                        "  Commit {} has Entire-Checkpoint: {} but checkpoint not found in tree",
+                        &commit_sha[..7],
+                        checkpoint_id
+                    );
+                    continue;
                 };
 
                 found += 1;
@@ -284,7 +275,7 @@ fn import_checkpoints_from_commits(
                     ];
                     for (gmeta_key, aliases) in checkpoint_fields {
                         if let Some(val) = aliases.iter().find_map(|a| meta.get(*a)) {
-                            let key = format!("agent:{}", gmeta_key);
+                            let key = format!("agent:{gmeta_key}");
                             let json_val = json_encode_value(val)?;
                             count += set_value(
                                 repo,
@@ -307,16 +298,16 @@ fn import_checkpoints_from_commits(
                 let mut session_idx = 0u32;
                 loop {
                     let slot_name = session_idx.to_string();
-                    let session_tree_id =
-                        match entry_to_tree_id(repo, checkpoint_tree_id, &slot_name)? {
-                            Some(t) => t,
-                            None => break,
-                        };
+                    let Some(session_tree_id) =
+                        entry_to_tree_id(repo, checkpoint_tree_id, &slot_name)?
+                    else {
+                        break;
+                    };
 
                     let key_prefix = if session_idx == 0 {
                         "agent".to_string()
                     } else {
-                        format!("agent:session-{}", session_idx)
+                        format!("agent:session-{session_idx}")
                     };
 
                     count += import_session(
@@ -337,8 +328,7 @@ fn import_checkpoints_from_commits(
     }
 
     eprintln!(
-        "Scanned {} commits: {} checkpoints imported, {} already present, {} not found in tree",
-        scanned, found, skipped, missing
+        "Scanned {scanned} commits: {found} checkpoints imported, {skipped} already present, {missing} not found in tree"
     );
 
     Ok(count)
@@ -372,7 +362,7 @@ fn import_session(
         ];
         for (json_key, gmeta_key) in &string_fields {
             if let Some(val) = meta.get(json_key) {
-                let key = format!("{}:{}", key_prefix, gmeta_key);
+                let key = format!("{key_prefix}:{gmeta_key}");
                 let json_val = json_encode_value(val)?;
                 count += set_value(
                     repo,
@@ -398,7 +388,7 @@ fn import_session(
         ];
         for (json_key, gmeta_key) in &object_fields {
             if let Some(val) = meta.get(json_key) {
-                let key = format!("{}:{}", key_prefix, gmeta_key);
+                let key = format!("{key_prefix}:{gmeta_key}");
                 let json_val = json_encode_value(val)?;
                 count += set_value(
                     repo,
@@ -419,7 +409,7 @@ fn import_session(
 
     // prompt.txt
     if let Some(content) = entry_to_blob(repo, session_tree_id, "prompt.txt")? {
-        let key = format!("{}:prompt", key_prefix);
+        let key = format!("{key_prefix}:prompt");
         count += set_value(
             repo,
             db,
@@ -437,7 +427,7 @@ fn import_session(
 
     // full.jsonl
     if let Some(content) = entry_to_blob(repo, session_tree_id, "full.jsonl")? {
-        let key = format!("{}:transcript", key_prefix);
+        let key = format!("{key_prefix}:transcript");
         if !content.trim().is_empty() {
             let json_val = json_string(&content);
             count += set_value(
@@ -458,7 +448,7 @@ fn import_session(
 
     // content_hash.txt
     if let Some(content) = entry_to_blob(repo, session_tree_id, "content_hash.txt")? {
-        let key = format!("{}:content-hash", key_prefix);
+        let key = format!("{key_prefix}:content-hash");
         count += set_value(
             repo,
             db,
@@ -625,10 +615,10 @@ fn import_trails(
         for item_entry_result in shard_tree.iter() {
             let item_entry = item_entry_result?;
             let rest_name = item_entry.filename().to_str_lossy().to_string();
-            let trail_id = format!("{}{}", shard_name, rest_name);
+            let trail_id = format!("{shard_name}{rest_name}");
 
             if imported_trails.contains(&trail_id) {
-                eprintln!("  Trail {} (already imported, skipping)", trail_id);
+                eprintln!("  Trail {trail_id} (already imported, skipping)");
                 continue;
             }
 
@@ -637,12 +627,9 @@ fn import_trails(
             }
             let item_tree_id = item_entry.object_id();
 
-            let meta_content = match entry_to_blob(repo, item_tree_id, "metadata.json")? {
-                Some(c) => c,
-                None => {
-                    eprintln!("  Skipping trail {} (no metadata.json)", trail_id);
-                    continue;
-                }
+            let Some(meta_content) = entry_to_blob(repo, item_tree_id, "metadata.json")? else {
+                eprintln!("  Skipping trail {trail_id} (no metadata.json)");
+                continue;
             };
             let meta: Value =
                 serde_json::from_str(&meta_content).context("parsing trail metadata.json")?;
@@ -661,10 +648,7 @@ fn import_trails(
                     .next()
                     .unwrap_or("0000")
             );
-            eprintln!(
-                "  Trail {} (branch {}) -> branch:{}",
-                trail_id, branch_name, branch_uuid
-            );
+            eprintln!("  Trail {trail_id} (branch {branch_name}) -> branch:{branch_uuid}");
 
             count += set_value(
                 repo,
@@ -685,7 +669,7 @@ fn import_trails(
             ];
             for field in &string_fields {
                 if let Some(val) = meta.get(field) {
-                    let key = format!("review:{}", field);
+                    let key = format!("review:{field}");
                     let json_val = json_encode_value(val)?;
                     count += set_value(
                         repo,
@@ -706,7 +690,7 @@ fn import_trails(
             let json_fields = ["assignees", "labels", "reviewers"];
             for field in &json_fields {
                 if let Some(val) = meta.get(field) {
-                    let key = format!("review:{}", field);
+                    let key = format!("review:{field}");
                     let json_val = json_encode_value(val)?;
                     count += set_value(
                         repo,
@@ -832,7 +816,7 @@ fn set_value(
 }
 
 fn json_string(s: &str) -> String {
-    serde_json::to_string(s).unwrap_or_else(|_| format!("\"{}\"", s))
+    serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""))
 }
 
 fn json_encode_value(val: &Value) -> Result<String> {
@@ -883,15 +867,14 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
         .find(|&&r| repo.find_reference(r).is_ok())
         .copied();
 
-    let notes_ref = match notes_ref {
-        Some(r) => r,
-        None => bail!(
+    let Some(notes_ref) = notes_ref else {
+        bail!(
             "no git-ai notes ref found; expected one of: {}",
             NOTES_REFS.join(", ")
-        ),
+        )
     };
 
-    eprintln!("importing git-ai notes from {}", notes_ref);
+    eprintln!("importing git-ai notes from {notes_ref}");
 
     // Resolve to the notes tree OID
     let notes_commit_id = repo
@@ -910,9 +893,8 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
 
     let notes_tree = notes_tree_id.attach(repo).object()?.into_tree();
     for shard_entry_result in notes_tree.iter() {
-        let shard_entry = match shard_entry_result {
-            Ok(e) => e,
-            Err(_) => continue,
+        let Ok(shard_entry) = shard_entry_result else {
+            continue;
         };
         let shard_name = shard_entry.filename().to_str_lossy().to_string();
         // Only descend into two-char hex shard dirs.
@@ -922,40 +904,31 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
         if !shard_entry.mode().is_tree() {
             continue;
         }
-        let shard_tree = match shard_entry.object_id().attach(repo).object() {
-            Ok(o) => o.into_tree(),
-            Err(_) => continue,
+        let Ok(shard_tree) = shard_entry.object_id().attach(repo).object() else {
+            continue;
         };
+        let shard_tree = shard_tree.into_tree();
 
         for note_entry_result in shard_tree.iter() {
-            let note_entry = match note_entry_result {
-                Ok(e) => e,
-                Err(_) => continue,
+            let Ok(note_entry) = note_entry_result else {
+                continue;
             };
             let rest = note_entry.filename().to_str_lossy().to_string();
-            let commit_sha = format!("{}{}", shard_name, rest);
+            let commit_sha = format!("{shard_name}{rest}");
 
             // Verify the annotated commit exists and is within --since range.
-            let commit_oid = match gix::ObjectId::from_hex(commit_sha.as_bytes()) {
-                Ok(o) => o,
-                Err(_) => {
-                    errors += 1;
-                    continue;
-                }
+            let Ok(commit_oid) = gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
+                errors += 1;
+                continue;
             };
-            let annotated_commit = match commit_oid.attach(repo).object() {
-                Ok(o) => o.into_commit(),
-                Err(_) => {
-                    errors += 1;
-                    continue;
-                }
+            let Ok(annotated_commit) = commit_oid.attach(repo).object() else {
+                errors += 1;
+                continue;
             };
-            let decoded = match annotated_commit.decode() {
-                Ok(d) => d,
-                Err(_) => {
-                    errors += 1;
-                    continue;
-                }
+            let annotated_commit = annotated_commit.into_commit();
+            let Ok(decoded) = annotated_commit.decode() else {
+                errors += 1;
+                continue;
             };
             if let Some(since) = since_epoch {
                 if {
@@ -1098,8 +1071,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
         );
     } else {
         eprintln!(
-            "imported {} commits  (skipped: date={} already-exists={}  errors={})",
-            imported, skipped_date, skipped_exists, errors,
+            "imported {imported} commits  (skipped: date={skipped_date} already-exists={skipped_exists}  errors={errors})",
         );
     }
 
@@ -1137,7 +1109,7 @@ fn parse_git_ai_note(text: &str) -> Result<GitAiNote> {
     let git_ai_version = json
         .get("git_ai_version")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let mut models: Vec<String> = Vec::new();
     if let Some(prompts) = json.get("prompts").and_then(|v| v.as_object()) {
@@ -1151,7 +1123,7 @@ fn parse_git_ai_note(text: &str) -> Result<GitAiNote> {
                     .get("model")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let entry = format!("{}/{}", tool, model);
+                let entry = format!("{tool}/{model}");
                 if !models.contains(&entry) {
                     models.push(entry);
                 }

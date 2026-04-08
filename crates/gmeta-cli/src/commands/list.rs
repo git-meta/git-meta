@@ -30,7 +30,7 @@ pub fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
                     } else {
                         entry.value.clone()
                     };
-                    println!("[{}] {}", i, preview);
+                    println!("[{i}] {preview}");
                 }
             }
         }

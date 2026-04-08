@@ -25,7 +25,7 @@ pub fn run(commit_ref: &str) -> Result<()> {
     // Resolve the ref to a full commit SHA
     let spec = repo
         .rev_parse_single(commit_ref)
-        .with_context(|| format!("could not resolve: {}", commit_ref))?;
+        .with_context(|| format!("could not resolve: {commit_ref}"))?;
     let commit_obj = spec.object()?.peel_tags_to_end()?.into_commit();
     let sha = commit_obj.id().to_string();
 
