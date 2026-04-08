@@ -79,9 +79,9 @@ pub fn list_meta_remotes(repo: &gix::Repository) -> Result<Vec<(String, String)>
     let mut remotes = Vec::new();
 
     for name in &remote_names {
-        let meta_key = format!("remote.{}.meta", name);
+        let meta_key = format!("remote.{name}.meta");
         if config.boolean(&meta_key) == Some(true) {
-            let url_key = format!("remote.{}.url", name);
+            let url_key = format!("remote.{name}.url");
             if let Some(url) = config.string(&url_key) {
                 remotes.push((name.to_string(), url.to_string()));
             }
@@ -217,9 +217,8 @@ pub fn find_blob_oid_in_tree(
         let tree = repo
             .find_tree(current_tree_id)
             .map_err(|e| Error::Other(format!("{e}")))?;
-        let entry = match tree.find_entry(*segment) {
-            Some(e) => e,
-            None => return Ok(None),
+        let Some(entry) = tree.find_entry(*segment) else {
+            return Ok(None);
         };
 
         let entry_id = entry.object_id();
@@ -264,7 +263,7 @@ pub fn fetch_blob_oids(
 
     let workdir = repo_dir(repo)?;
 
-    let oid_list: String = oids.iter().map(|o| format!("{}\n", o)).collect();
+    let oid_list: String = oids.iter().map(|o| format!("{o}\n")).collect();
 
     let mut child = Command::new("git")
         .args([

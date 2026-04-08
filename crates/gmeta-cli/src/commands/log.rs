@@ -128,7 +128,7 @@ fn resolve_start(repo: &gix::Repository, start_ref: Option<&str>) -> Result<gix:
     let spec = start_ref.unwrap_or("HEAD");
     let obj = repo
         .rev_parse_single(spec)
-        .with_context(|| format!("could not resolve ref '{}'", spec))?;
+        .with_context(|| format!("could not resolve ref '{spec}'"))?;
     let commit = obj.object()?.peel_tags_to_end()?.into_commit();
     Ok(commit.id().detach())
 }

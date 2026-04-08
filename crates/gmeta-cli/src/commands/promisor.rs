@@ -10,12 +10,11 @@ pub fn run() -> Result<()> {
     let repo = ctx.session.repo();
     let ns = ctx.session.namespace();
 
-    let tracking_ref = format!("refs/{}/remotes/main", ns);
+    let tracking_ref = format!("refs/{ns}/remotes/main");
     let tip_oid = match repo.find_reference(&tracking_ref) {
         Ok(r) => r.into_fully_peeled_id()?.detach(),
         Err(_) => bail!(
-            "no remote tracking ref ({}).\nAdd a remote first: gmeta remote add <url>",
-            tracking_ref
+            "no remote tracking ref ({tracking_ref}).\nAdd a remote first: gmeta remote add <url>"
         ),
     };
 
@@ -147,12 +146,10 @@ pub fn run() -> Result<()> {
 
     eprintln!();
     println!(
-        "Walked {} commits ({} parsed, {} without change lists)",
-        commits_walked, commits_parsed, commits_unparseable,
+        "Walked {commits_walked} commits ({commits_parsed} parsed, {commits_unparseable} without change lists)",
     );
     println!(
-        "Inserted {} promisor keys ({} already existed, {} deletes skipped)",
-        inserted, skipped_existing, skipped_deletes,
+        "Inserted {inserted} promisor keys ({skipped_existing} already existed, {skipped_deletes} deletes skipped)",
     );
 
     Ok(())

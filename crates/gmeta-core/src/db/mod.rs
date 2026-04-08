@@ -297,9 +297,8 @@ fn resolve_blob(repo: Option<&gix::Repository>, value: &str, is_git_ref: bool) -
     if !is_git_ref {
         return Ok(value.to_string());
     }
-    let repo = match repo {
-        Some(r) => r,
-        None => return Ok(value.to_string()), // no repo, return OID as-is
+    let Some(repo) = repo else {
+        return Ok(value.to_string()); // no repo, return OID as-is
     };
     let oid =
         gix::ObjectId::from_hex(value.as_bytes()).map_err(|e| Error::Other(format!("{e}")))?;

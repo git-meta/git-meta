@@ -28,7 +28,7 @@ fn serialize_creates_ref() {
     let tree = commit_obj.tree().unwrap();
 
     let first2 = &sha[..2];
-    let expected_path = format!("commit/{}/{}/agent/model/__value", first2, sha);
+    let expected_path = format!("commit/{first2}/{sha}/agent/model/__value");
 
     let mut found = false;
     let mut results = Vec::new();
@@ -105,7 +105,7 @@ fn serialize_list_values() {
 
     let mut list_entries = Vec::new();
     let fanout = target_fanout("sc-branch-1-deadbeef");
-    let list_prefix = format!("branch/{}/sc-branch-1-deadbeef/agent/chat/__list/", fanout);
+    let list_prefix = format!("branch/{fanout}/sc-branch-1-deadbeef/agent/chat/__list/");
     let mut results = Vec::new();
     walk_tree(&repo, tree.id, "", &mut results);
     for (path, _) in &results {
@@ -117,8 +117,7 @@ fn serialize_list_values() {
     assert_eq!(
         list_entries.len(),
         2,
-        "expected 2 list entries, got: {:?}",
-        list_entries
+        "expected 2 list entries, got: {list_entries:?}"
     );
 
     for entry_path in &list_entries {
@@ -127,20 +126,13 @@ fn serialize_list_values() {
         assert_eq!(
             parts.len(),
             2,
-            "list entry should be timestamp-hash: {}",
-            filename
+            "list entry should be timestamp-hash: {filename}"
         );
         assert!(
             parts[0].chars().all(|c| c.is_ascii_digit()),
-            "first part should be digits: {}",
-            filename
+            "first part should be digits: {filename}"
         );
-        assert_eq!(
-            parts[1].len(),
-            5,
-            "hash part should be 5 chars: {}",
-            filename
-        );
+        assert_eq!(parts[1].len(), 5, "hash part should be 5 chars: {filename}");
     }
 }
 
@@ -221,11 +213,8 @@ fn serialize_rm_writes_tombstone_blob() {
     let tree = commit_obj.tree().unwrap();
 
     let first2 = &sha[..2];
-    let value_path = format!("commit/{}/{}/agent/model/__value", first2, sha);
-    let tombstone_path = format!(
-        "commit/{}/{}/__tombstones/agent/model/__deleted",
-        first2, sha
-    );
+    let value_path = format!("commit/{first2}/{sha}/agent/model/__value");
+    let tombstone_path = format!("commit/{first2}/{sha}/__tombstones/agent/model/__deleted");
 
     let mut found_value = false;
     let mut found_tombstone = false;
@@ -253,7 +242,7 @@ fn collect_list_entry_names(repo: &gix::Repository) -> Vec<String> {
     let tree = commit_obj.tree().unwrap();
 
     let fanout = target_fanout("sc-branch-1-deadbeef");
-    let list_prefix = format!("branch/{}/sc-branch-1-deadbeef/agent/chat/__list/", fanout);
+    let list_prefix = format!("branch/{fanout}/sc-branch-1-deadbeef/agent/chat/__list/");
 
     let mut entries = Vec::new();
     let mut results = Vec::new();

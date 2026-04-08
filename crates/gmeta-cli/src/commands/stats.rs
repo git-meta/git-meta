@@ -16,10 +16,7 @@ pub fn run() -> Result<()> {
 
     // Show storage counts and size histogram at the top
     let (sqlite_count, git_ref_count) = ctx.session.store().stats_storage_counts()?;
-    println!(
-        "{} values in sqlite, {} values as git refs",
-        sqlite_count, git_ref_count
-    );
+    println!("{sqlite_count} values in sqlite, {git_ref_count} values as git refs");
     println!();
 
     let (buckets, _) = ctx.session.store().stats_value_size_histogram()?;
@@ -29,7 +26,7 @@ pub fn run() -> Result<()> {
     for (label, count) in &buckets {
         let filled = ((*count as f64 / max_count as f64) * bar_width as f64).round() as usize;
         let bar: String = "#".repeat(filled);
-        println!("  {:>10}  {:30}  {}", label, bar, count);
+        println!("  {label:>10}  {bar:30}  {count}");
     }
     println!();
 
@@ -50,14 +47,14 @@ pub fn run() -> Result<()> {
         let total: u64 = grouped.values().sum();
         let tt = target_type.parse::<gmeta_core::types::TargetType>()?;
         let plural = tt.pluralize();
-        println!("{}: {} keys", plural, total);
+        println!("{plural}: {total} keys");
 
         // Sort keys by count descending, then alphabetically
         let mut sorted: Vec<(&String, &u64)> = grouped.iter().collect();
         sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
 
         for (key, count) in sorted {
-            println!("  {}  {}", key, count);
+            println!("  {key}  {count}");
         }
     }
 

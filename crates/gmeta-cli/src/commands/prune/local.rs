@@ -56,10 +56,7 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
             })
             .unwrap_or_else(|| "?".to_string());
 
-        eprintln!(
-            "Pruning metadata older than {} (cutoff: {})",
-            since, cutoff_date
-        );
+        eprintln!("Pruning metadata older than {since} (cutoff: {cutoff_date})");
         ms
     };
 
@@ -83,17 +80,11 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
     let total =
         metadata_count + list_values_count + tombstone_count + set_tombstone_count + log_count;
 
-    println!(
-        "  {} metadata keys to prune ({} remaining)",
-        metadata_count, metadata_remaining
-    );
-    println!(
-        "  {} list entries to prune ({} remaining)",
-        list_values_count, list_values_remaining
-    );
-    println!("  {} tombstones to prune", tombstone_count);
-    println!("  {} set tombstones to prune", set_tombstone_count);
-    println!("  {} log entries to prune", log_count);
+    println!("  {metadata_count} metadata keys to prune ({metadata_remaining} remaining)");
+    println!("  {list_values_count} list entries to prune ({list_values_remaining} remaining)");
+    println!("  {tombstone_count} tombstones to prune");
+    println!("  {set_tombstone_count} set tombstones to prune");
+    println!("  {log_count} log entries to prune");
 
     if total == 0 {
         println!();
@@ -103,10 +94,7 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
 
     if dry_run {
         println!();
-        println!(
-            "Would prune {} total rows. Run without --dry-run to apply.",
-            total
-        );
+        println!("Would prune {total} total rows. Run without --dry-run to apply.");
         return Ok(());
     }
 
@@ -117,6 +105,6 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
     ctx.session.store().prune_log_before(cutoff_ms)?;
 
     println!();
-    println!("Pruned {} rows.", total);
+    println!("Pruned {total} rows.");
     Ok(())
 }

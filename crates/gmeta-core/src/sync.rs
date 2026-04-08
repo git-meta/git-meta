@@ -213,7 +213,7 @@ fn collect_blob_paths(
         let full_path = if prefix.is_empty() {
             name.clone()
         } else {
-            format!("{}{}", prefix, name)
+            format!("{prefix}{name}")
         };
         if entry.mode().is_blob() {
             paths.push(full_path);

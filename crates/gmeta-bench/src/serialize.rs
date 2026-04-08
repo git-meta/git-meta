@@ -130,7 +130,7 @@ fn count_odb_stats(repo_path: &std::path::Path) -> Result<OdbStats> {
 
 fn fmt_bytes(bytes: u64) -> String {
     if bytes < 1024 {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
@@ -144,7 +144,7 @@ fn fmt_ms(secs: f64) -> String {
     } else if secs < 1.0 {
         format!("{:.1} ms", secs * 1000.0)
     } else {
-        format!("{:.2} s", secs)
+        format!("{secs:.2} s")
     }
 }
 
@@ -248,10 +248,7 @@ fn build_tree_from_paths(
 pub fn run(rounds: usize) -> Result<()> {
     let mut rng = Rng(0xdeadbeef_cafebabe);
 
-    println!(
-        "\n{}gmeta serialize benchmark{}  —  {}{} rounds{}",
-        BOLD, RESET, CYAN, rounds, RESET
-    );
+    println!("\n{BOLD}gmeta serialize benchmark{RESET}  —  {CYAN}{rounds} rounds{RESET}");
 
     // Create temp directory
     let tmp_path = std::env::temp_dir().join(format!(
@@ -278,10 +275,7 @@ pub fn run(rounds: usize) -> Result<()> {
     let mut round_stats: Vec<RoundStats> = Vec::with_capacity(rounds);
 
     // Print table header
-    println!(
-        "\n  {}round  keys   cumulative  insert       serialize    total{}",
-        DIM, RESET
-    );
+    println!("\n  {DIM}round  keys   cumulative  insert       serialize    total{RESET}");
     println!("  {}", "─".repeat(70));
 
     let wall_t0 = Instant::now();
@@ -361,8 +355,8 @@ pub fn run(rounds: usize) -> Result<()> {
 
     let wall_secs = wall_t0.elapsed().as_secs_f64();
 
-    println!("\n{}── Summary ──{}", BOLD, RESET);
-    println!("  total keys:       {}{}{}", CYAN, total_keys, RESET);
+    println!("\n{BOLD}── Summary ──{RESET}");
+    println!("  total keys:       {CYAN}{total_keys}{RESET}");
     println!(
         "  wall time:        {}{}{}",
         GREEN,
@@ -410,7 +404,7 @@ pub fn run(rounds: usize) -> Result<()> {
         let first_per_key = first.serialize_secs / first.keys_inserted as f64;
         let last_per_key = last.serialize_secs / last.keys_inserted as f64;
         let slowdown = last.serialize_secs / first.serialize_secs;
-        println!("\n  {}serialize scaling:{}", BOLD, RESET);
+        println!("\n  {BOLD}serialize scaling:{RESET}");
         println!(
             "    round 1:  {} ({} keys, {}/key)",
             fmt_ms(first.serialize_secs),
@@ -432,15 +426,15 @@ pub fn run(rounds: usize) -> Result<()> {
         } else {
             GREEN
         };
-        println!("    slowdown: {}{:.1}x{}", color, slowdown, RESET);
+        println!("    slowdown: {color}{slowdown:.1}x{RESET}");
     }
 
-    println!("\n{}── Git ODB ──{}", BOLD, RESET);
+    println!("\n{BOLD}── Git ODB ──{RESET}");
 
     let odb = count_odb_stats(&repo_path)?;
     let total_objects = odb.loose_blobs + odb.loose_trees + odb.loose_commits + odb.loose_other;
 
-    println!("  loose objects:    {}{}{}", CYAN, total_objects, RESET);
+    println!("  loose objects:    {CYAN}{total_objects}{RESET}");
     println!("    blobs:          {}{}{}", BLUE, odb.loose_blobs, RESET);
     println!("    trees:          {}{}{}", BLUE, odb.loose_trees, RESET);
     println!("    commits:        {}{}{}", BLUE, odb.loose_commits, RESET);
@@ -457,13 +451,13 @@ pub fn run(rounds: usize) -> Result<()> {
     // Ratio of trees to blobs
     if odb.loose_blobs > 0 {
         let ratio = odb.loose_trees as f64 / odb.loose_blobs as f64;
-        println!("  tree/blob ratio:  {}{:.2}{}", DIM, ratio, RESET);
+        println!("  tree/blob ratio:  {DIM}{ratio:.2}{RESET}");
     }
 
     // Bytes per key
     if total_keys > 0 {
         let bytes_per_key = odb.loose_total_bytes as f64 / total_keys as f64;
-        println!("  ODB bytes/key:    {}{:.0} B{}", DIM, bytes_per_key, RESET);
+        println!("  ODB bytes/key:    {DIM}{bytes_per_key:.0} B{RESET}");
     }
 
     // Clean up

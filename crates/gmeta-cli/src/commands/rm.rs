@@ -10,7 +10,7 @@ pub fn run(target_str: &str, key: &str) -> Result<()> {
     let removed = ctx.session.target(&target).remove(key)?;
 
     if !removed {
-        eprintln!("key '{}' not found", key);
+        eprintln!("key '{key}' not found");
     }
 
     Ok(())

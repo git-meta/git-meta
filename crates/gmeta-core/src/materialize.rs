@@ -528,10 +528,10 @@ pub fn find_remote_refs(
     let mut results = Vec::new();
 
     let prefix = match remote {
-        Some(r) => format!("refs/{}/{}", ns, r),
-        None => format!("refs/{}/", ns),
+        Some(r) => format!("refs/{ns}/{r}"),
+        None => format!("refs/{ns}/"),
     };
-    let local_prefix = format!("refs/{}/local/", ns);
+    let local_prefix = format!("refs/{ns}/local/");
 
     let platform = repo
         .references()

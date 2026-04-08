@@ -125,7 +125,7 @@ impl Store {
         limit: usize,
     ) -> Result<Vec<String>> {
         let escaped = escape_like_pattern(prefix);
-        let pattern = format!("{}%", escaped);
+        let pattern = format!("{escaped}%");
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT target_value FROM metadata
              WHERE target_type = ?1 AND target_value LIKE ?2 ESCAPE '\\'

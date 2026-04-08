@@ -357,7 +357,7 @@ impl Store {
         let target_type_str = target.target_type().as_str();
         let target_value = target.value().unwrap_or("");
         let escaped_target = escape_like_pattern(target_value);
-        let target_like = format!("{}/%", escaped_target);
+        let target_like = format!("{escaped_target}/%");
 
         let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) =
             match (include_target_subtree, key_prefix) {

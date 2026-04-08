@@ -9,8 +9,8 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
         let ns = ctx.session.namespace();
         let remote_name = ctx.session.resolve_remote(remote)?;
         let fetch_refspec = format!("refs/{ns}/main:refs/{ns}/remotes/main");
-        eprintln!("[verbose] remote: {}", remote_name);
-        eprintln!("[verbose] fetch refspec: {}", fetch_refspec);
+        eprintln!("[verbose] remote: {remote_name}");
+        eprintln!("[verbose] fetch refspec: {fetch_refspec}");
     }
 
     let output = ctx.session.pull(remote)?;

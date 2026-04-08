@@ -25,7 +25,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("{}benchmarking {} key reads...{}", BOLD, total, RESET);
+    println!("{BOLD}benchmarking {total} key reads...{RESET}");
 
     let mut durations: Vec<Duration> = Vec::with_capacity(total);
     let mut sizes: Vec<usize> = Vec::with_capacity(total);
@@ -33,12 +33,9 @@ pub fn run() -> Result<()> {
 
     for (target_type_str, target_value, key) in &keys {
         let t0 = Instant::now();
-        let target_type = match target_type_str.parse::<TargetType>() {
-            Ok(tt) => tt,
-            Err(_) => {
-                errors += 1;
-                continue;
-            }
+        let Ok(target_type) = target_type_str.parse::<TargetType>() else {
+            errors += 1;
+            continue;
         };
         let target = if target_type == TargetType::Project {
             Target::project()
@@ -64,7 +61,7 @@ pub fn run() -> Result<()> {
 
     let n = durations.len();
     if n == 0 {
-        println!("no values could be read ({} errors)", errors);
+        println!("no values could be read ({errors} errors)");
         return Ok(());
     }
 
@@ -93,18 +90,12 @@ pub fn run() -> Result<()> {
         if errors == 1 { " error" } else { " errors" },
         RESET,
     );
-    println!(
-        "  {}mean{}  {}{:>10.6} s{}",
-        DIM, RESET, YELLOW, mean_s, RESET
-    );
-    println!("  {}p50{}   {}{:>10.6} s{}", DIM, RESET, GREEN, p50, RESET);
-    println!("  {}p95{}   {}{:>10.6} s{}", DIM, RESET, YELLOW, p95, RESET);
-    println!("  {}p99{}   {}{:>10.6} s{}", DIM, RESET, RED, p99, RESET);
-    println!("  {}max{}   {}{:>10.6} s{}", DIM, RESET, RED, max_s, RESET);
-    println!(
-        "  {}total{} {}{:>10.6} s{}",
-        DIM, RESET, CYAN, total_s, RESET
-    );
+    println!("  {DIM}mean{RESET}  {YELLOW}{mean_s:>10.6} s{RESET}");
+    println!("  {DIM}p50{RESET}   {GREEN}{p50:>10.6} s{RESET}");
+    println!("  {DIM}p95{RESET}   {YELLOW}{p95:>10.6} s{RESET}");
+    println!("  {DIM}p99{RESET}   {RED}{p99:>10.6} s{RESET}");
+    println!("  {DIM}max{RESET}   {RED}{max_s:>10.6} s{RESET}");
+    println!("  {DIM}total{RESET} {CYAN}{total_s:>10.6} s{RESET}");
 
     // Size histogram
     let boundaries: &[(usize, &str)] = &[
@@ -126,16 +117,13 @@ pub fn run() -> Result<()> {
     }
 
     println!();
-    println!("{}value sizes:{}", BOLD, RESET);
+    println!("{BOLD}value sizes:{RESET}");
     let max_count = counts.iter().copied().max().unwrap_or(1).max(1);
     let bar_width = 30usize;
     for ((_, label), count) in boundaries.iter().zip(counts.iter()) {
         let filled = ((*count as f64 / max_count as f64) * bar_width as f64).round() as usize;
         let bar = format!("{}{}{}", BLUE, "#".repeat(filled), RESET);
-        println!(
-            "  {}{}{}  {:<30}  {}{}{}",
-            DIM, label, RESET, bar, CYAN, count, RESET,
-        );
+        println!("  {DIM}{label}{RESET}  {bar:<30}  {CYAN}{count}{RESET}",);
     }
 
     Ok(())

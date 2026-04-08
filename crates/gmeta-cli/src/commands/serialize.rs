@@ -12,7 +12,7 @@ pub fn run(_verbose: bool) -> Result<()> {
     }
 
     for ref_name in &output.refs_written {
-        println!("serialized to {}", ref_name);
+        println!("serialized to {ref_name}");
     }
 
     if output.pruned > 0 {

@@ -57,9 +57,9 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     let ns = session.namespace();
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
-    let remote_refspec = format!("refs/{}/main", ns);
-    let tracking_ref = format!("refs/{}/remotes/main", ns);
-    let fetch_refspec = format!("{}:{}", remote_refspec, tracking_ref);
+    let remote_refspec = format!("refs/{ns}/main");
+    let tracking_ref = format!("refs/{ns}/remotes/main");
+    let fetch_refspec = format!("{remote_refspec}:{tracking_ref}");
 
     // Record the old tip so we can count new commits
     let old_tip = repo
@@ -100,7 +100,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     };
 
     // Hydrate tip tree blobs so gix can read them
-    let short_ref = format!("{}/remotes/main", ns);
+    let short_ref = format!("{ns}/remotes/main");
     git_utils::hydrate_tip_blobs(repo, &remote_name, &short_ref)?;
 
     // Serialize local state so materialize can do a proper 3-way merge

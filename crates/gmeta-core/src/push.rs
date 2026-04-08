@@ -66,7 +66,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
     let local_ref = session.local_ref();
-    let remote_refspec = format!("refs/{}/main", ns);
+    let remote_refspec = format!("refs/{ns}/main");
 
     // Serialize local metadata to the local ref
     let _ = crate::serialize::run(session, now)?;
@@ -79,7 +79,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
     }
 
     // Check if local ref already matches the remote ref (nothing new to push)
-    let remote_tracking_ref = format!("refs/{}/remotes/main", ns);
+    let remote_tracking_ref = format!("refs/{ns}/remotes/main");
     let local_oid = repo
         .find_reference(&local_ref)
         .ok()
@@ -110,7 +110,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
         .unwrap_or_default();
 
     // Attempt push
-    let push_refspec = format!("{}:{}", local_ref, remote_refspec);
+    let push_refspec = format!("{local_ref}:{remote_refspec}");
     let result = git_utils::run_git(repo, &["push", &remote_name, &push_refspec]);
 
     match result {
@@ -169,15 +169,15 @@ pub fn resolve_push_conflict(session: &Session, remote: Option<&str>, now: i64) 
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
     let local_ref = session.local_ref();
-    let remote_refspec = format!("refs/{}/main", ns);
-    let remote_tracking_ref = format!("refs/{}/remotes/main", ns);
+    let remote_refspec = format!("refs/{ns}/main");
+    let remote_tracking_ref = format!("refs/{ns}/remotes/main");
 
     // Fetch latest remote data
-    let fetch_refspec = format!("{}:{}", remote_refspec, remote_tracking_ref);
+    let fetch_refspec = format!("{remote_refspec}:{remote_tracking_ref}");
     git_utils::run_git(repo, &["fetch", &remote_name, &fetch_refspec])?;
 
     // Hydrate tip tree blobs so gix can read them
-    let short_ref = format!("{}/remotes/main", ns);
+    let short_ref = format!("{ns}/remotes/main");
     git_utils::hydrate_tip_blobs(repo, &remote_name, &short_ref)?;
 
     // Materialize the remote data (merge into local DB)

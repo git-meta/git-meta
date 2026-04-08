@@ -35,7 +35,7 @@ fn value_shard_prefix(value: &str) -> String {
 
 fn escape_path_target_segment(segment: &str) -> String {
     if segment.starts_with('~') || segment.starts_with("__") {
-        format!("~{}", segment)
+        format!("~{segment}")
     } else {
         segment.to_string()
     }
@@ -65,7 +65,7 @@ fn build_key_tree_path(target: &Target, key: &str) -> Result<String> {
     validate_key(key)?;
     let base = tree_base_path(target);
     let segments = key_to_path_segments(key).join("/");
-    Ok(format!("{}/{}", base, segments))
+    Ok(format!("{base}/{segments}"))
 }
 
 /// Build the tree base path for serialization.
@@ -114,7 +114,7 @@ pub fn tree_base_path(target: &Target) -> String {
 /// Returns an error if the key is invalid.
 pub fn tree_path(target: &Target, key: &str) -> Result<String> {
     let key_path = build_key_tree_path(target, key)?;
-    Ok(format!("{}/{}", key_path, STRING_VALUE_BLOB))
+    Ok(format!("{key_path}/{STRING_VALUE_BLOB}"))
 }
 
 /// Build the common tree path prefix for any key.
@@ -139,7 +139,7 @@ pub fn key_tree_path(target: &Target, key: &str) -> Result<String> {
 /// Returns an error if the key is invalid.
 pub fn list_dir_path(target: &Target, key: &str) -> Result<String> {
     let key_path = build_key_tree_path(target, key)?;
-    Ok(format!("{}/{}", key_path, LIST_VALUE_DIR))
+    Ok(format!("{key_path}/{LIST_VALUE_DIR}"))
 }
 
 /// Build the set directory path for a key.
@@ -152,7 +152,7 @@ pub fn list_dir_path(target: &Target, key: &str) -> Result<String> {
 /// Returns an error if the key is invalid.
 pub fn set_dir_path(target: &Target, key: &str) -> Result<String> {
     let key_path = build_key_tree_path(target, key)?;
-    Ok(format!("{}/{}", key_path, SET_VALUE_DIR))
+    Ok(format!("{key_path}/{SET_VALUE_DIR}"))
 }
 
 /// Build the tombstone blob path for a key.
@@ -168,8 +168,7 @@ pub fn tombstone_path(target: &Target, key: &str) -> Result<String> {
     let base = tree_base_path(target);
     let segments = key_to_path_segments(key).join("/");
     Ok(format!(
-        "{}/{}/{}/{}",
-        base, TOMBSTONE_ROOT, segments, TOMBSTONE_BLOB
+        "{base}/{TOMBSTONE_ROOT}/{segments}/{TOMBSTONE_BLOB}"
     ))
 }
 
@@ -185,8 +184,7 @@ pub fn tombstone_path(target: &Target, key: &str) -> Result<String> {
 pub fn list_entry_tombstone_path(target: &Target, key: &str, entry: &str) -> Result<String> {
     let key_path = build_key_tree_path(target, key)?;
     Ok(format!(
-        "{}/{}/{}/{}",
-        key_path, LIST_VALUE_DIR, TOMBSTONE_ROOT, entry
+        "{key_path}/{LIST_VALUE_DIR}/{TOMBSTONE_ROOT}/{entry}"
     ))
 }
 
@@ -201,7 +199,7 @@ pub fn list_entry_tombstone_path(target: &Target, key: &str, entry: &str) -> Res
 /// Returns an error if the key is invalid.
 pub fn set_member_tombstone_path(target: &Target, key: &str, member: &str) -> Result<String> {
     let key_path = build_key_tree_path(target, key)?;
-    Ok(format!("{}/{}/{}", key_path, TOMBSTONE_ROOT, member))
+    Ok(format!("{key_path}/{TOMBSTONE_ROOT}/{member}"))
 }
 
 #[cfg(test)]
@@ -246,7 +244,7 @@ mod tests {
         let expected_prefix = value_shard_prefix("sc-branch-1-deadbeef");
         assert_eq!(
             tree_base_path(&t),
-            format!("branch/{}/sc-branch-1-deadbeef", expected_prefix)
+            format!("branch/{expected_prefix}/sc-branch-1-deadbeef")
         );
     }
 

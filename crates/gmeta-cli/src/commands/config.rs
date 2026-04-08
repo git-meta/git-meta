@@ -30,11 +30,7 @@ pub fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str>) -> R
 
 fn validate_config_key(key: &str) -> Result<()> {
     if !key.starts_with(CONFIG_PREFIX) {
-        bail!(
-            "config keys must start with '{}' (got '{}')",
-            CONFIG_PREFIX,
-            key
-        );
+        bail!("config keys must start with '{CONFIG_PREFIX}' (got '{key}')");
     }
     validate_key(key)?;
     Ok(())
@@ -53,8 +49,8 @@ fn run_set(handle: &gmeta_core::SessionTargetHandle<'_>, key: &str, value: &str)
 fn run_get(handle: &gmeta_core::SessionTargetHandle<'_>, key: &str) -> Result<()> {
     if let Some(meta_value) = handle.get_value(key)? {
         match meta_value {
-            MetaValue::String(s) => println!("{}", s),
-            other => println!("{:?}", other),
+            MetaValue::String(s) => println!("{s}"),
+            other => println!("{other:?}"),
         }
     }
     Ok(())
@@ -65,9 +61,9 @@ fn run_list(handle: &gmeta_core::SessionTargetHandle<'_>) -> Result<()> {
     for (key, value) in entries {
         let display = match value {
             MetaValue::String(s) => s,
-            other => format!("{:?}", other),
+            other => format!("{other:?}"),
         };
-        println!("{} = {}", key, display);
+        println!("{key} = {display}");
     }
     Ok(())
 }
@@ -75,7 +71,7 @@ fn run_list(handle: &gmeta_core::SessionTargetHandle<'_>) -> Result<()> {
 fn run_unset(handle: &gmeta_core::SessionTargetHandle<'_>, key: &str) -> Result<()> {
     let removed = handle.remove(key)?;
     if !removed {
-        eprintln!("key '{}' not found", key);
+        eprintln!("key '{key}' not found");
     }
     Ok(())
 }

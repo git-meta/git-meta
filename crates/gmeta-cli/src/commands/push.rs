@@ -15,7 +15,7 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let origin_url = config
         .string("remote.origin.url")
         .map_or_else(|| "unknown".to_string(), |s| s.to_string());
-    let meta_url_key = format!("remote.{}.url", remote_name);
+    let meta_url_key = format!("remote.{remote_name}.url");
     let meta_url = config
         .string(&meta_url_key)
         .map_or_else(|| "unknown".to_string(), |s| s.to_string());
@@ -24,9 +24,9 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let readme_content = generate_readme(&origin_url, &meta_url, ns);
 
     if verbose {
-        eprintln!("[verbose] remote: {}", remote_name);
-        eprintln!("[verbose] origin url: {}", origin_url);
-        eprintln!("[verbose] meta url: {}", meta_url);
+        eprintln!("[verbose] remote: {remote_name}");
+        eprintln!("[verbose] origin url: {origin_url}");
+        eprintln!("[verbose] meta url: {meta_url}");
     }
 
     // Create blob -> tree -> commit
@@ -59,25 +59,25 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let commit_oid = repo.write_object(&commit)?.detach();
 
     if verbose {
-        eprintln!("[verbose] created blob: {}", blob_oid);
-        eprintln!("[verbose] created tree: {}", tree_oid);
-        eprintln!("[verbose] created commit: {}", commit_oid);
+        eprintln!("[verbose] created blob: {blob_oid}");
+        eprintln!("[verbose] created tree: {tree_oid}");
+        eprintln!("[verbose] created commit: {commit_oid}");
     }
 
     // Push commit to refs/heads/main on the remote, but only if it doesn't exist.
     // We use a refspec without '+' so it fails if the ref already exists.
-    let push_refspec = format!("{}:refs/heads/main", commit_oid);
+    let push_refspec = format!("{commit_oid}:refs/heads/main");
 
     if verbose {
-        eprintln!("[verbose] push refspec: {}", push_refspec);
+        eprintln!("[verbose] push refspec: {push_refspec}");
     }
 
-    eprintln!("Pushing README to {}...", remote_name);
+    eprintln!("Pushing README to {remote_name}...");
     let result = gmeta_core::git_utils::run_git(repo, &["push", &remote_name, &push_refspec]);
 
     match result {
         Ok(_) => {
-            println!("Pushed README to {} (refs/heads/main)", remote_name);
+            println!("Pushed README to {remote_name} (refs/heads/main)");
             Ok(())
         }
         Err(e) => {
@@ -87,9 +87,9 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
                 || err_msg.contains("fetch first")
                 || err_msg.contains("already exists")
             {
-                bail!("refs/heads/main already exists on {}. The README can only be pushed to a new repository.", remote_name);
+                bail!("refs/heads/main already exists on {remote_name}. The README can only be pushed to a new repository.");
             }
-            bail!("push failed: {}", err_msg);
+            bail!("push failed: {err_msg}");
         }
     }
 }
@@ -170,19 +170,19 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
 
     if verbose {
         let ns = ctx.session.namespace();
-        let local_ref = format!("refs/{}/local/main", ns);
-        let remote_refspec = format!("refs/{}/main", ns);
-        eprintln!("[verbose] remote: {}", resolved_remote);
-        eprintln!("[verbose] local ref: {}", local_ref);
-        eprintln!("[verbose] remote refspec: {}", remote_refspec);
+        let local_ref = format!("refs/{ns}/local/main");
+        let remote_refspec = format!("refs/{ns}/main");
+        eprintln!("[verbose] remote: {resolved_remote}");
+        eprintln!("[verbose] local ref: {local_ref}");
+        eprintln!("[verbose] remote refspec: {remote_refspec}");
     }
 
     for attempt in 1..=MAX_RETRIES {
         if verbose {
-            eprintln!("[verbose] push attempt {}/{}", attempt, MAX_RETRIES);
+            eprintln!("[verbose] push attempt {attempt}/{MAX_RETRIES}");
         }
 
-        eprintln!("Pushing to {}...", resolved_remote);
+        eprintln!("Pushing to {resolved_remote}...");
         let output = ctx.session.push_once(remote)?;
 
         if output.success {
@@ -202,8 +202,7 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
         }
 
         eprintln!(
-            "Push rejected (remote has new data), fetching and merging (attempt {}/{})...",
-            attempt, MAX_RETRIES
+            "Push rejected (remote has new data), fetching and merging (attempt {attempt}/{MAX_RETRIES})..."
         );
 
         ctx.session.resolve_push_conflict(remote)?;
@@ -213,5 +212,5 @@ pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
         }
     }
 
-    bail!("push failed after {} attempts", MAX_RETRIES);
+    bail!("push failed after {MAX_RETRIES} attempts");
 }

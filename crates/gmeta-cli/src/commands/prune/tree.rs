@@ -56,31 +56,22 @@ pub fn run(dry_run: bool) -> Result<()> {
 
     // Find the current serialized tree
     let ref_name = format!("refs/{}/local/main", ctx.session.namespace());
-    let current_commit_oid = match repo
+    let Some(current_commit_oid) = repo
         .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.into_fully_peeled_id().ok())
         .map(gix::Id::detach)
-    {
-        Some(oid) => oid,
-        None => {
-            eprintln!(
-                "No serialized metadata found at {}. Run `gmeta serialize` first.",
-                ref_name
-            );
-            return Ok(());
-        }
+    else {
+        eprintln!("No serialized metadata found at {ref_name}. Run `gmeta serialize` first.");
+        return Ok(());
     };
 
     let current_commit_obj = current_commit_oid.attach(repo).object()?.into_commit();
     let tree_oid = current_commit_obj.tree_id()?.detach();
     let (_, current_keys) = count_prune_stats(repo, tree_oid, tree_oid)?;
 
-    eprintln!(
-        "Pruning {} (cutoff: {} -- entries older than {})",
-        ref_name, cutoff_date, since
-    );
-    eprintln!("  current tree: {} keys", current_keys);
+    eprintln!("Pruning {ref_name} (cutoff: {cutoff_date} -- entries older than {since})");
+    eprintln!("  current tree: {current_keys} keys");
 
     // Read filter rules so we produce the same tree as serialize would
     let filter_rules = parse_filter_rules(ctx.session.store())?;
@@ -148,10 +139,7 @@ pub fn run(dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    eprintln!(
-        "  {} metadata keys and {} tombstones to drop",
-        pruned_meta, pruned_tombs
-    );
+    eprintln!("  {pruned_meta} metadata keys and {pruned_tombs} tombstones to drop");
 
     // Build a fresh tree from the surviving entries
     let pruned_tree_oid = build_filtered_tree(
@@ -164,15 +152,11 @@ pub fn run(dry_run: bool) -> Result<()> {
 
     let (keys_dropped, keys_retained) = count_prune_stats(repo, tree_oid, pruned_tree_oid)?;
 
-    eprintln!(
-        "  pruned tree:  {} keys ({} dropped from tree)",
-        keys_retained, keys_dropped
-    );
+    eprintln!("  pruned tree:  {keys_retained} keys ({keys_dropped} dropped from tree)");
 
     if dry_run {
         println!(
-            "Would drop {} keys, retaining {}. Run without --dry-run to apply.",
-            keys_dropped, keys_retained
+            "Would drop {keys_dropped} keys, retaining {keys_retained}. Run without --dry-run to apply."
         );
         return Ok(());
     }
@@ -187,8 +171,7 @@ pub fn run(dry_run: bool) -> Result<()> {
     };
 
     let message = format!(
-        "gmeta: prune --since={}\n\npruned: true\nsince: {}\nkeys-dropped: {}\nkeys-retained: {}",
-        since, since, keys_dropped, keys_retained
+        "gmeta: prune --since={since}\n\npruned: true\nsince: {since}\nkeys-dropped: {keys_dropped}\nkeys-retained: {keys_retained}"
     );
 
     let commit = gix::objs::Commit {

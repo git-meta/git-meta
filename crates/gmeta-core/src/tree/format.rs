@@ -150,9 +150,8 @@ pub fn parse_tree(
             continue;
         }
 
-        let (target_type, target_value, key_parts) = match parse_path_parts(&parts) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let Ok((target_type, target_value, key_parts)) = parse_path_parts(&parts) else {
+            continue;
         };
 
         if key_parts.is_empty() {
@@ -166,13 +165,11 @@ pub fn parse_tree(
             && key_parts[key_parts.len() - 1] == TOMBSTONE_BLOB
         {
             let key_segments = &key_parts[1..key_parts.len() - 1];
-            let key = match decode_key_path_segments(key_segments) {
-                Ok(k) => k,
-                Err(_) => continue,
+            let Ok(key) = decode_key_path_segments(key_segments) else {
+                continue;
             };
-            let tombstone = match parse_tombstone_blob(content) {
-                Some(t) => t,
-                None => continue,
+            let Some(tombstone) = parse_tombstone_blob(content) else {
+                continue;
             };
             let entry_key = Key {
                 target_type,
@@ -192,9 +189,8 @@ pub fn parse_tree(
         //   .../<key segments...>/__tombstones/<member-id>
         if key_parts.len() >= 3 && key_parts[key_parts.len() - 2] == TOMBSTONE_ROOT {
             let key_segments = &key_parts[..key_parts.len() - 2];
-            let key = match decode_key_path_segments(key_segments) {
-                Ok(k) => k,
-                Err(_) => continue,
+            let Ok(key) = decode_key_path_segments(key_segments) else {
+                continue;
             };
             let member_id = key_parts[key_parts.len() - 1].to_string();
             let content_str = String::from_utf8_lossy(content).to_string();
@@ -214,9 +210,8 @@ pub fn parse_tree(
         //   .../<key segments...>/__set/<member-id>
         if key_parts.len() >= 2 && key_parts[key_parts.len() - 2] == SET_VALUE_DIR {
             let key_segments = &key_parts[..key_parts.len() - 2];
-            let key = match decode_key_path_segments(key_segments) {
-                Ok(k) => k,
-                Err(_) => continue,
+            let Ok(key) = decode_key_path_segments(key_segments) else {
+                continue;
             };
             let member_id = key_parts[key_parts.len() - 1].to_string();
             let content_str = String::from_utf8_lossy(content).to_string();
@@ -241,14 +236,12 @@ pub fn parse_tree(
             && key_parts[key_parts.len() - 2] == TOMBSTONE_ROOT
         {
             let key_segments = &key_parts[..key_parts.len() - 3];
-            let key = match decode_key_path_segments(key_segments) {
-                Ok(k) => k,
-                Err(_) => continue,
+            let Ok(key) = decode_key_path_segments(key_segments) else {
+                continue;
             };
             let entry_name = key_parts[key_parts.len() - 1].to_string();
-            let tombstone = match parse_tombstone_blob(content) {
-                Some(t) => t,
-                None => continue,
+            let Some(tombstone) = parse_tombstone_blob(content) else {
+                continue;
             };
             let entry_key = (
                 Key {
@@ -274,9 +267,8 @@ pub fn parse_tree(
             && git_utils::is_list_entry_name(key_parts[key_parts.len() - 1])
         {
             let key_segments = &key_parts[..key_parts.len() - 2];
-            let key = match decode_key_path_segments(key_segments) {
-                Ok(k) => k,
-                Err(_) => continue,
+            let Ok(key) = decode_key_path_segments(key_segments) else {
+                continue;
             };
             let entry_name = key_parts[key_parts.len() - 1].to_string();
             let content_str = String::from_utf8_lossy(content).to_string();
@@ -298,9 +290,8 @@ pub fn parse_tree(
         //   .../<key segments...>/__value
         if key_parts.len() >= 2 && key_parts[key_parts.len() - 1] == STRING_VALUE_BLOB {
             let key_segments = &key_parts[..key_parts.len() - 1];
-            let key = match decode_key_path_segments(key_segments) {
-                Ok(k) => k,
-                Err(_) => continue,
+            let Ok(key) = decode_key_path_segments(key_segments) else {
+                continue;
             };
             let content_str = String::from_utf8_lossy(content).to_string();
             parsed.values.insert(
@@ -483,14 +474,14 @@ pub fn build_merged_tree(
             TreeValue::List(list_entries) => {
                 let list_dir_path = tree_paths::list_dir_path(&target, &k.key)?;
                 for (entry_name, content) in list_entries {
-                    let full_path = format!("{}/{}", list_dir_path, entry_name);
+                    let full_path = format!("{list_dir_path}/{entry_name}");
                     files.insert(full_path, content.as_bytes().to_vec());
                 }
             }
             TreeValue::Set(set_members) => {
                 let set_dir_path = tree_paths::set_dir_path(&target, &k.key)?;
                 for (member_id, content) in set_members {
-                    let full_path = format!("{}/{}", set_dir_path, member_id);
+                    let full_path = format!("{set_dir_path}/{member_id}");
                     files.insert(full_path, content.as_bytes().to_vec());
                 }
             }

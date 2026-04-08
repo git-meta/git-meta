@@ -36,9 +36,8 @@ pub struct PruneRules {
 /// Returns an error if database reads fail or if configured values
 /// cannot be parsed.
 pub fn read_prune_rules(db: &Store) -> Result<Option<PruneRules>> {
-    let since = match read_config_string(db, "meta:prune:since")? {
-        Some(s) => s,
-        None => return Ok(None),
+    let Some(since) = read_config_string(db, "meta:prune:since")? else {
+        return Ok(None);
     };
 
     let max_keys = read_config_string(db, "meta:prune:max-keys")?

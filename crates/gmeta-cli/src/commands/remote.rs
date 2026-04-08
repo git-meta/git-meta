@@ -12,7 +12,7 @@ fn expand_url(url: &str) -> String {
     // "owner/repo" shorthand (exactly one slash, no other path separators)
     if url.matches('/').count() == 1 {
         let url = url.strip_suffix(".git").unwrap_or(url);
-        return format!("git@github.com:{}.git", url);
+        return format!("git@github.com:{url}.git");
     }
     url.to_string()
 }
@@ -27,7 +27,7 @@ fn check_remote_refs(
 ) -> Result<(bool, Vec<String>)> {
     let output = gmeta_core::git_utils::run_git(session.repo(), &["ls-remote", url])?;
 
-    let expected_ref = format!("refs/{}/main", ns);
+    let expected_ref = format!("refs/{ns}/main");
     let mut has_match = false;
     let mut other_namespaces = Vec::new();
 
@@ -68,49 +68,44 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
 
     // Check if this remote name already exists
     let config = repo.config_snapshot();
-    let remote_url_key = format!("remote.{}.url", name);
+    let remote_url_key = format!("remote.{name}.url");
     if config.string(&remote_url_key).is_some() {
-        bail!("remote '{}' already exists", name);
+        bail!("remote '{name}' already exists");
     }
 
     // Check the remote for meta refs before configuring
-    eprintln!("Checking {}...", url);
+    eprintln!("Checking {url}...");
     match check_remote_refs(&ctx.session, &url, &ns) {
         Ok((has_match, other_namespaces)) => {
             if !has_match {
                 if other_namespaces.is_empty() {
                     bail!(
-                        "no metadata refs found on {}\n\n\
-                         The remote does not have refs/{}/main or any other recognizable metadata refs.\n\
+                        "no metadata refs found on {url}\n\n\
+                         The remote does not have refs/{ns}/main or any other recognizable metadata refs.\n\
                          If this is a new remote that will receive metadata via push, use:\n  \
-                         gmeta remote add {} --name {} --namespace {}",
-                        url, ns, url, name, ns,
+                         gmeta remote add {url} --name {name} --namespace {ns}",
                     );
                 } else {
                     let found_refs = other_namespaces
                         .iter()
-                        .map(|alt| format!("  refs/{}/main", alt))
+                        .map(|alt| format!("  refs/{alt}/main"))
                         .collect::<Vec<_>>()
                         .join("\n");
                     let suggestions = other_namespaces
                         .iter()
-                        .map(|alt| format!("  gmeta remote add {} --namespace={}", url, alt))
+                        .map(|alt| format!("  gmeta remote add {url} --namespace={alt}"))
                         .collect::<Vec<_>>()
                         .join("\n");
                     bail!(
-                        "no metadata refs found under refs/{}/main on {}\n\n\
-                         However, metadata refs were found under other namespaces:\n{}\n\n\
-                         To use one of these, re-run with --namespace:\n{}",
-                        ns,
-                        url,
-                        found_refs,
-                        suggestions,
+                        "no metadata refs found under refs/{ns}/main on {url}\n\n\
+                         However, metadata refs were found under other namespaces:\n{found_refs}\n\n\
+                         To use one of these, re-run with --namespace:\n{suggestions}",
                     );
                 }
             }
         }
         Err(e) => {
-            eprintln!("Warning: could not inspect remote refs: {}", e);
+            eprintln!("Warning: could not inspect remote refs: {e}");
             eprintln!("Proceeding with setup anyway...");
         }
     }
@@ -132,22 +127,22 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
         Ok(())
     };
 
-    let prefix = format!("remote.{}", name);
-    run(&[&format!("{}.url", prefix), &url])?;
+    let prefix = format!("remote.{name}");
+    run(&[&format!("{prefix}.url"), &url])?;
     run(&[
-        &format!("{}.fetch", prefix),
+        &format!("{prefix}.fetch"),
         &format!("+refs/{ns}/main:refs/{ns}/remotes/main"),
     ])?;
-    run(&[&format!("{}.meta", prefix), "true"])?;
-    run(&[&format!("{}.promisor", prefix), "true"])?;
-    run(&[&format!("{}.partialclonefilter", prefix), "blob:none"])?;
+    run(&[&format!("{prefix}.meta"), "true"])?;
+    run(&[&format!("{prefix}.promisor"), "true"])?;
+    run(&[&format!("{prefix}.partialclonefilter"), "blob:none"])?;
 
     // If a non-default namespace was specified, store it so other commands can find it
     if namespace_override.is_some() {
-        run(&[&format!("{}.metanamespace", prefix), &ns])?;
+        run(&[&format!("{prefix}.metanamespace"), &ns])?;
     }
 
-    println!("Added meta remote '{}' -> {}", name, url);
+    println!("Added meta remote '{name}' -> {url}");
 
     // Initial blobless fetch
     let fetch_refspec = format!("refs/{ns}/main:refs/{ns}/remotes/main");
@@ -161,7 +156,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
 
             // Verify the tracking ref was created
             let remote_ref = format!("{ns}/remotes/main");
-            let tracking_ref_name = format!("refs/{}", remote_ref);
+            let tracking_ref_name = format!("refs/{remote_ref}");
             match repo.find_reference(&tracking_ref_name) {
                 Ok(r) => {
                     let tip_oid = r.into_fully_peeled_id()?.detach();
@@ -173,8 +168,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
                 }
                 Err(e) => {
                     eprintln!(
-                        "  warning: tracking ref {} not found after fetch: {}",
-                        tracking_ref_name, e
+                        "  warning: tracking ref {tracking_ref_name} not found after fetch: {e}"
                     );
                     eprintln!("You can try again with: gmeta pull");
                     return Ok(());
@@ -185,7 +179,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
             eprint!("Hydrating tip blobs...");
             let blob_count =
                 gmeta_core::git_utils::hydrate_tip_blobs_counted(repo, name, &remote_ref)?;
-            eprintln!(" {} blobs fetched.", blob_count);
+            eprintln!(" {blob_count} blobs fetched.");
 
             // Materialize remote metadata into local SQLite
             eprint!("Serializing local metadata...");
@@ -197,7 +191,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
             eprintln!(" done.");
 
             // Index historical keys as promisor entries
-            let tracking_ref_name = format!("refs/{}/remotes/main", ns);
+            let tracking_ref_name = format!("refs/{ns}/remotes/main");
             if let Ok(r) = repo.find_reference(&tracking_ref_name) {
                 if let Ok(tip_id) = r.into_fully_peeled_id() {
                     let count = gmeta_core::sync::insert_promisor_entries(
@@ -207,13 +201,13 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
                         None,
                     )?;
                     if count > 0 {
-                        eprintln!("Indexed {} keys from history (available on demand).", count);
+                        eprintln!("Indexed {count} keys from history (available on demand).");
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("\nWarning: initial fetch failed: {}", e);
+            eprintln!("\nWarning: initial fetch failed: {e}");
             eprintln!("You can fetch later with: gmeta pull");
         }
     }
@@ -228,10 +222,10 @@ pub fn run_remove(name: &str) -> Result<()> {
 
     // Verify this is a meta remote
     let config = repo.config_snapshot();
-    let meta_key = format!("remote.{}.meta", name);
+    let meta_key = format!("remote.{name}.meta");
     let is_meta = config.boolean(&meta_key).unwrap_or(false);
     if !is_meta {
-        bail!("'{}' is not a metadata remote (no meta = true)", name);
+        bail!("'{name}' is not a metadata remote (no meta = true)");
     }
 
     // Remove the git config section for this remote via subprocess
@@ -243,15 +237,15 @@ pub fn run_remove(name: &str) -> Result<()> {
             .output();
     };
 
-    unset(&format!("remote.{}.url", name));
-    unset(&format!("remote.{}.fetch", name));
-    unset(&format!("remote.{}.meta", name));
-    unset(&format!("remote.{}.promisor", name));
-    unset(&format!("remote.{}.partialclonefilter", name));
-    unset(&format!("remote.{}.metanamespace", name));
+    unset(&format!("remote.{name}.url"));
+    unset(&format!("remote.{name}.fetch"));
+    unset(&format!("remote.{name}.meta"));
+    unset(&format!("remote.{name}.promisor"));
+    unset(&format!("remote.{name}.partialclonefilter"));
+    unset(&format!("remote.{name}.metanamespace"));
 
     // Delete refs under refs/{ns}/remotes/
-    let ref_prefix = format!("refs/{}/remotes/", ns);
+    let ref_prefix = format!("refs/{ns}/remotes/");
     let mut refs_to_delete = Vec::new();
 
     let platform = repo.references()?;
@@ -266,11 +260,11 @@ pub fn run_remove(name: &str) -> Result<()> {
     for refname in &refs_to_delete {
         let reference = repo.find_reference(refname)?;
         reference.delete().map_err(|e| anyhow::anyhow!("{e}"))?;
-        println!("Deleted ref {}", refname);
+        println!("Deleted ref {refname}");
     }
 
     // Also delete refs under refs/{ns}/local/
-    let local_prefix = format!("refs/{}/local/", ns);
+    let local_prefix = format!("refs/{ns}/local/");
     let mut local_refs_to_delete = Vec::new();
 
     let platform = repo.references()?;
@@ -285,10 +279,10 @@ pub fn run_remove(name: &str) -> Result<()> {
     for refname in &local_refs_to_delete {
         let reference = repo.find_reference(refname)?;
         reference.delete().map_err(|e| anyhow::anyhow!("{e}"))?;
-        println!("Deleted ref {}", refname);
+        println!("Deleted ref {refname}");
     }
 
-    println!("Removed meta remote '{}'", name);
+    println!("Removed meta remote '{name}'");
     Ok(())
 }
 
@@ -301,7 +295,7 @@ pub fn run_list() -> Result<()> {
         println!("Add one with: gmeta remote add <url>");
     } else {
         for (name, url) in &remotes {
-            println!("{}\t{}", name, url);
+            println!("{name}\t{url}");
         }
     }
 
