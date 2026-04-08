@@ -21,7 +21,7 @@ pub mod tree;
 pub mod types;
 
 // Re-export the most commonly used types at the crate root for convenience.
-pub use db::{Store, TargetHandle};
+pub use db::{Batch, Store, TargetHandle};
 pub use error::{Error, Result};
 pub use session::Session;
 pub use types::{MetaValue, Target, TargetType, ValueType};
