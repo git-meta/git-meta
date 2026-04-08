@@ -12,7 +12,7 @@ use gix::prelude::ObjectIdExt;
 use std::io::Write;
 use std::time::Instant;
 
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::types::{TargetType, ValueType};
 
 const RESET: &str = "\x1b[0m";
@@ -149,7 +149,7 @@ fn fmt_ms(secs: f64) -> String {
 
 /// Serialize all metadata from the database into a git commit on the given ref.
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-fn do_serialize(repo: &gix::Repository, db: &Db, ref_name: &str) -> Result<()> {
+fn do_serialize(repo: &gix::Repository, db: &Store, ref_name: &str) -> Result<()> {
     let metadata_entries = db.get_all_metadata()?;
 
     if metadata_entries.is_empty() {
@@ -200,30 +200,31 @@ fn do_serialize(repo: &gix::Repository, db: &Db, ref_name: &str) -> Result<()> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 fn build_bench_tree(
     repo: &gix::Repository,
-    metadata_entries: &[(String, String, String, String, ValueType, i64, bool)],
+    metadata_entries: &[gmeta_core::db::types::SerializableEntry],
 ) -> Result<gix::ObjectId> {
-    use gmeta_core::types::{build_tree_path, Target};
+    use gmeta_core::types::Target;
     use std::collections::BTreeMap;
 
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    for (target_type, target_value, key, value, value_type, _ts, is_git_ref) in metadata_entries {
-        if *value_type != ValueType::String {
+    for e in metadata_entries {
+        if e.value_type != ValueType::String {
             continue;
         }
-        let target = if target_type == "project" {
+        let target = if e.target_type == "project" {
             Target::parse("project")?
         } else {
-            Target::parse(&format!("{}:{}", target_type, target_value))?
+            Target::parse(&format!("{}:{}", e.target_type, e.target_value))?
         };
 
-        let full_path = build_tree_path(&target, key)?;
-        if *is_git_ref {
-            let oid = gix::ObjectId::from_hex(value.as_bytes())?;
+        let full_path = target.tree_path(&e.key)?;
+        if e.is_git_ref {
+            let oid = gix::ObjectId::from_hex(e.value.as_bytes())?;
             let blob = oid.attach(repo).object()?.into_blob();
             files.insert(full_path, blob.data.to_vec());
         } else {
-            let raw_value: String = serde_json::from_str(value).unwrap_or_else(|_| value.clone());
+            let raw_value: String =
+                serde_json::from_str(&e.value).unwrap_or_else(|_| e.value.clone());
             files.insert(full_path, raw_value.into_bytes());
         }
     }
@@ -269,7 +270,7 @@ pub fn run(rounds: usize) -> Result<()> {
 
     // Open gmeta database inside the bare repo
     let db_path = repo_path.join("gmeta.sqlite");
-    let db = Db::open(&db_path)?;
+    let db = Store::open(&db_path)?;
 
     let ref_name = "refs/meta/local/main";
     let mut total_keys = 0usize;

@@ -4,7 +4,7 @@ use gix::prelude::ObjectIdExt;
 
 use crate::commands::{materialize, serialize};
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::types::{self, TargetType, ValueType};
 
@@ -155,7 +155,7 @@ fn parse_commit_changes(message: &str) -> Option<Vec<(char, String, String, Stri
 /// Public entry point for inserting promisor entries (used by remote add).
 pub fn insert_promisor_entries_pub(
     repo: &gix::Repository,
-    db: &Db,
+    db: &Store,
     tip_oid: gix::ObjectId,
     old_tip: Option<gix::ObjectId>,
     verbose: bool,
@@ -167,7 +167,7 @@ pub fn insert_promisor_entries_pub(
 /// commit messages. Returns the number of new promisor entries inserted.
 fn insert_promisor_entries(
     repo: &gix::Repository,
-    db: &Db,
+    db: &Store,
     tip_oid: gix::ObjectId,
     old_tip: Option<gix::ObjectId>,
     verbose: bool,

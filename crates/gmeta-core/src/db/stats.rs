@@ -2,10 +2,10 @@ use rusqlite::params;
 
 use crate::error::Result;
 
-use super::{escape_like_pattern, Db};
+use super::{escape_like_pattern, Store};
 use crate::types::TargetType;
 
-impl Db {
+impl Store {
     /// Get value size distribution as a histogram.
     /// Buckets are powers-of-2 byte ranges for inline (non-git-ref) string values,
     /// plus a separate count for git-ref values (size unknown without blob lookup).

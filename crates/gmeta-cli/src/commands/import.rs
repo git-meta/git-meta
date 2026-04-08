@@ -6,8 +6,28 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
-use gmeta_core::types::{ImportFormat, TargetType, ValueType, GIT_REF_THRESHOLD};
+use gmeta_core::db::Store;
+use gmeta_core::types::{TargetType, ValueType, GIT_REF_THRESHOLD};
+
+/// Supported import source formats.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportFormat {
+    /// Import the entire git history.
+    Entire,
+    /// Import from git-ai format.
+    GitAi,
+}
+
+impl ImportFormat {
+    /// Parse an import format string.
+    pub fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "entire" => Ok(ImportFormat::Entire),
+            "git-ai" => Ok(ImportFormat::GitAi),
+            other => bail!("unsupported import format: {other}"),
+        }
+    }
+}
 
 pub fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<()> {
     let since_epoch = match since {
@@ -26,7 +46,6 @@ pub fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<(
     match format {
         ImportFormat::Entire => run_entire(dry_run, since_epoch),
         ImportFormat::GitAi => run_git_ai(dry_run, since_epoch),
-        _ => bail!("unsupported import format"),
     }
 }
 
@@ -112,7 +131,7 @@ fn resolve_entire_ref(repo: &gix::Repository, refname: &str) -> Result<Option<gi
 fn import_checkpoints_from_commits(
     repo: &gix::Repository,
     checkpoints_tree_id: gix::ObjectId,
-    db: Option<&Db>,
+    db: Option<&Store>,
     email: &str,
     dry_run: bool,
     since_epoch: Option<i64>,
@@ -187,7 +206,7 @@ fn import_checkpoints_from_commits(
 
                 // Skip if already imported
                 if let Some(db) = db {
-                    if let Ok(Some(_)) =
+                    if let Ok(Some(_mv)) =
                         db.get(&TargetType::Commit, &commit_sha, "agent:checkpoint-id")
                     {
                         skipped += 1;
@@ -323,7 +342,7 @@ fn import_checkpoints_from_commits(
 fn import_session(
     repo: &gix::Repository,
     session_tree_id: gix::ObjectId,
-    db: Option<&Db>,
+    db: Option<&Store>,
     commit_sha: &str,
     key_prefix: &str,
     email: &str,
@@ -569,27 +588,17 @@ fn entry_to_tree_id(
 }
 
 /// Load the set of trail IDs that have already been imported.
-fn load_imported_trail_ids(db: Option<&Db>) -> Result<HashSet<String>> {
-    let mut ids = HashSet::new();
-    if let Some(db) = db {
-        let mut stmt = db.conn.prepare(
-            "SELECT value FROM metadata WHERE key = 'review:trail-id' AND target_type = 'branch'",
-        )?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for row in rows {
-            let val = row?;
-            if let Ok(s) = serde_json::from_str::<String>(&val) {
-                ids.insert(s);
-            }
-        }
+fn load_imported_trail_ids(db: Option<&Store>) -> Result<HashSet<String>> {
+    match db {
+        Some(db) => Ok(db.imported_trail_ids()?),
+        None => Ok(HashSet::new()),
     }
-    Ok(ids)
 }
 
 fn import_trails(
     repo: &gix::Repository,
     root_tree_id: gix::ObjectId,
-    db: Option<&Db>,
+    db: Option<&Store>,
     email: &str,
     base_ts: i64,
     dry_run: bool,
@@ -764,7 +773,7 @@ fn import_trails(
 /// Large string values (> GIT_REF_THRESHOLD bytes) are stored as git blob refs.
 fn set_value(
     repo: &gix::Repository,
-    db: Option<&Db>,
+    db: Option<&Store>,
     dry_run: bool,
     target_type: &TargetType,
     target_value: &str,

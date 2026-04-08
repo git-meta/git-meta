@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::context::CommandContext;
 use anyhow::Result;
 use gix::refs::transaction::PreviousValue;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::list_value::{encode_entries, parse_timestamp_from_entry_name, ListEntry};
 use gmeta_core::tree::format::{build_merged_tree, parse_tree};
@@ -12,7 +12,7 @@ use gmeta_core::tree::merge::{
     merge_list_tombstones, merge_set_member_tombstones, merge_tombstones, three_way_merge,
     two_way_merge_no_common_ancestor, ConflictDecision,
 };
-use gmeta_core::tree::model::{Key, ParsedTree, TombstoneEntry, TreeValue};
+use gmeta_core::tree::model::{Key, ParsedTree, Tombstone, TreeValue};
 use gmeta_core::types::TargetType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,8 +84,11 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
                 remote_entries.tombstones.len(),
                 remote_entries.set_tombstones.len()
             );
-            for ((tt, tv, k), val) in &remote_entries.values {
-                let target = format_target_for_display(&TargetType::from_str(tt)?, tv);
+            for (mk, val) in &remote_entries.values {
+                let target = format_target_for_display(
+                    &TargetType::from_str(&mk.target_type)?,
+                    &mk.target_value,
+                );
                 let val_desc = match val {
                     TreeValue::String(s) => {
                         if s.len() > 50 {
@@ -98,13 +101,16 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
                     TreeValue::Set(s) => format!("set ({} members)", s.len()),
                     _ => "unknown type".to_string(),
                 };
-                eprintln!("  {} {} -> {}", target, k, val_desc);
+                eprintln!("  {} {} -> {}", target, mk.key, val_desc);
             }
-            for ((tt, tv, k), tomb) in &remote_entries.tombstones {
-                let target = format_target_for_display(&TargetType::from_str(tt)?, tv);
+            for (mk, tomb) in &remote_entries.tombstones {
+                let target = format_target_for_display(
+                    &TargetType::from_str(&mk.target_type)?,
+                    &mk.target_value,
+                );
                 eprintln!(
                     "  {} {} -> tombstone [ts={}, by={}]",
-                    target, k, tomb.timestamp, tomb.email
+                    target, mk.key, tomb.timestamp, tomb.email
                 );
             }
         }
@@ -252,17 +258,16 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
             // Ensure deletes are applied even for trees produced before tombstones.
             for key in local_entries.values.keys() {
                 if !remote_entries.values.contains_key(key) {
-                    let (target_type, target_value, key_name) = key;
-                    let tt = TargetType::from_str(target_type)?;
+                    let tt = TargetType::from_str(&key.target_type)?;
                     if verbose {
                         eprintln!(
                             "[verbose] applying implicit delete for {} {}",
-                            format_target_for_display(&tt, target_value),
-                            key_name
+                            format_target_for_display(&tt, &key.target_value),
+                            key.key
                         );
                     }
                     ctx.db
-                        .apply_tombstone(&tt, target_value, key_name, email, now)?;
+                        .apply_tombstone(&tt, &key.target_value, &key.key, email, now)?;
                 }
             }
 
@@ -552,17 +557,16 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
             if let Some(base_values) = &legacy_base_values {
                 for key in base_values.keys() {
                     if !merged_values.contains_key(key) && !merged_tombstones.contains_key(key) {
-                        let (target_type, target_value, key_name) = key;
-                        let tt = TargetType::from_str(target_type)?;
+                        let tt = TargetType::from_str(&key.target_type)?;
                         if verbose {
                             eprintln!(
                                 "[verbose] applying legacy delete for {} {}",
-                                format_target_for_display(&tt, target_value),
-                                key_name
+                                format_target_for_display(&tt, &key.target_value),
+                                key.key
                             );
                         }
                         ctx.db
-                            .apply_tombstone(&tt, target_value, key_name, email, now)?;
+                            .apply_tombstone(&tt, &key.target_value, &key.key, email, now)?;
                     }
                 }
             }
@@ -634,37 +638,36 @@ pub fn run(remote: Option<&str>, dry_run: bool, verbose: bool) -> Result<()> {
 }
 
 fn collect_db_changes_from_tree(
-    db: &Db,
+    db: &Store,
     values: &BTreeMap<Key, TreeValue>,
-    tombstones: &BTreeMap<Key, TombstoneEntry>,
+    tombstones: &BTreeMap<Key, Tombstone>,
     set_tombstones: &BTreeMap<(Key, String), String>,
-    list_tombstones: &BTreeMap<(Key, String), TombstoneEntry>,
+    list_tombstones: &BTreeMap<(Key, String), Tombstone>,
     planned_removals: &mut BTreeSet<Key>,
 ) -> Result<Vec<PlannedDbChange>> {
     let mut planned = Vec::new();
 
-    for ((target_type, target_value, key_name), tree_val) in values {
-        let tt = TargetType::from_str(target_type)?;
+    for (mk, tree_val) in values {
+        let tt = TargetType::from_str(&mk.target_type)?;
         match tree_val {
             TreeValue::String(s) => {
                 let json_val = serde_json::to_string(s)?;
-                let existing = db.get(&tt, target_value, key_name)?;
-                if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
+                let existing = db.get(&tt, &mk.target_value, &mk.key)?;
+                if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                     planned.push(PlannedDbChange::Set {
-                        target_type: target_type.clone(),
-                        target_value: target_value.clone(),
-                        key: key_name.clone(),
+                        target_type: mk.target_type.clone(),
+                        target_value: mk.target_value.clone(),
+                        key: mk.key.clone(),
                         value_type: "string".to_string(),
                         value_preview: s.clone(),
                     });
                 }
             }
             TreeValue::List(list_entries) => {
-                let key = (target_type.clone(), target_value.clone(), key_name.clone());
                 let tombstoned_names: BTreeSet<String> = list_tombstones
                     .iter()
-                    .filter_map(|((k, entry_name), _)| {
-                        if *k == key {
+                    .filter_map(|((tk, entry_name), _)| {
+                        if *tk == *mk {
                             Some(entry_name.clone())
                         } else {
                             None
@@ -684,23 +687,22 @@ fn collect_db_changes_from_tree(
                     });
                 }
                 let json_val = encode_entries(&items)?;
-                let existing = db.get(&tt, target_value, key_name)?;
-                if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
+                let existing = db.get(&tt, &mk.target_value, &mk.key)?;
+                if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                     planned.push(PlannedDbChange::Set {
-                        target_type: target_type.clone(),
-                        target_value: target_value.clone(),
-                        key: key_name.clone(),
+                        target_type: mk.target_type.clone(),
+                        target_value: mk.target_value.clone(),
+                        key: mk.key.clone(),
                         value_type: "list".to_string(),
                         value_preview: format!("{} entries", items.len()),
                     });
                 }
             }
             TreeValue::Set(set_members) => {
-                let key = (target_type.clone(), target_value.clone(), key_name.clone());
                 let tombstoned: BTreeSet<String> = set_tombstones
                     .iter()
-                    .filter_map(|((k, member_id), _)| {
-                        if *k == key {
+                    .filter_map(|((tk, member_id), _)| {
+                        if *tk == *mk {
                             Some(member_id.clone())
                         } else {
                             None
@@ -719,12 +721,12 @@ fn collect_db_changes_from_tree(
                     .collect();
                 visible.sort();
                 let json_val = serde_json::to_string(&visible)?;
-                let existing = db.get(&tt, target_value, key_name)?;
-                if existing.as_ref().map(|(v, _, _)| v.as_str()) != Some(&json_val) {
+                let existing = db.get(&tt, &mk.target_value, &mk.key)?;
+                if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
                     planned.push(PlannedDbChange::Set {
-                        target_type: target_type.clone(),
-                        target_value: target_value.clone(),
-                        key: key_name.clone(),
+                        target_type: mk.target_type.clone(),
+                        target_value: mk.target_value.clone(),
+                        key: mk.key.clone(),
                         value_type: "set".to_string(),
                         value_preview: format!("{} members", visible.len()),
                     });
@@ -751,9 +753,9 @@ fn push_remove_change(
 ) {
     if planned_removals.insert(key.clone()) {
         planned.push(PlannedDbChange::Remove {
-            target_type: key.0.clone(),
-            target_value: key.1.clone(),
-            key: key.2.clone(),
+            target_type: key.target_type.clone(),
+            target_value: key.target_value.clone(),
+            key: key.key.clone(),
         });
     }
 }
@@ -830,12 +832,12 @@ fn format_target_for_display(target_type: &TargetType, target_value: &str) -> St
 }
 
 fn format_key_for_display(key: &Key) -> String {
-    let target_display = if key.0 == "project" {
+    let target_display = if key.target_type == "project" {
         "project".to_string()
     } else {
-        format!("{}:{}", key.0, key.1)
+        format!("{}:{}", key.target_type, key.target_value)
     };
-    format!("{} {}", target_display, key.2)
+    format!("{} {}", target_display, key.key)
 }
 
 fn find_remote_refs(

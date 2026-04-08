@@ -10,7 +10,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use time::OffsetDateTime;
 
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::types::{TargetType, ValueType};
 
@@ -424,7 +424,7 @@ impl WatchState {
 
         let repo = git_utils::discover_repo()?;
         let db_path = git_utils::db_path(&repo)?;
-        let db = Db::open(&db_path)?;
+        let db = Store::open(&db_path)?;
         let email = git_utils::get_email(&repo)?;
 
         for stack in stacks {
@@ -607,7 +607,7 @@ impl WatchState {
 
         let repo = git_utils::discover_repo()?;
         let db_path = git_utils::db_path(&repo)?;
-        let db = Db::open(&db_path)?;
+        let db = Store::open(&db_path)?;
         let email = git_utils::get_email(&repo)?;
 
         db.list_push_with_repo(

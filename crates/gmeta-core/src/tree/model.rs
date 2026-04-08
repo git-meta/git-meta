@@ -5,8 +5,19 @@
 
 use std::collections::BTreeMap;
 
-/// A key uniquely identifying a metadata entry: `(target_type, target_value, key)`.
-pub type Key = (String, String, String);
+/// A key uniquely identifying a metadata entry.
+///
+/// Composed of the target type (e.g. `"commit"`), the target value
+/// (e.g. a SHA), and the metadata key name (e.g. `"agent:model"`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Key {
+    /// The target type, e.g. `"commit"`, `"branch"`, `"path"`.
+    pub target_type: String,
+    /// The target value, e.g. a commit SHA or branch name.
+    pub target_value: String,
+    /// The metadata key name, e.g. `"agent:model"`.
+    pub key: String,
+}
 
 /// A parsed metadata entry from a Git tree.
 #[non_exhaustive]
@@ -20,18 +31,12 @@ pub enum TreeValue {
     Set(BTreeMap<String, String>),
 }
 
-/// A tombstone entry recording who deleted a key and when.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TombstoneEntry {
-    /// Millisecond timestamp of the deletion.
-    pub timestamp: i64,
-    /// Email of the person who performed the deletion.
-    pub email: String,
-}
-
-/// JSON-serializable tombstone blob stored in Git trees.
+/// A tombstone recording who deleted a key and when.
+///
+/// Used both as the in-memory representation and for JSON serialization
+/// into Git tree blobs.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TombstoneBlob {
+pub struct Tombstone {
     /// Millisecond timestamp of the deletion.
     pub timestamp: i64,
     /// Email of the person who performed the deletion.
@@ -44,9 +49,9 @@ pub struct ParsedTree {
     /// Metadata values keyed by `(target_type, target_value, key)`.
     pub values: BTreeMap<Key, TreeValue>,
     /// Whole-key tombstones.
-    pub tombstones: BTreeMap<Key, TombstoneEntry>,
+    pub tombstones: BTreeMap<Key, Tombstone>,
     /// Set-member tombstones: `(key, member_id) -> original member content`.
     pub set_tombstones: BTreeMap<(Key, String), String>,
-    /// List-entry tombstones: `(key, entry_name) -> TombstoneEntry`.
-    pub list_tombstones: BTreeMap<(Key, String), TombstoneEntry>,
+    /// List-entry tombstones: `(key, entry_name) -> Tombstone`.
+    pub list_tombstones: BTreeMap<(Key, String), Tombstone>,
 }

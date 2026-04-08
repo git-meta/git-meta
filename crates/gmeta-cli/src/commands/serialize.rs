@@ -8,17 +8,13 @@ use time::OffsetDateTime;
 
 use crate::commands::prune::auto::{self, parse_since_to_cutoff_ms};
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::list_value::{make_entry_name, parse_entries};
 use gmeta_core::tree::filter::{classify_key, parse_filter_rules, MAIN_DEST};
-use gmeta_core::tree::format::{build_dir, build_tree_from_paths, insert_path, Dir};
-use gmeta_core::tree::model::TombstoneBlob;
-use gmeta_core::types::{
-    build_list_entry_tombstone_tree_path, build_list_tree_dir_path,
-    build_set_member_tombstone_tree_path, build_set_tree_dir_path, build_tombstone_tree_path,
-    build_tree_path, Target, TargetType, ValueType,
-};
+use gmeta_core::tree::format::{build_dir, build_tree_from_paths, insert_path, TreeDir};
+use gmeta_core::tree::model::Tombstone;
+use gmeta_core::types::{Target, TargetType, ValueType};
 
 const MAX_COMMIT_CHANGES: usize = 1000;
 
@@ -193,16 +189,14 @@ pub fn run(verbose: bool) -> Result<()> {
         // Full serialize: all entries are adds
         let changes: Vec<(char, String, String)> = metadata
             .iter()
-            .map(
-                |(target_type, target_value, key, _value, _value_type, _ts, _is_git_ref)| {
-                    let target_label = if target_type == "project" {
-                        "project".to_string()
-                    } else {
-                        format!("{}:{}", target_type, target_value)
-                    };
-                    ('A', target_label, key.clone())
-                },
-            )
+            .map(|e| {
+                let target_label = if e.target_type == "project" {
+                    "project".to_string()
+                } else {
+                    format!("{}:{}", e.target_type, e.target_value)
+                };
+                ('A', target_label, e.key.clone())
+            })
             .collect();
 
         (
@@ -225,7 +219,7 @@ pub fn run(verbose: bool) -> Result<()> {
     let prune_since = ctx
         .db
         .get(&TargetType::Project, "", "meta:prune:since")?
-        .and_then(|(value, _, _)| serde_json::from_str::<String>(&value).ok());
+        .and_then(|e| serde_json::from_str::<String>(&e.value).ok());
     let prune_rules = auto::read_prune_rules(&ctx.db)?;
     let prune_cutoff_ms = prune_since
         .as_deref()
@@ -235,8 +229,8 @@ pub fn run(verbose: bool) -> Result<()> {
     let metadata_entries = if let Some(cutoff) = prune_cutoff_ms {
         metadata_entries
             .into_iter()
-            .filter(|(target_type, _, _, _, _, ts, _)| {
-                if target_type != "project" && *ts < cutoff {
+            .filter(|e| {
+                if e.target_type != "project" && e.last_timestamp < cutoff {
                     pruned_count += 1;
                     false
                 } else {
@@ -256,19 +250,19 @@ pub fn run(verbose: bool) -> Result<()> {
         }
     }
 
-    type MetaEntry = (String, String, String, String, ValueType, i64, bool);
+    use gmeta_core::db::types::SerializableEntry;
     type TombEntry = (String, String, String, i64, String);
     type SetTombEntry = (String, String, String, String, String, i64, String);
     type ListTombEntry = (String, String, String, String, i64, String);
 
-    let mut dest_metadata: BTreeMap<String, Vec<MetaEntry>> = BTreeMap::new();
+    let mut dest_metadata: BTreeMap<String, Vec<SerializableEntry>> = BTreeMap::new();
     let mut dest_tombstones: BTreeMap<String, Vec<TombEntry>> = BTreeMap::new();
     let mut dest_set_tombstones: BTreeMap<String, Vec<SetTombEntry>> = BTreeMap::new();
     let mut dest_list_tombstones: BTreeMap<String, Vec<ListTombEntry>> = BTreeMap::new();
     let mut excluded_count = 0u64;
 
     for entry in &metadata_entries {
-        let key = &entry.2;
+        let key = &entry.key;
         match classify_key(key, &filter_rules) {
             None => {
                 excluded_count += 1;
@@ -342,18 +336,18 @@ pub fn run(verbose: bool) -> Result<()> {
         let mut targets: BTreeSet<String> = BTreeSet::new();
         let total_meta: usize = dest_metadata.values().map(|v| v.len()).sum();
         for entries in dest_metadata.values() {
-            for (target_type, target_value, _key, _value, value_type, _ts, _is_git_ref) in entries {
-                let label = if target_type == "project" {
+            for e in entries {
+                let label = if e.target_type == "project" {
                     "project".to_string()
                 } else {
                     format!(
                         "{}:{}",
-                        target_type,
-                        &target_value[..7.min(target_value.len())]
+                        e.target_type,
+                        &e.target_value[..7.min(e.target_value.len())]
                     )
                 };
                 targets.insert(label);
-                match value_type {
+                match e.value_type {
                     ValueType::String => string_count += 1,
                     ValueType::List => list_count += 1,
                     ValueType::Set => set_count += 1,
@@ -408,7 +402,7 @@ pub fn run(verbose: bool) -> Result<()> {
 
     for dest in &all_dests {
         let ref_name = ctx.destination_ref(dest);
-        let empty_meta: Vec<MetaEntry> = Vec::new();
+        let empty_meta: Vec<SerializableEntry> = Vec::new();
         let empty_tomb: Vec<TombEntry> = Vec::new();
         let empty_set_tomb: Vec<SetTombEntry> = Vec::new();
         let empty_list_tomb: Vec<ListTombEntry> = Vec::new();
@@ -604,7 +598,7 @@ pub fn run(verbose: bool) -> Result<()> {
 /// Used by `gmeta prune` to rebuild a tree from only the surviving entries.
 pub fn build_filtered_tree(
     repo: &gix::Repository,
-    metadata_entries: &[(String, String, String, String, ValueType, i64, bool)],
+    metadata_entries: &[gmeta_core::db::types::SerializableEntry],
     tombstone_entries: &[(String, String, String, i64, String)],
     set_tombstone_entries: &[(String, String, String, String, String, i64, String)],
     list_tombstone_entries: &[(String, String, String, String, i64, String)],
@@ -627,7 +621,7 @@ pub fn build_filtered_tree(
 /// from the existing tree by OID.
 fn build_tree(
     repo: &gix::Repository,
-    metadata_entries: &[(String, String, String, String, ValueType, i64, bool)],
+    metadata_entries: &[gmeta_core::db::types::SerializableEntry],
     tombstone_entries: &[(String, String, String, i64, String)],
     set_tombstone_entries: &[(String, String, String, String, String, i64, String)],
     list_tombstone_entries: &[(String, String, String, String, i64, String)],
@@ -639,13 +633,11 @@ fn build_tree(
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut skipped_entries = 0u64;
 
-    for (target_type, target_value, key, value, value_type, _last_timestamp, is_git_ref) in
-        metadata_entries
-    {
-        let target = if target_type == "project" {
+    for e in metadata_entries {
+        let target = if e.target_type == "project" {
             Target::parse("project")?
         } else {
-            Target::parse(&format!("{}:{}", target_type, target_value))?
+            Target::parse(&format!("{}:{}", e.target_type, e.target_value))?
         };
 
         // Skip entries for clean targets -- their subtrees will be reused
@@ -656,11 +648,11 @@ fn build_tree(
             }
         }
 
-        match value_type {
+        match e.value_type {
             ValueType::String => {
-                let full_path = build_tree_path(&target, key)?;
-                if *is_git_ref {
-                    let oid = gix::ObjectId::from_hex(value.as_bytes())?;
+                let full_path = target.tree_path(&e.key)?;
+                if e.is_git_ref {
+                    let oid = gix::ObjectId::from_hex(e.value.as_bytes())?;
                     let blob = oid.attach(repo).object()?.into_blob();
                     if verbose {
                         eprintln!(
@@ -671,14 +663,14 @@ fn build_tree(
                     }
                     files.insert(full_path, blob.data.to_vec());
                 } else {
-                    let raw_value: String = match serde_json::from_str(value) {
+                    let raw_value: String = match serde_json::from_str(&e.value) {
                         Ok(s) => s,
-                        Err(e) => {
+                        Err(err) => {
                             eprintln!(
                                 "warning: key '{}' on {}:{} is not a JSON string ({}), storing raw JSON",
-                                key, target_type, &target_value[..7.min(target_value.len())], e
+                                e.key, e.target_type, &e.target_value[..7.min(e.target_value.len())], err
                             );
-                            value.to_string()
+                            e.value.to_string()
                         }
                     };
                     if verbose {
@@ -688,8 +680,9 @@ fn build_tree(
                 }
             }
             ValueType::List => {
-                let list_entries = parse_entries(value).context("failed to decode list value")?;
-                let list_dir_path = build_list_tree_dir_path(&target, key)?;
+                let list_entries =
+                    parse_entries(&e.value).context("failed to decode list value")?;
+                let list_dir_path = target.list_dir_path(&e.key)?;
                 if verbose {
                     eprintln!(
                         "[verbose] tree: {}/ -> {} list entries",
@@ -705,8 +698,8 @@ fn build_tree(
             }
             ValueType::Set => {
                 let members: Vec<String> =
-                    serde_json::from_str(value).context("failed to decode set value")?;
-                let set_dir_path = build_set_tree_dir_path(&target, key)?;
+                    serde_json::from_str(&e.value).context("failed to decode set value")?;
+                let set_dir_path = target.set_dir_path(&e.key)?;
                 if verbose {
                     eprintln!(
                         "[verbose] tree: {}/ -> {} set members",
@@ -737,11 +730,11 @@ fn build_tree(
             }
         }
 
-        let full_path = build_tombstone_tree_path(&target, key)?;
+        let full_path = target.tombstone_path(key)?;
         if verbose {
             eprintln!("[verbose] tree: {} -> tombstone", full_path);
         }
-        let payload = serde_json::to_vec(&TombstoneBlob {
+        let payload = serde_json::to_vec(&Tombstone {
             timestamp: *timestamp,
             email: email.clone(),
         })?;
@@ -763,7 +756,7 @@ fn build_tree(
             }
         }
 
-        let full_path = build_set_member_tombstone_tree_path(&target, key, member_id)?;
+        let full_path = target.set_member_tombstone_path(key, member_id)?;
         if verbose {
             eprintln!("[verbose] tree: {} -> set tombstone ({})", full_path, value);
         }
@@ -783,11 +776,11 @@ fn build_tree(
             }
         }
 
-        let full_path = build_list_entry_tombstone_tree_path(&target, key, entry_name)?;
+        let full_path = target.list_entry_tombstone_path(key, entry_name)?;
         if verbose {
             eprintln!("[verbose] tree: {} -> list tombstone", full_path);
         }
-        let payload = serde_json::to_vec(&TombstoneBlob {
+        let payload = serde_json::to_vec(&Tombstone {
             timestamp: *timestamp,
             email: email.clone(),
         })?;
@@ -828,8 +821,8 @@ fn build_tree_incremental(
     // Step 1: Remove dirty target subtrees from existing tree
     let cleaned_oid = remove_subtrees(repo, existing_tree_oid, dirty_target_bases)?;
 
-    // Step 2: Build Dir from dirty files only
-    let mut root = Dir::default();
+    // Step 2: Build TreeDir from dirty files only
+    let mut root = TreeDir::default();
     for (path, content) in files {
         let parts: Vec<&str> = path.split('/').collect();
         insert_path(&mut root, &parts, content.clone());
@@ -892,12 +885,12 @@ fn remove_subtrees(
     Ok(editor.write()?.detach())
 }
 
-/// Merge a Dir structure into an existing tree.
+/// Merge a TreeDir structure into an existing tree.
 /// Existing entries not present in `dir` are preserved.
 /// Entries in `dir` overwrite existing entries with the same name.
 fn merge_dir_into_tree(
     repo: &gix::Repository,
-    dir: &Dir,
+    dir: &TreeDir,
     existing_oid: gix::ObjectId,
 ) -> Result<gix::ObjectId> {
     let mut editor = repo.edit_tree(existing_oid)?;
@@ -935,7 +928,7 @@ pub fn prune_tree(
     repo: &gix::Repository,
     tree_oid: gix::ObjectId,
     rules: &auto::PruneRules,
-    db: &Db,
+    db: &Store,
     verbose: bool,
 ) -> Result<gix::ObjectId> {
     let cutoff_ms = parse_since_to_cutoff_ms(&rules.since)?;
@@ -1010,7 +1003,7 @@ fn prune_target_type_tree(
     tree_oid: gix::ObjectId,
     cutoff_ms: i64,
     min_size: u64,
-    db: &Db,
+    db: &Store,
     verbose: bool,
     parent_path: &str,
 ) -> Result<gix::ObjectId> {
@@ -1051,7 +1044,7 @@ fn prune_subtree_recursive(
     tree_oid: gix::ObjectId,
     cutoff_ms: i64,
     _min_size: u64,
-    _db: &Db,
+    _db: &Store,
     verbose: bool,
     parent_path: &str,
 ) -> Result<gix::ObjectId> {

@@ -175,7 +175,7 @@ pub fn run() -> Result<()> {
     match max_keys {
         Some(ref v) => set_config(&ctx, "meta:prune:max-keys", v)?,
         None => {
-            ctx.db.rm(
+            ctx.db.remove(
                 &TargetType::Project,
                 "",
                 "meta:prune:max-keys",
@@ -187,7 +187,7 @@ pub fn run() -> Result<()> {
     match max_size {
         Some(ref v) => set_config(&ctx, "meta:prune:max-size", v)?,
         None => {
-            ctx.db.rm(
+            ctx.db.remove(
                 &TargetType::Project,
                 "",
                 "meta:prune:max-size",
@@ -199,7 +199,7 @@ pub fn run() -> Result<()> {
     match min_size {
         Some(ref v) => set_config(&ctx, "meta:prune:min-size", v)?,
         None => {
-            ctx.db.rm(
+            ctx.db.remove(
                 &TargetType::Project,
                 "",
                 "meta:prune:min-size",

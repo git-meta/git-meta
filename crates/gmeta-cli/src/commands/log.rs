@@ -23,8 +23,8 @@ pub fn run(
     metadata_only: bool,     // skip commits with no metadata
 ) -> Result<()> {
     let mut ctx = CommandContext::open(None)?;
-    // Attach a repo to the Db so blob-ref values are resolved during reads.
-    ctx.db.repo = Some(git_utils::discover_repo()?);
+    // Attach a repo to the Store so blob-ref values are resolved during reads.
+    ctx.db.set_repo(git_utils::discover_repo()?);
     let repo = ctx.repo();
 
     // Resolve start ref -> OID
@@ -55,10 +55,10 @@ pub fn run(
         // value is a JSON-encoded string for string types
         let meta: Vec<(String, String)> = entries
             .into_iter()
-            .map(|(key, value, _vtype, _is_ref)| {
+            .map(|entry| {
                 // Decode JSON string wrapper -> raw value for display
-                let raw = serde_json::from_str::<String>(&value).unwrap_or(value);
-                (key, raw)
+                let raw = serde_json::from_str::<String>(&entry.value).unwrap_or(entry.value);
+                (entry.key, raw)
             })
             .collect();
 

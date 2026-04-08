@@ -4,7 +4,7 @@ use gix::prelude::ObjectIdExt;
 use serde_json::{json, Map, Value};
 
 use crate::context::CommandContext;
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::git_utils;
 use gmeta_core::list_value::list_values_from_json;
 use gmeta_core::types::{self, Target, TargetType, ValueType};
@@ -61,8 +61,8 @@ pub fn run(
     // Hydrate any promised entries on demand
     let promised: Vec<_> = entries
         .iter()
-        .filter(|(_, _, _, _, _, is_promised)| *is_promised)
-        .map(|(tv, k, _, _, _, _)| (tv.clone(), k.clone()))
+        .filter(|r| r.is_promised)
+        .map(|r| (r.target_value.clone(), r.key.clone()))
         .collect();
 
     if !promised.is_empty() {
@@ -81,19 +81,16 @@ pub fn run(
     // Resolve git refs to actual values, skip any remaining promised entries
     let resolved: Vec<(String, String, String, ValueType)> = entries
         .into_iter()
-        .filter(|(_, _, _, _, _, is_promised)| !is_promised)
-        .map(
-            |(entry_target_value, key, value, value_type, is_git_ref, _)| {
-                if is_git_ref {
-                    let resolved_value = resolve_git_ref(repo, &value)?;
-                    // JSON-encode the resolved content to match normal string format
-                    let json_value = serde_json::to_string(&resolved_value)?;
-                    Ok((entry_target_value, key, json_value, value_type))
-                } else {
-                    Ok((entry_target_value, key, value, value_type))
-                }
-            },
-        )
+        .filter(|r| !r.is_promised)
+        .map(|r| {
+            if r.is_git_ref {
+                let resolved_value = resolve_git_ref(repo, &r.value)?;
+                let json_value = serde_json::to_string(&resolved_value)?;
+                Ok((r.target_value, r.key, json_value, r.value_type))
+            } else {
+                Ok((r.target_value, r.key, r.value, r.value_type))
+            }
+        })
         .collect::<Result<Vec<_>>>()?;
 
     if resolved.is_empty() {
@@ -113,7 +110,7 @@ pub fn run(
 /// and fetching any that aren't already local. Returns the number hydrated.
 fn hydrate_promised_entries(
     repo: &gix::Repository,
-    db: &Db,
+    db: &Store,
     target_type: &TargetType,
     entries: &[(String, String)], // (target_value, key)
 ) -> Result<usize> {
@@ -148,7 +145,7 @@ fn hydrate_promised_entries(
         };
 
         // Try __value (string) first
-        if let Ok(path) = types::build_tree_path(&parsed_target, key) {
+        if let Ok(path) = parsed_target.tree_path(key) {
             if let Some(oid) = git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &path)? {
                 pending.push(PendingEntry {
                     idx,
@@ -160,7 +157,7 @@ fn hydrate_promised_entries(
         }
 
         // Try __list directory
-        if let Ok(path) = types::build_list_tree_dir_path(&parsed_target, key) {
+        if let Ok(path) = parsed_target.list_dir_path(key) {
             if let Some(dir_oid) = git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &path)? {
                 // dir_oid is a tree — collect all blob entries in it
                 let list_tree = dir_oid.attach(repo).object()?.into_tree();
@@ -191,7 +188,7 @@ fn hydrate_promised_entries(
         }
 
         // Try __set directory
-        if let Ok(key_path) = types::build_key_tree_path(&parsed_target, key) {
+        if let Ok(key_path) = parsed_target.key_tree_path(key) {
             let set_path = format!("{}/{}", key_path, types::SET_VALUE_DIR);
             if let Some(dir_oid) = git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &set_path)? {
                 let set_tree = dir_oid.attach(repo).object()?.into_tree();
@@ -437,7 +434,7 @@ fn format_value_compact(value: &str, value_type: &ValueType) -> Result<String> {
 }
 
 fn print_json(
-    db: &Db,
+    db: &Store,
     target: &Target,
     entries: &[(String, String, String, ValueType)],
     with_authorship: bool,
@@ -449,7 +446,10 @@ fn print_json(
 
         let leaf_value = if with_authorship {
             let authorship = db.get_authorship(&target.target_type, entry_target_value, key)?;
-            let (author, timestamp) = authorship.unwrap_or_else(|| ("unknown".to_string(), 0));
+            let (author, timestamp) = match authorship {
+                Some(a) => (a.email, a.timestamp),
+                None => ("unknown".to_string(), 0),
+            };
             json!({
                 "value": parsed_value,
                 "author": author,

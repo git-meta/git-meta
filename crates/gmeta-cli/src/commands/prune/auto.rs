@@ -3,7 +3,7 @@ use gix::bstr::ByteSlice;
 use gix::prelude::ObjectIdExt;
 use time::{Duration, OffsetDateTime};
 
-use gmeta_core::db::Db;
+use gmeta_core::db::Store;
 use gmeta_core::types::TargetType;
 
 /// Parsed auto-prune rules from project metadata.
@@ -15,7 +15,7 @@ pub struct PruneRules {
 }
 
 /// Read auto-prune rules from project metadata. Returns None if rules are incomplete.
-pub fn read_prune_rules(db: &Db) -> Result<Option<PruneRules>> {
+pub fn read_prune_rules(db: &Store) -> Result<Option<PruneRules>> {
     let since = match read_config_string(db, "meta:prune:since")? {
         Some(s) => s,
         None => return Ok(None),
@@ -53,10 +53,10 @@ pub fn read_prune_rules(db: &Db) -> Result<Option<PruneRules>> {
     }))
 }
 
-fn read_config_string(db: &Db, key: &str) -> Result<Option<String>> {
+fn read_config_string(db: &Store, key: &str) -> Result<Option<String>> {
     match db.get(&TargetType::Project, "", key)? {
-        Some((value, _, _)) => {
-            let s: String = serde_json::from_str(&value)?;
+        Some(entry) => {
+            let s: String = serde_json::from_str(&entry.value)?;
             Ok(Some(s))
         }
         None => Ok(None),

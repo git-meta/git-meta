@@ -126,9 +126,9 @@ pub fn run(commit_ref: &str) -> Result<()> {
         .db
         .get_all(&TargetType::Commit, &sha, None)
         .unwrap_or_default();
-    for (key, value, value_type, _is_git_ref) in &commit_entries {
-        let display = format_meta_value(value, value_type);
-        meta_entries.push(("commit".to_string(), key.clone(), display));
+    for entry in &commit_entries {
+        let display = format_meta_value(&entry.value, &entry.value_type);
+        meta_entries.push(("commit".to_string(), entry.key.clone(), display));
     }
 
     // Metadata on change-id:<cid>
@@ -137,9 +137,9 @@ pub fn run(commit_ref: &str) -> Result<()> {
             .db
             .get_all(&TargetType::ChangeId, cid, None)
             .unwrap_or_default();
-        for (key, value, value_type, _is_git_ref) in &cid_entries {
-            let display = format_meta_value(value, value_type);
-            meta_entries.push(("change-id".to_string(), key.clone(), display));
+        for entry in &cid_entries {
+            let display = format_meta_value(&entry.value, &entry.value_type);
+            meta_entries.push(("change-id".to_string(), entry.key.clone(), display));
         }
     }
 

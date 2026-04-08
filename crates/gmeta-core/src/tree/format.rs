@@ -5,12 +5,10 @@ use std::collections::BTreeMap;
 
 use crate::error::{Error, Result};
 
-use super::model::{Key, ParsedTree, TombstoneBlob, TombstoneEntry, TreeValue};
+use super::model::{Key, ParsedTree, Tombstone, TreeValue};
 use crate::git_utils;
 use crate::types::{
-    build_list_entry_tombstone_tree_path, build_list_tree_dir_path,
-    build_set_member_tombstone_tree_path, build_set_tree_dir_path, build_tombstone_tree_path,
-    build_tree_path, decode_key_path_segments, decode_path_target_segments, Target, LIST_VALUE_DIR,
+    decode_key_path_segments, decode_path_target_segments, Target, LIST_VALUE_DIR,
     PATH_TARGET_SEPARATOR, SET_VALUE_DIR, STRING_VALUE_BLOB, TOMBSTONE_BLOB, TOMBSTONE_ROOT,
 };
 
@@ -19,21 +17,21 @@ use crate::types::{
 /// Used as an intermediate structure when building Git trees from
 /// flat path-to-content mappings.
 #[derive(Default)]
-pub struct Dir {
+pub struct TreeDir {
     /// Blob entries: file name to content.
     pub files: BTreeMap<String, Vec<u8>>,
-    /// Subtree entries: directory name to child `Dir`.
-    pub dirs: BTreeMap<String, Dir>,
+    /// Subtree entries: directory name to child `TreeDir`.
+    pub dirs: BTreeMap<String, TreeDir>,
 }
 
-/// Insert a file into a [`Dir`] tree at the given path segments.
+/// Insert a file into a [`TreeDir`] tree at the given path segments.
 ///
 /// # Parameters
 ///
 /// - `dir`: the root directory to insert into
 /// - `parts`: the path components (e.g., `["a", "b", "file.txt"]`)
 /// - `content`: the blob content to store
-pub fn insert_path(dir: &mut Dir, parts: &[&str], content: Vec<u8>) {
+pub fn insert_path(dir: &mut TreeDir, parts: &[&str], content: Vec<u8>) {
     if parts.len() == 1 {
         dir.files.insert(parts[0].to_string(), content);
     } else {
@@ -42,7 +40,7 @@ pub fn insert_path(dir: &mut Dir, parts: &[&str], content: Vec<u8>) {
     }
 }
 
-/// Recursively build a Git tree from a [`Dir`] structure.
+/// Recursively build a Git tree from a [`TreeDir`] structure.
 ///
 /// # Parameters
 ///
@@ -56,7 +54,7 @@ pub fn insert_path(dir: &mut Dir, parts: &[&str], content: Vec<u8>) {
 /// # Errors
 ///
 /// Returns an error if any Git object write fails.
-pub fn build_dir(repo: &gix::Repository, dir: &Dir) -> Result<gix::ObjectId> {
+pub fn build_dir(repo: &gix::Repository, dir: &TreeDir) -> Result<gix::ObjectId> {
     let mut editor = repo
         .empty_tree()
         .edit()
@@ -103,7 +101,7 @@ pub fn build_tree_from_paths(
     repo: &gix::Repository,
     files: &BTreeMap<String, Vec<u8>>,
 ) -> Result<gix::ObjectId> {
-    let mut root = Dir::default();
+    let mut root = TreeDir::default();
 
     for (path, content) in files {
         let parts: Vec<&str> = path.split('/').collect();
@@ -175,7 +173,11 @@ pub fn parse_tree(
                 Some(t) => t,
                 None => continue,
             };
-            let entry_key = (target_type, target_value, key);
+            let entry_key = Key {
+                target_type,
+                target_value,
+                key,
+            };
             match parsed.tombstones.get(&entry_key) {
                 Some(existing) if existing.timestamp >= tombstone.timestamp => {}
                 _ => {
@@ -195,7 +197,14 @@ pub fn parse_tree(
             };
             let member_id = key_parts[key_parts.len() - 1].to_string();
             let content_str = String::from_utf8_lossy(content).to_string();
-            let entry_key = ((target_type, target_value, key), member_id);
+            let entry_key = (
+                Key {
+                    target_type,
+                    target_value,
+                    key,
+                },
+                member_id,
+            );
             parsed.set_tombstones.insert(entry_key, content_str);
             continue;
         }
@@ -212,7 +221,11 @@ pub fn parse_tree(
             let content_str = String::from_utf8_lossy(content).to_string();
             let entry = parsed
                 .values
-                .entry((target_type, target_value, key))
+                .entry(Key {
+                    target_type,
+                    target_value,
+                    key,
+                })
                 .or_insert_with(|| TreeValue::Set(BTreeMap::new()));
             if let TreeValue::Set(ref mut set) = entry {
                 set.insert(member_id, content_str);
@@ -236,7 +249,14 @@ pub fn parse_tree(
                 Some(t) => t,
                 None => continue,
             };
-            let entry_key = ((target_type, target_value, key), entry_name);
+            let entry_key = (
+                Key {
+                    target_type,
+                    target_value,
+                    key,
+                },
+                entry_name,
+            );
             match parsed.list_tombstones.get(&entry_key) {
                 Some(existing) if existing.timestamp >= tombstone.timestamp => {}
                 _ => {
@@ -261,7 +281,11 @@ pub fn parse_tree(
             let content_str = String::from_utf8_lossy(content).to_string();
             let entry = parsed
                 .values
-                .entry((target_type, target_value, key))
+                .entry(Key {
+                    target_type,
+                    target_value,
+                    key,
+                })
                 .or_insert_with(|| TreeValue::List(Vec::new()));
             if let TreeValue::List(ref mut list) = entry {
                 list.push((entry_name, content_str));
@@ -279,7 +303,11 @@ pub fn parse_tree(
             };
             let content_str = String::from_utf8_lossy(content).to_string();
             parsed.values.insert(
-                (target_type, target_value, key),
+                Key {
+                    target_type,
+                    target_value,
+                    key,
+                },
                 TreeValue::String(content_str),
             );
             continue;
@@ -317,13 +345,9 @@ pub fn parse_tree(
     Ok(parsed)
 }
 
-/// Parse a tombstone blob's JSON content into a [`TombstoneEntry`].
-fn parse_tombstone_blob(content: &[u8]) -> Option<TombstoneEntry> {
-    let blob: TombstoneBlob = serde_json::from_slice(content).ok()?;
-    Some(TombstoneEntry {
-        timestamp: blob.timestamp,
-        email: blob.email,
-    })
+/// Parse a tombstone blob's JSON content into a [`Tombstone`].
+fn parse_tombstone_blob(content: &[u8]) -> Option<Tombstone> {
+    serde_json::from_slice(content).ok()
 }
 
 /// Recursively collect all blobs from a Git tree into a flat path map.
@@ -442,33 +466,33 @@ pub fn parse_path_parts<'a>(parts: &'a [&'a str]) -> Result<(String, String, &'a
 pub fn build_merged_tree(
     repo: &gix::Repository,
     values: &BTreeMap<Key, TreeValue>,
-    tombstones: &BTreeMap<Key, TombstoneEntry>,
+    tombstones: &BTreeMap<Key, Tombstone>,
     set_tombstones: &BTreeMap<(Key, String), String>,
-    list_tombstones: &BTreeMap<(Key, String), TombstoneEntry>,
+    list_tombstones: &BTreeMap<(Key, String), Tombstone>,
 ) -> Result<gix::ObjectId> {
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    for ((target_type, target_value, key), tree_val) in values {
-        let target = if target_type == "project" {
+    for (k, tree_val) in values {
+        let target = if k.target_type == "project" {
             Target::parse("project")?
         } else {
-            Target::parse(&format!("{}:{}", target_type, target_value))?
+            Target::parse(&format!("{}:{}", k.target_type, k.target_value))?
         };
 
         match tree_val {
             TreeValue::String(s) => {
-                let full_path = build_tree_path(&target, key)?;
+                let full_path = target.tree_path(&k.key)?;
                 files.insert(full_path, s.as_bytes().to_vec());
             }
             TreeValue::List(list_entries) => {
-                let list_dir_path = build_list_tree_dir_path(&target, key)?;
+                let list_dir_path = target.list_dir_path(&k.key)?;
                 for (entry_name, content) in list_entries {
                     let full_path = format!("{}/{}", list_dir_path, entry_name);
                     files.insert(full_path, content.as_bytes().to_vec());
                 }
             }
             TreeValue::Set(set_members) => {
-                let set_dir_path = build_set_tree_dir_path(&target, key)?;
+                let set_dir_path = target.set_dir_path(&k.key)?;
                 for (member_id, content) in set_members {
                     let full_path = format!("{}/{}", set_dir_path, member_id);
                     files.insert(full_path, content.as_bytes().to_vec());
@@ -477,38 +501,38 @@ pub fn build_merged_tree(
         }
     }
 
-    for ((target_type, target_value, key), tombstone) in tombstones {
-        let target = if target_type == "project" {
+    for (k, tombstone) in tombstones {
+        let target = if k.target_type == "project" {
             Target::parse("project")?
         } else {
-            Target::parse(&format!("{}:{}", target_type, target_value))?
+            Target::parse(&format!("{}:{}", k.target_type, k.target_value))?
         };
-        let full_path = build_tombstone_tree_path(&target, key)?;
-        let payload = serde_json::to_vec(&TombstoneBlob {
+        let full_path = target.tombstone_path(&k.key)?;
+        let payload = serde_json::to_vec(&Tombstone {
             timestamp: tombstone.timestamp,
             email: tombstone.email.clone(),
         })?;
         files.insert(full_path, payload);
     }
 
-    for (((target_type, target_value, key), member_id), tombstone_value) in set_tombstones {
-        let target = if target_type == "project" {
+    for ((k, member_id), tombstone_value) in set_tombstones {
+        let target = if k.target_type == "project" {
             Target::parse("project")?
         } else {
-            Target::parse(&format!("{}:{}", target_type, target_value))?
+            Target::parse(&format!("{}:{}", k.target_type, k.target_value))?
         };
-        let full_path = build_set_member_tombstone_tree_path(&target, key, member_id)?;
+        let full_path = target.set_member_tombstone_path(&k.key, member_id)?;
         files.insert(full_path, tombstone_value.as_bytes().to_vec());
     }
 
-    for (((target_type, target_value, key), entry_name), tombstone) in list_tombstones {
-        let target = if target_type == "project" {
+    for ((k, entry_name), tombstone) in list_tombstones {
+        let target = if k.target_type == "project" {
             Target::parse("project")?
         } else {
-            Target::parse(&format!("{}:{}", target_type, target_value))?
+            Target::parse(&format!("{}:{}", k.target_type, k.target_value))?
         };
-        let full_path = build_list_entry_tombstone_tree_path(&target, key, entry_name)?;
-        let payload = serde_json::to_vec(&TombstoneBlob {
+        let full_path = target.list_entry_tombstone_path(&k.key, entry_name)?;
+        let payload = serde_json::to_vec(&Tombstone {
             timestamp: tombstone.timestamp,
             email: tombstone.email.clone(),
         })?;

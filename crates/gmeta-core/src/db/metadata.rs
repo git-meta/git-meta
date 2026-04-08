@@ -4,12 +4,13 @@ use crate::error::{Error, Result};
 
 use super::{
     blob_if_large, encode_list_entries_by_metadata_id, encode_set_values_by_metadata_id,
-    escape_like_pattern, load_set_values_by_metadata_id_tx, normalize_set_values, resolve_blob, Db,
+    escape_like_pattern, load_set_values_by_metadata_id_tx, normalize_set_values, resolve_blob,
+    Store,
 };
 use crate::list_value::parse_entries;
 use crate::types::{TargetType, ValueType};
 
-impl Db {
+impl Store {
     /// Set a value (upsert). JSON-encodes the value for storage.
     pub fn set(
         &self,
@@ -233,13 +234,17 @@ impl Db {
     }
 
     /// Get a single value by exact key.
-    /// Returns (value, value_type, is_git_ref).
+    ///
+    /// # Returns
+    ///
+    /// `Some(MetadataValue)` if found, `None` if not.
     pub fn get(
         &self,
         target_type: &TargetType,
         target_value: &str,
         key: &str,
-    ) -> Result<Option<(String, ValueType, bool)>> {
+    ) -> Result<Option<super::types::MetadataValue>> {
+        use super::types::MetadataValue;
         let mut stmt = self.conn.prepare(
             "SELECT rowid, value, value_type, is_git_ref FROM metadata
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
@@ -260,60 +265,70 @@ impl Db {
             Some((metadata_id, _value, ref vt, _is_git_ref))
                 if ValueType::from_str(vt)? == ValueType::List =>
             {
-                Ok(Some((
-                    encode_list_entries_by_metadata_id(
+                Ok(Some(MetadataValue {
+                    value: encode_list_entries_by_metadata_id(
                         &self.conn,
                         self.repo.as_ref(),
                         metadata_id,
                     )?,
-                    ValueType::List,
-                    false,
-                )))
+                    value_type: ValueType::List,
+                    is_git_ref: false,
+                }))
             }
             Some((metadata_id, _value, ref vt, _is_git_ref))
                 if ValueType::from_str(vt)? == ValueType::Set =>
             {
-                Ok(Some((
-                    encode_set_values_by_metadata_id(&self.conn, metadata_id)?,
-                    ValueType::Set,
-                    false,
-                )))
+                Ok(Some(MetadataValue {
+                    value: encode_set_values_by_metadata_id(&self.conn, metadata_id)?,
+                    value_type: ValueType::Set,
+                    is_git_ref: false,
+                }))
             }
             Some((_, value, vt, is_git_ref)) => {
                 let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
-                Ok(Some((resolved, ValueType::from_str(&vt)?, is_git_ref)))
+                Ok(Some(MetadataValue {
+                    value: resolved,
+                    value_type: ValueType::from_str(&vt)?,
+                    is_git_ref,
+                }))
             }
             None => Ok(None),
         }
     }
 
     /// Get all key/value pairs for a target, optionally filtered by key prefix.
-    /// Returns (key, value, value_type, is_git_ref).
-    /// Note: promised entries are excluded from this wrapper -- use get_all_with_target_prefix directly
+    ///
+    /// Promised entries are excluded. Use `get_all_with_target_prefix` directly
     /// if you need to see them.
     pub fn get_all(
         &self,
         target_type: &TargetType,
         target_value: &str,
         key_prefix: Option<&str>,
-    ) -> Result<Vec<(String, String, ValueType, bool)>> {
+    ) -> Result<Vec<super::types::MetadataEntry>> {
+        use super::types::MetadataEntry;
         Ok(self
             .get_all_with_target_prefix(target_type, target_value, false, key_prefix)?
             .into_iter()
-            .filter(|(_, _, _, _, _, is_promised)| !is_promised)
-            .map(|(_, key, value, value_type, is_git_ref, _)| (key, value, value_type, is_git_ref))
+            .filter(|r| !r.is_promised)
+            .map(|r| MetadataEntry {
+                key: r.key,
+                value: r.value,
+                value_type: r.value_type,
+                is_git_ref: r.is_git_ref,
+            })
             .collect())
     }
 
     /// Get all key/value pairs for a target or subtree, optionally filtered by key prefix.
-    /// Returns (target_value, key, value, value_type, is_git_ref, is_promised).
     pub fn get_all_with_target_prefix(
         &self,
         target_type: &TargetType,
         target_value: &str,
         include_target_subtree: bool,
         key_prefix: Option<&str>,
-    ) -> Result<Vec<(String, String, String, ValueType, bool, bool)>> {
+    ) -> Result<Vec<super::types::MetadataRecord>> {
+        use super::types::MetadataRecord;
         let target_type_str = target_type.as_str();
         let escaped_target = escape_like_pattern(target_value);
         let target_like = format!("{}/%", escaped_target);
@@ -387,7 +402,14 @@ impl Db {
                 row?;
             let vt = ValueType::from_str(&value_type_str)?;
             if is_promised {
-                results.push((target_value, key, value, vt, false, true));
+                results.push(MetadataRecord {
+                    target_value,
+                    key,
+                    value,
+                    value_type: vt,
+                    is_git_ref: false,
+                    is_promised: true,
+                });
             } else {
                 match vt {
                     ValueType::List => {
@@ -396,15 +418,36 @@ impl Db {
                             self.repo.as_ref(),
                             metadata_id,
                         )?;
-                        results.push((target_value, key, encoded, vt, false, false));
+                        results.push(MetadataRecord {
+                            target_value,
+                            key,
+                            value: encoded,
+                            value_type: vt,
+                            is_git_ref: false,
+                            is_promised: false,
+                        });
                     }
                     ValueType::Set => {
                         let encoded = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-                        results.push((target_value, key, encoded, vt, false, false));
+                        results.push(MetadataRecord {
+                            target_value,
+                            key,
+                            value: encoded,
+                            value_type: vt,
+                            is_git_ref: false,
+                            is_promised: false,
+                        });
                     }
                     ValueType::String => {
                         let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
-                        results.push((target_value, key, resolved, vt, is_git_ref, false));
+                        results.push(MetadataRecord {
+                            target_value,
+                            key,
+                            value: resolved,
+                            value_type: vt,
+                            is_git_ref,
+                            is_promised: false,
+                        });
                     }
                 }
             }
@@ -418,7 +461,8 @@ impl Db {
         target_type: &TargetType,
         target_value: &str,
         key: &str,
-    ) -> Result<Option<(String, i64)>> {
+    ) -> Result<Option<super::types::Authorship>> {
+        use super::types::Authorship;
         let mut stmt = self.conn.prepare(
             "SELECT email, timestamp FROM metadata_log
              WHERE target_type = ?1 AND target_value = ?2 AND key = ?3
@@ -427,7 +471,10 @@ impl Db {
 
         let result = stmt
             .query_row(params![target_type.as_str(), target_value, key], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                Ok(Authorship {
+                    email: row.get::<_, String>(0)?,
+                    timestamp: row.get::<_, i64>(1)?,
+                })
             })
             .optional()?;
 
@@ -435,7 +482,7 @@ impl Db {
     }
 
     /// Remove a key.
-    pub fn rm(
+    pub fn remove(
         &self,
         target_type: &TargetType,
         target_value: &str,
