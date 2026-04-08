@@ -1,4 +1,3 @@
-pub mod bench;
 pub mod config;
 pub mod get;
 pub mod import;

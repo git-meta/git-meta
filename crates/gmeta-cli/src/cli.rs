@@ -329,11 +329,11 @@ pub enum Commands {
     Teardown,
 
     /// Benchmark read performance across all stored keys
-    #[command(hide = true)]
+    #[cfg(feature = "bench")]
     Bench,
 
     /// Benchmark fanout schemes on a synthetic repo
-    #[command(hide = true)]
+    #[cfg(feature = "bench")]
     FanoutBench {
         /// Number of base objects to populate the tree with (default: 1_000_000)
         #[arg(long, default_value = "1000000")]
@@ -341,7 +341,7 @@ pub enum Commands {
     },
 
     /// Benchmark history generation and full-history walk
-    #[command(hide = true)]
+    #[cfg(feature = "bench")]
     HistoryWalker {
         /// Number of meta commits to generate (default: 500)
         #[arg(long, default_value = "500")]
@@ -349,7 +349,7 @@ pub enum Commands {
     },
 
     /// Benchmark serialize performance
-    #[command(hide = true)]
+    #[cfg(feature = "bench")]
     SerializeBench {
         /// Number of insert+serialize rounds (default: 10)
         #[arg(long, default_value = "10")]

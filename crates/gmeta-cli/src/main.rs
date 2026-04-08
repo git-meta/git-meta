@@ -122,13 +122,17 @@ fn main() -> Result<()> {
             metadata_only,
         } => commands::log::run(start_ref.as_deref(), count, metadata_only),
 
-        Commands::Bench => commands::bench::db_bench::run(),
+        #[cfg(feature = "bench")]
+        Commands::Bench => gmeta_bench::db::run(),
 
-        Commands::FanoutBench { objects } => commands::bench::fanout_bench::run(objects),
+        #[cfg(feature = "bench")]
+        Commands::FanoutBench { objects } => gmeta_bench::fanout::run(objects),
 
-        Commands::HistoryWalker { commits } => commands::bench::history_walker::run(commits),
+        #[cfg(feature = "bench")]
+        Commands::HistoryWalker { commits } => gmeta_bench::history::run(commits),
 
-        Commands::SerializeBench { rounds } => commands::bench::serialize_bench::run(rounds),
+        #[cfg(feature = "bench")]
+        Commands::SerializeBench { rounds } => gmeta_bench::serialize::run(rounds),
 
         Commands::Config {
             list,
