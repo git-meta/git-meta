@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 
 use crate::context::CommandContext;
+use gmeta_core::db::Store;
 use gmeta_core::types::{validate_key, Target, TargetType, ValueType};
-use gmeta_core::Store;
 
 const CONFIG_PREFIX: &str = "meta:";
 

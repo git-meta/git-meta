@@ -6,8 +6,8 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use crate::context::CommandContext;
+use gmeta_core::db::Store;
 use gmeta_core::types::{TargetType, ValueType, GIT_REF_THRESHOLD};
-use gmeta_core::Store;
 
 /// Supported import source formats.
 #[derive(Debug, Clone, PartialEq)]
@@ -530,7 +530,7 @@ fn import_session(
                     if !lines.is_empty() {
                         let mut entries = Vec::new();
                         for (i, line) in lines.iter().enumerate() {
-                            entries.push(gmeta_core::list_value::ListEntry {
+                            entries.push(gmeta_core::ListEntry {
                                 value: line.to_string(),
                                 timestamp: *ts + i as i64,
                             });
@@ -727,7 +727,7 @@ fn import_trails(
                 if !arr.is_empty() {
                     let mut entries = Vec::new();
                     for (i, item) in arr.iter().enumerate() {
-                        entries.push(gmeta_core::list_value::ListEntry {
+                        entries.push(gmeta_core::ListEntry {
                             value: serde_json::to_string(item)?,
                             timestamp: ts + i as i64,
                         });

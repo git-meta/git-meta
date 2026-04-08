@@ -86,7 +86,7 @@ pub fn parse_commit_changes(message: &str) -> Option<Vec<CommitChange>> {
 /// - `store`: the metadata store (promisor entries are inserted here)
 /// - `tip_oid`: the tip commit (already materialized, will be skipped)
 /// - `old_tip`: optional boundary — stop walking when this commit is reached
-pub(crate) fn insert_promisor_entries(
+pub fn insert_promisor_entries(
     repo: &gix::Repository,
     store: &Store,
     tip_oid: gix::ObjectId,
@@ -175,7 +175,7 @@ pub(crate) fn insert_promisor_entries(
 ///
 /// Only looks at path names — does not read blob content, so works on trees
 /// with missing blobs (blobless clones).
-pub(crate) fn extract_keys_from_tree(
+pub fn extract_keys_from_tree(
     repo: &gix::Repository,
     tree_id: gix::ObjectId,
 ) -> Result<Vec<(String, String, String)>> {

@@ -28,12 +28,12 @@ use time::OffsetDateTime;
 /// # Ok::<(), gmeta_core::Error>(())
 /// ```
 pub struct Session {
-    repo: gix::Repository,
-    store: crate::db::Store,
-    namespace: String,
-    email: String,
-    name: String,
-    timestamp_override: Option<i64>,
+    pub(crate) repo: gix::Repository,
+    pub(crate) store: crate::db::Store,
+    pub(crate) namespace: String,
+    pub(crate) email: String,
+    pub(crate) name: String,
+    pub(crate) timestamp_override: Option<i64>,
 }
 
 impl Session {
@@ -95,12 +95,20 @@ impl Session {
         })
     }
 
-    /// Access the metadata store.
+    /// Access the metadata store directly.
+    ///
+    /// This is an advanced API for custom queries. Most consumers should use
+    /// [`target()`](Self::target) for read/write operations.
+    #[cfg(feature = "internal")]
     pub fn store(&self) -> &crate::db::Store {
         &self.store
     }
 
-    /// Access the underlying `gix` repository.
+    /// Access the underlying gix repository.
+    ///
+    /// This is an advanced API. Most consumers should use Session's workflow
+    /// methods (serialize, materialize, pull, push) instead.
+    #[cfg(feature = "internal")]
     pub fn repo(&self) -> &gix::Repository {
         &self.repo
     }
@@ -127,12 +135,12 @@ impl Session {
     }
 
     /// The local serialization ref path (e.g. `refs/meta/local/main`).
-    pub fn local_ref(&self) -> String {
+    pub(crate) fn local_ref(&self) -> String {
         format!("refs/{}/local/main", self.namespace)
     }
 
     /// A ref path for a named destination (e.g. `refs/meta/local/{destination}`).
-    pub fn destination_ref(&self, destination: &str) -> String {
+    pub(crate) fn destination_ref(&self, destination: &str) -> String {
         format!("refs/{}/local/{}", self.namespace, destination)
     }
 
@@ -165,23 +173,12 @@ impl Session {
     ///
     /// Call this after a blobless fetch to build an index of historical keys
     /// that can be hydrated on demand.
-    pub fn index_history(
+    pub(crate) fn index_history(
         &self,
         tip_oid: gix::ObjectId,
         old_tip: Option<gix::ObjectId>,
     ) -> crate::error::Result<usize> {
         crate::sync::insert_promisor_entries(&self.repo, &self.store, tip_oid, old_tip)
-    }
-
-    /// Extract all metadata keys from a git tree without reading blob content.
-    ///
-    /// Useful for discovering what keys exist in a tree fetched via blobless
-    /// clone. Only parses path names — works even when blobs are missing.
-    pub fn keys_in_tree(
-        &self,
-        tree_id: gix::ObjectId,
-    ) -> crate::error::Result<Vec<(String, String, String)>> {
-        crate::sync::extract_keys_from_tree(&self.repo, tree_id)
     }
 
     /// Serialize local metadata to Git tree(s) and commit(s).

@@ -78,6 +78,74 @@ impl fmt::Display for Target {
 }
 
 impl Target {
+    /// Create a commit target from a SHA (full or partial).
+    ///
+    /// # Parameters
+    /// - `sha`: a commit SHA string, must be at least 3 characters.
+    ///
+    /// # Errors
+    /// Returns an error if the SHA is shorter than 3 characters.
+    pub fn commit(sha: &str) -> Result<Self> {
+        Self::parse(&format!("commit:{sha}"))
+    }
+
+    /// Create a project-scoped target (no value needed).
+    #[must_use]
+    pub fn project() -> Self {
+        Target {
+            target_type: TargetType::Project,
+            value: None,
+        }
+    }
+
+    /// Create a path target.
+    ///
+    /// # Parameters
+    /// - `path`: the file or directory path this metadata attaches to.
+    #[must_use]
+    pub fn path(path: &str) -> Self {
+        Target {
+            target_type: TargetType::Path,
+            value: Some(path.to_string()),
+        }
+    }
+
+    /// Create a branch target.
+    ///
+    /// # Parameters
+    /// - `name`: the branch name this metadata attaches to.
+    #[must_use]
+    pub fn branch(name: &str) -> Self {
+        Target {
+            target_type: TargetType::Branch,
+            value: Some(name.to_string()),
+        }
+    }
+
+    /// Create a change-id target.
+    ///
+    /// # Parameters
+    /// - `id`: the change identifier this metadata attaches to.
+    #[must_use]
+    pub fn change_id(id: &str) -> Self {
+        Target {
+            target_type: TargetType::ChangeId,
+            value: Some(id.to_string()),
+        }
+    }
+
+    /// Parse a target from a string in `type:value` format (e.g. `"commit:abc123"`).
+    ///
+    /// This is the CLI-oriented constructor. For programmatic use, prefer the
+    /// named constructors: [`commit()`](Self::commit), [`project()`](Self::project),
+    /// [`path()`](Self::path), [`branch()`](Self::branch), [`change_id()`](Self::change_id).
+    ///
+    /// # Parameters
+    /// - `s`: the target string in `type:value` format, or `"project"` for project targets.
+    ///
+    /// # Errors
+    /// Returns an error if the format is invalid, the target type is unknown,
+    /// or the value is shorter than 3 characters.
     pub fn parse(s: &str) -> Result<Self> {
         if s == "project" {
             return Ok(Target {
@@ -709,5 +777,70 @@ mod tests {
         let v1 = MetaValue::String("test".to_string());
         let v2 = v1.clone();
         assert_eq!(v1, v2);
+    }
+
+    #[test]
+    fn test_target_commit_constructor() {
+        let t = Target::commit("abc123").unwrap();
+        assert_eq!(t.target_type, TargetType::Commit);
+        assert_eq!(t.value, Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_target_commit_constructor_short_sha_rejected() {
+        let result = Target::commit("ab");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_target_project_constructor() {
+        let t = Target::project();
+        assert_eq!(t.target_type, TargetType::Project);
+        assert_eq!(t.value, None);
+    }
+
+    #[test]
+    fn test_target_path_constructor() {
+        let t = Target::path("src/main.rs");
+        assert_eq!(t.target_type, TargetType::Path);
+        assert_eq!(t.value, Some("src/main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_target_branch_constructor() {
+        let t = Target::branch("feature-x");
+        assert_eq!(t.target_type, TargetType::Branch);
+        assert_eq!(t.value, Some("feature-x".to_string()));
+    }
+
+    #[test]
+    fn test_target_change_id_constructor() {
+        let t = Target::change_id("jj-change-abc");
+        assert_eq!(t.target_type, TargetType::ChangeId);
+        assert_eq!(t.value, Some("jj-change-abc".to_string()));
+    }
+
+    #[test]
+    fn test_named_constructors_match_parse() {
+        // Verify named constructors produce identical results to parse
+        let from_parse = Target::parse("commit:abc123").unwrap();
+        let from_ctor = Target::commit("abc123").unwrap();
+        assert_eq!(from_parse, from_ctor);
+
+        let from_parse = Target::parse("project").unwrap();
+        let from_ctor = Target::project();
+        assert_eq!(from_parse, from_ctor);
+
+        let from_parse = Target::parse("path:src/main.rs").unwrap();
+        let from_ctor = Target::path("src/main.rs");
+        assert_eq!(from_parse, from_ctor);
+
+        let from_parse = Target::parse("branch:feature-x").unwrap();
+        let from_ctor = Target::branch("feature-x");
+        assert_eq!(from_parse, from_ctor);
+
+        let from_parse = Target::parse("change-id:jj-change-abc").unwrap();
+        let from_ctor = Target::change_id("jj-change-abc");
+        assert_eq!(from_parse, from_ctor);
     }
 }

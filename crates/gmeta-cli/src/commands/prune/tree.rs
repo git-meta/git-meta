@@ -55,7 +55,7 @@ pub fn run(dry_run: bool) -> Result<()> {
             .unwrap_or_else(|| "?".to_string());
 
     // Find the current serialized tree
-    let ref_name = ctx.session.local_ref();
+    let ref_name = format!("refs/{}/local/main", ctx.session.namespace());
     let current_commit_oid = match repo
         .find_reference(&ref_name)
         .ok()

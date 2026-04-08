@@ -60,7 +60,7 @@ pub struct PushOutput {
 /// or the push fails for a reason other than non-fast-forward rejection
 /// (in which case `success` is `false` and `non_fast_forward` is `false`).
 pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<PushOutput> {
-    let repo = session.repo();
+    let repo = &session.repo;
     let ns = session.namespace();
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
@@ -163,7 +163,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
 ///
 /// Returns an error if fetch, materialization, serialization, or rebase fails.
 pub fn resolve_push_conflict(session: &Session, remote: Option<&str>, now: i64) -> Result<()> {
-    let repo = session.repo();
+    let repo = &session.repo;
     let ns = session.namespace();
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;

@@ -64,9 +64,9 @@ pub struct SerializeOutput {
 ///
 /// Returns an error if database reads, Git object writes, or ref updates fail.
 pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
-    let repo = session.repo();
+    let repo = &session.repo;
     let local_ref_name = session.local_ref();
-    let last_materialized = session.store().get_last_materialized()?;
+    let last_materialized = session.store.get_last_materialized()?;
 
     // Determine existing tree for incremental mode
     let existing_tree_oid = repo
@@ -91,7 +91,7 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
         dirty_target_bases,
         changes,
     ) = if let Some(since) = last_materialized {
-        let modified = session.store().get_modified_since(since)?;
+        let modified = session.store.get_modified_since(since)?;
         if modified.is_empty() && existing_tree_oid.is_some() {
             return Ok(SerializeOutput {
                 changes: 0,
@@ -134,10 +134,10 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
             dirty_bases.insert(target.tree_base_path());
         }
 
-        let metadata = session.store().get_all_metadata()?;
-        let tombstones = session.store().get_all_tombstones()?;
-        let set_tombstones = session.store().get_all_set_tombstones()?;
-        let list_tombstones = session.store().get_all_list_tombstones()?;
+        let metadata = session.store.get_all_metadata()?;
+        let tombstones = session.store.get_all_tombstones()?;
+        let set_tombstones = session.store.get_all_set_tombstones()?;
+        let list_tombstones = session.store.get_all_list_tombstones()?;
 
         (
             metadata,
@@ -152,7 +152,7 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
             changes,
         )
     } else {
-        let metadata = session.store().get_all_metadata()?;
+        let metadata = session.store.get_all_metadata()?;
 
         let changes: Vec<(char, String, String)> = metadata
             .iter()
@@ -168,9 +168,9 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
 
         (
             metadata,
-            session.store().get_all_tombstones()?,
-            session.store().get_all_set_tombstones()?,
-            session.store().get_all_list_tombstones()?,
+            session.store.get_all_tombstones()?,
+            session.store.get_all_set_tombstones()?,
+            session.store.get_all_list_tombstones()?,
             None,
             changes,
         )
@@ -186,10 +186,10 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
 
     // Apply prune-since cutoff to filter old entries before building the tree
     let prune_since = session
-        .store()
+        .store
         .get(&TargetType::Project, "", "meta:prune:since")?
         .and_then(|e| serde_json::from_str::<String>(&e.value).ok());
-    let prune_rules = prune::read_prune_rules(session.store())?;
+    let prune_rules = prune::read_prune_rules(&session.store)?;
     let prune_cutoff_ms = prune_since
         .as_deref()
         .map(|s| prune::parse_since_to_cutoff_ms(s, now))
@@ -212,7 +212,7 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
     };
 
     // Route entries through filter rules to destinations
-    let filter_rules = parse_filter_rules(session.store())?;
+    let filter_rules = parse_filter_rules(&session.store)?;
 
     let mut dest_metadata: BTreeMap<String, Vec<SerializableEntry>> = BTreeMap::new();
     let mut dest_tombstones: BTreeMap<String, Vec<TombstoneRecord>> = BTreeMap::new();
@@ -342,7 +342,7 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
             if let Some(ref prune_rules_val) = prune_rules {
                 if prune::should_prune(repo, tree_oid, prune_rules_val)? {
                     let prune_tree_oid =
-                        prune_tree(repo, tree_oid, prune_rules_val, session.store(), now)?;
+                        prune_tree(repo, tree_oid, prune_rules_val, &session.store, now)?;
 
                     if prune_tree_oid != tree_oid {
                         let prune_parent_oid = repo
@@ -394,7 +394,7 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
         }
     }
 
-    session.store().set_last_materialized(now)?;
+    session.store.set_last_materialized(now)?;
 
     Ok(SerializeOutput {
         changes: total_changes,

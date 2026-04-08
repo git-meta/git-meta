@@ -2,7 +2,6 @@ use anyhow::{bail, Result};
 
 use crate::commands::{materialize, serialize};
 use crate::context::CommandContext;
-use gmeta_core::git_utils;
 
 /// Expand shorthand "owner/repo" to a full GitHub SSH URL.
 fn expand_url(url: &str) -> String {
@@ -21,8 +20,12 @@ fn expand_url(url: &str) -> String {
 /// Scan ls-remote output for meta refs under a given namespace.
 /// Returns (has_match, other_namespaces) where other_namespaces are
 /// namespace prefixes that contain a "main" ref (e.g. "altmeta" from "refs/altmeta/main").
-fn check_remote_refs(repo: &gix::Repository, url: &str, ns: &str) -> Result<(bool, Vec<String>)> {
-    let output = git_utils::run_git(repo, &["ls-remote", url])?;
+fn check_remote_refs(
+    session: &gmeta_core::Session,
+    url: &str,
+    ns: &str,
+) -> Result<(bool, Vec<String>)> {
+    let output = gmeta_core::git_utils::run_git(session.repo(), &["ls-remote", url])?;
 
     let expected_ref = format!("refs/{}/main", ns);
     let mut has_match = false;
@@ -72,7 +75,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
 
     // Check the remote for meta refs before configuring
     eprintln!("Checking {}...", url);
-    match check_remote_refs(repo, &url, &ns) {
+    match check_remote_refs(&ctx.session, &url, &ns) {
         Ok((has_match, other_namespaces)) => {
             if !has_match {
                 if other_namespaces.is_empty() {
@@ -149,7 +152,10 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
     // Initial blobless fetch
     let fetch_refspec = format!("refs/{ns}/main:refs/{ns}/remotes/main");
     eprint!("Fetching metadata (blobless)...");
-    match git_utils::run_git(repo, &["fetch", "--filter=blob:none", name, &fetch_refspec]) {
+    match gmeta_core::git_utils::run_git(
+        repo,
+        &["fetch", "--filter=blob:none", name, &fetch_refspec],
+    ) {
         Ok(_) => {
             eprintln!(" done.");
 
@@ -177,7 +183,8 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
 
             // Hydrate tip tree blobs so gix can read the metadata
             eprint!("Hydrating tip blobs...");
-            let blob_count = git_utils::hydrate_tip_blobs_counted(repo, name, &remote_ref)?;
+            let blob_count =
+                gmeta_core::git_utils::hydrate_tip_blobs_counted(repo, name, &remote_ref)?;
             eprintln!(" {} blobs fetched.", blob_count);
 
             // Materialize remote metadata into local SQLite
@@ -193,7 +200,12 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Resul
             let tracking_ref_name = format!("refs/{}/remotes/main", ns);
             if let Ok(r) = repo.find_reference(&tracking_ref_name) {
                 if let Ok(tip_id) = r.into_fully_peeled_id() {
-                    let count = ctx.session.index_history(tip_id.detach(), None)?;
+                    let count = gmeta_core::sync::insert_promisor_entries(
+                        repo,
+                        ctx.session.store(),
+                        tip_id.detach(),
+                        None,
+                    )?;
                     if count > 0 {
                         eprintln!("Indexed {} keys from history (available on demand).", count);
                     }
@@ -282,8 +294,7 @@ pub fn run_remove(name: &str) -> Result<()> {
 
 pub fn run_list() -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
-    let remotes = git_utils::list_meta_remotes(repo)?;
+    let remotes = gmeta_core::git_utils::list_meta_remotes(ctx.session.repo())?;
 
     if remotes.is_empty() {
         println!("No metadata remotes configured.");

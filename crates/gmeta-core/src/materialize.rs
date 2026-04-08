@@ -78,7 +78,7 @@ pub struct MaterializeOutput {
 ///
 /// Returns an error if Git object reads, database writes, or ref updates fail.
 pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<MaterializeOutput> {
-    let repo = session.repo();
+    let repo = &session.repo;
     let ns = session.namespace();
     let local_ref_name = session.local_ref();
     let email = session.email();
@@ -178,7 +178,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
         }
     }
 
-    session.store().set_last_materialized(now)?;
+    session.store.set_last_materialized(now)?;
 
     Ok(MaterializeOutput { results })
 }
@@ -194,7 +194,7 @@ fn materialize_fast_forward(
     email: &str,
     now: i64,
 ) -> Result<usize> {
-    let repo = session.repo();
+    let repo = &session.repo;
 
     let local_entries = if let Some(local_oid) = local_commit_oid {
         let lc = local_oid
@@ -214,7 +214,7 @@ fn materialize_fast_forward(
     let changes = remote_entries.values.len();
 
     // Apply remote tree to SQLite
-    session.store().apply_tree(
+    session.store.apply_tree(
         &remote_entries.values,
         &remote_entries.tombstones,
         &remote_entries.set_tombstones,
@@ -245,7 +245,7 @@ fn materialize_merge(
     now: i64,
     local_ref_name: &str,
 ) -> Result<(usize, Vec<ConflictDecision>, MaterializeStrategy)> {
-    let repo = session.repo();
+    let repo = &session.repo;
 
     let local_commit_obj = local_oid
         .attach(repo)
@@ -288,7 +288,7 @@ fn materialize_merge(
     let changes = merged_values.len();
 
     // Update SQLite
-    session.store().apply_tree(
+    session.store.apply_tree(
         &merged_values,
         &merged_tombstones,
         &merged_set_tombstones,
@@ -301,7 +301,7 @@ fn materialize_merge(
     if let Some(base_values) = &legacy_base_values {
         for key in base_values.keys() {
             if !merged_values.contains_key(key) && !merged_tombstones.contains_key(key) {
-                session.store().apply_tombstone(
+                session.store.apply_tombstone(
                     &key.target_type,
                     &key.target_value,
                     &key.key,
@@ -481,7 +481,7 @@ fn apply_legacy_deletes(
 ) -> Result<()> {
     for key in local_values.keys() {
         if !remote_entries.values.contains_key(key) {
-            session.store().apply_tombstone(
+            session.store.apply_tombstone(
                 &key.target_type,
                 &key.target_value,
                 &key.key,

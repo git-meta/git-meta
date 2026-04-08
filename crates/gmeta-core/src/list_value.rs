@@ -66,6 +66,7 @@ pub fn encode_entries(entries: &[ListEntry]) -> Result<String> {
 }
 
 /// Extract just the string values from a stored list JSON blob.
+#[cfg_attr(not(feature = "internal"), allow(dead_code))]
 pub fn list_values_from_json(raw: &str) -> Result<Vec<String>> {
     Ok(parse_entries(raw)?
         .into_iter()
