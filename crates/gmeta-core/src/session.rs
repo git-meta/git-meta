@@ -28,12 +28,12 @@ use time::OffsetDateTime;
 /// # Ok::<(), gmeta_core::Error>(())
 /// ```
 pub struct Session {
-    repo: gix::Repository,
-    store: crate::db::Store,
-    namespace: String,
-    email: String,
-    name: String,
-    timestamp_override: Option<i64>,
+    pub(crate) repo: gix::Repository,
+    pub(crate) store: crate::db::Store,
+    pub(crate) namespace: String,
+    pub(crate) email: String,
+    pub(crate) name: String,
+    pub(crate) timestamp_override: Option<i64>,
 }
 
 impl Session {
@@ -95,12 +95,20 @@ impl Session {
         })
     }
 
-    /// Access the metadata store.
+    /// Access the metadata store directly.
+    ///
+    /// This is an advanced API for custom queries. Most consumers should use
+    /// [`target()`](Self::target) for read/write operations.
+    #[cfg(feature = "internal")]
     pub fn store(&self) -> &crate::db::Store {
         &self.store
     }
 
-    /// Access the underlying `gix` repository.
+    /// Access the underlying gix repository.
+    ///
+    /// This is an advanced API. Most consumers should use Session's workflow
+    /// methods (serialize, materialize, pull, push) instead.
+    #[cfg(feature = "internal")]
     pub fn repo(&self) -> &gix::Repository {
         &self.repo
     }

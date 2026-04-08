@@ -6,8 +6,8 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use crate::context::CommandContext;
+use gmeta_core::db::Store;
 use gmeta_core::types::{TargetType, ValueType, GIT_REF_THRESHOLD};
-use gmeta_core::Store;
 
 /// Supported import source formats.
 #[derive(Debug, Clone, PartialEq)]

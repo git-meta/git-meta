@@ -4,9 +4,9 @@ use gix::prelude::ObjectIdExt;
 use serde_json::{json, Map, Value};
 
 use crate::context::CommandContext;
+use gmeta_core::db::Store;
 use gmeta_core::list_value::list_values_from_json;
 use gmeta_core::types::{self, Target, TargetType, ValueType};
-use gmeta_core::Store;
 
 const NODE_VALUE_KEY: &str = "__value";
 

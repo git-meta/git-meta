@@ -52,7 +52,7 @@ pub struct PullOutput {
 /// Returns an error if the remote cannot be resolved, fetch fails,
 /// materialization fails, or history indexing fails.
 pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutput> {
-    let repo = session.repo();
+    let repo = &session.repo;
     let ns = session.namespace();
 
     let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
@@ -77,7 +77,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
 
     // Check if we need to materialize even if no new commits were fetched
     // (e.g. remote add fetched but never materialized)
-    let needs_materialize = session.store().get_last_materialized()?.is_none()
+    let needs_materialize = session.store.get_last_materialized()?.is_none()
         || repo.find_reference(&session.local_ref()).is_err();
 
     // Count new commits
