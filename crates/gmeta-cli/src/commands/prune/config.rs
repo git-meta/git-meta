@@ -1,8 +1,8 @@
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select};
 
-use super::auto::{parse_size, read_prune_rules};
 use crate::context::CommandContext;
+use gmeta_core::prune::{parse_size, read_prune_rules};
 use gmeta_core::types::{TargetType, ValueType};
 
 pub fn run() -> Result<()> {

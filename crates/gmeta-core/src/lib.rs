@@ -13,6 +13,10 @@ pub mod db;
 pub mod git_utils;
 /// Timestamped list entry encoding and decoding.
 pub mod list_value;
+/// Auto-prune rule evaluation and tree-size computation.
+pub mod prune;
+/// Serialize local metadata to Git tree(s) and commit(s).
+pub mod serialize;
 /// The library entry point: a session combining a git repo with a metadata store.
 pub mod session;
 /// High-level sync operations: promisor entries, commit change parsing, blobless clone support.
@@ -25,5 +29,6 @@ pub mod types;
 // Re-export the most commonly used types at the crate root for convenience.
 pub use db::{Batch, Store, TargetHandle};
 pub use error::{Error, Result};
+pub use serialize::SerializeOutput;
 pub use session::Session;
 pub use types::{MetaValue, Target, TargetType, ValueType};

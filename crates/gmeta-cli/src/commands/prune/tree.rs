@@ -9,9 +9,9 @@ use anyhow::Result;
 use gix::prelude::ObjectIdExt;
 use gix::refs::transaction::PreviousValue;
 
-use super::auto::parse_since_to_cutoff_ms;
-use crate::commands::serialize::{build_filtered_tree, count_prune_stats};
 use crate::context::CommandContext;
+use gmeta_core::prune::parse_since_to_cutoff_ms;
+use gmeta_core::serialize::{build_filtered_tree, count_prune_stats};
 use gmeta_core::tree::filter::{classify_key, parse_filter_rules, MAIN_DEST};
 use gmeta_core::types::TargetType;
 

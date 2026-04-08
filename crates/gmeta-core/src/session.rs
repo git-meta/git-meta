@@ -135,4 +135,15 @@ impl Session {
     ) -> crate::error::Result<Vec<(String, String, String)>> {
         crate::sync::extract_keys_from_tree(&self.repo, tree_id)
     }
+
+    /// Serialize local metadata to Git tree(s) and commit(s).
+    ///
+    /// Determines incremental vs full mode automatically. Applies filter
+    /// routing and pruning rules. Updates local refs and the materialization
+    /// timestamp.
+    ///
+    /// See [`crate::serialize::run()`] for full details.
+    pub fn serialize(&self) -> crate::error::Result<crate::serialize::SerializeOutput> {
+        crate::serialize::run(self)
+    }
 }
