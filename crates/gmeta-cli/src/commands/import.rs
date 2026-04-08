@@ -530,12 +530,12 @@ fn import_session(
                     if !lines.is_empty() {
                         let mut entries = Vec::new();
                         for (i, line) in lines.iter().enumerate() {
-                            entries.push(gmeta_core::list_value::ListEntry {
+                            entries.push(gmeta_core::ListEntry {
                                 value: line.to_string(),
                                 timestamp: *ts + i as i64,
                             });
                         }
-                        let encoded = gmeta_core::list_value::encode_entries(&entries)?;
+                        let encoded = gmeta_core::__private::encode_entries(&entries)?;
                         count += set_value(
                             repo,
                             db,
@@ -727,12 +727,12 @@ fn import_trails(
                 if !arr.is_empty() {
                     let mut entries = Vec::new();
                     for (i, item) in arr.iter().enumerate() {
-                        entries.push(gmeta_core::list_value::ListEntry {
+                        entries.push(gmeta_core::ListEntry {
                             value: serde_json::to_string(item)?,
                             timestamp: ts + i as i64,
                         });
                     }
-                    let encoded = gmeta_core::list_value::encode_entries(&entries)?;
+                    let encoded = gmeta_core::__private::encode_entries(&entries)?;
                     count += set_value(
                         repo,
                         db,

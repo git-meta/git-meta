@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 
 use crate::context::CommandContext;
-use gmeta_core::git_utils;
 
 /// Push a README commit to refs/heads/main on the meta remote.
 /// This only succeeds if the branch doesn't already exist (no force push).
@@ -9,7 +8,7 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
 
-    let remote_name = git_utils::resolve_meta_remote(repo, remote)?;
+    let remote_name = ctx.session.resolve_remote(remote)?;
 
     // Gather project info from git config
     let config = repo.config_snapshot();
@@ -76,7 +75,7 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     }
 
     eprintln!("Pushing README to {}...", remote_name);
-    let result = git_utils::run_git(repo, &["push", &remote_name, &push_refspec]);
+    let result = ctx.session.run_git(&["push", &remote_name, &push_refspec]);
 
     match result {
         Ok(_) => {
@@ -169,7 +168,7 @@ const MAX_RETRIES: u32 = 5;
 
 pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let resolved_remote = git_utils::resolve_meta_remote(ctx.session.repo(), remote)?;
+    let resolved_remote = ctx.session.resolve_remote(remote)?;
 
     if verbose {
         let ns = ctx.session.namespace();

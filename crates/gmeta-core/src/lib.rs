@@ -23,37 +23,42 @@ pub mod tree;
 /// Core metadata types: targets, value types, and path-building helpers.
 pub mod types;
 
-// --- Internal modules (available for advanced use, not part of the primary API) ---
+// --- Internal modules (not part of the public API) ---
 
-/// Git utility helpers for resolving commits and working with objects.
-///
-/// Most consumers should use [`Session`] methods instead of calling these directly.
-#[doc(hidden)]
-pub mod git_utils;
-/// Timestamped list entry encoding and decoding.
-///
-/// Internal encoding format. Consumers should use [`MetaValue`] and
-/// [`SessionTargetHandle`] for typed access.
-#[doc(hidden)]
-pub mod list_value;
-/// Auto-prune rule evaluation and tree-size computation.
-///
-/// Used internally by [`serialize`]. Exposed for CLI prune commands.
-#[doc(hidden)]
-pub mod prune;
-/// High-level sync operations: promisor entries, commit change parsing.
-///
-/// Used internally by [`Session::index_history`] and [`Session::keys_in_tree`].
-#[doc(hidden)]
-pub mod sync;
+pub(crate) mod git_utils;
+pub(crate) mod list_value;
+pub(crate) mod prune;
+pub(crate) mod sync;
 
-// Re-export the most commonly used types at the crate root for convenience.
+// --- Public API re-exports ---
+
+// Core types
 pub use db::Store;
 pub use error::{Error, Result};
+pub use session::Session;
+pub use session_handle::SessionTargetHandle;
+pub use types::{MetaValue, Target, TargetType, ValueType};
+
+// ListEntry is part of MetaValue::List, so it's genuinely public.
+pub use list_value::ListEntry;
+
+// Workflow output types
 pub use materialize::{MaterializeOutput, MaterializeRefResult, MaterializeStrategy};
 pub use pull::PullOutput;
 pub use push::PushOutput;
 pub use serialize::SerializeOutput;
-pub use session::Session;
-pub use session_handle::SessionTargetHandle;
-pub use types::{MetaValue, Target, TargetType, ValueType};
+pub use sync::CommitChange;
+
+// --- CLI internals (not for library consumers) ---
+// These are re-exported for the CLI crate's use but hidden from docs.
+// Library consumers should use Session methods and MetaValue instead.
+
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::db::Store;
+    pub use crate::list_value::{
+        encode_entries, list_values_from_json, parse_entries, parse_timestamp_from_entry_name,
+    };
+    pub use crate::prune::{parse_since_to_cutoff_ms, parse_size, read_prune_rules, PruneRules};
+    pub use crate::sync::parse_commit_changes;
+}

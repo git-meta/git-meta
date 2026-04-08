@@ -2,7 +2,7 @@ use anyhow::Result;
 use dialoguer::{Confirm, Input, Select};
 
 use crate::context::CommandContext;
-use gmeta_core::prune::{parse_size, read_prune_rules};
+use gmeta_core::__private::{parse_size, read_prune_rules};
 use gmeta_core::types::{MetaValue, Target, TargetType};
 
 pub fn run() -> Result<()> {

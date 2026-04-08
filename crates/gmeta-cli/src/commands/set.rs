@@ -3,7 +3,7 @@ use std::fs;
 use anyhow::{bail, Context, Result};
 
 use crate::context::CommandContext;
-use gmeta_core::list_value::parse_entries;
+use gmeta_core::__private::parse_entries;
 use gmeta_core::types::{validate_key, MetaValue, Target, ValueType, GIT_REF_THRESHOLD};
 
 fn print_result(action: &str, key: &str, target: &Target, json: bool) {

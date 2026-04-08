@@ -55,7 +55,7 @@ pub fn run() -> Result<()> {
         let message = decoded.message.to_str_lossy().to_string();
         let first_line = message.lines().next().unwrap_or("");
 
-        match gmeta_core::sync::parse_commit_changes(&message) {
+        match gmeta_core::__private::parse_commit_changes(&message) {
             Some(changes) => {
                 commits_parsed += 1;
                 let mut commit_inserted = 0;

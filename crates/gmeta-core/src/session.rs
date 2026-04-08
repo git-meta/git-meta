@@ -249,4 +249,145 @@ impl Session {
     pub fn resolve_push_conflict(&self, remote: Option<&str>) -> crate::error::Result<()> {
         crate::push::resolve_push_conflict(self, remote, self.now())
     }
+
+    /// Resolve which metadata remote to use.
+    ///
+    /// If `remote` is `Some`, validates that it is a configured meta remote.
+    /// If `None`, returns the first configured meta remote.
+    ///
+    /// # Parameters
+    ///
+    /// - `remote`: optional remote name to validate
+    ///
+    /// # Returns
+    ///
+    /// The name of the resolved meta remote.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NoRemotes`](crate::error::Error::NoRemotes) if no meta
+    /// remotes are configured, or
+    /// [`Error::RemoteNotFound`](crate::error::Error::RemoteNotFound) if the
+    /// specified name is not a meta remote.
+    pub fn resolve_remote(&self, remote: Option<&str>) -> crate::error::Result<String> {
+        crate::git_utils::resolve_meta_remote(self.repo(), remote)
+    }
+
+    /// List all configured metadata remotes.
+    ///
+    /// # Returns
+    ///
+    /// A vec of `(name, url)` pairs for each remote with `remote.<name>.meta = true`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the git config fails.
+    pub fn list_remotes(&self) -> crate::error::Result<Vec<(String, String)>> {
+        crate::git_utils::list_meta_remotes(self.repo())
+    }
+
+    /// Run a git subprocess command in this session's repository.
+    ///
+    /// # Parameters
+    ///
+    /// - `args`: the arguments to pass to `git`
+    ///
+    /// # Returns
+    ///
+    /// The stdout output of the command as a string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subprocess fails to spawn or exits with
+    /// a non-zero status.
+    pub fn run_git(&self, args: &[&str]) -> crate::error::Result<String> {
+        crate::git_utils::run_git(self.repo(), args)
+    }
+
+    /// Hydrate tip tree blobs for a blobless-fetched ref.
+    ///
+    /// Fetches all blob objects referenced by the tip tree of `ref_name`
+    /// from `remote_name` so gix can read them locally.
+    ///
+    /// # Parameters
+    ///
+    /// - `remote_name`: the remote to fetch blobs from
+    /// - `ref_name`: the ref whose tree blobs should be fetched
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ls-tree or fetch subprocess fails.
+    pub fn hydrate_blobs(&self, remote_name: &str, ref_name: &str) -> crate::error::Result<()> {
+        crate::git_utils::hydrate_tip_blobs(self.repo(), remote_name, ref_name)
+    }
+
+    /// Like [`hydrate_blobs`](Self::hydrate_blobs) but returns the number of
+    /// blobs fetched.
+    ///
+    /// # Parameters
+    ///
+    /// - `remote_name`: the remote to fetch blobs from
+    /// - `ref_name`: the ref whose tree blobs should be fetched
+    ///
+    /// # Returns
+    ///
+    /// The number of blob OIDs discovered in the tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ls-tree or fetch subprocess fails.
+    pub fn hydrate_blobs_counted(
+        &self,
+        remote_name: &str,
+        ref_name: &str,
+    ) -> crate::error::Result<usize> {
+        crate::git_utils::hydrate_tip_blobs_counted(self.repo(), remote_name, ref_name)
+    }
+
+    /// Find a blob OID at a specific path in a tree.
+    ///
+    /// Returns `None` if any path segment is missing. Trees are local
+    /// (fetched even in blobless clones), so this works without network
+    /// access.
+    ///
+    /// # Parameters
+    ///
+    /// - `tree_id`: the root tree object ID to start from
+    /// - `path`: slash-separated path to the blob (e.g. `"a/b/file.txt"`)
+    ///
+    /// # Returns
+    ///
+    /// `Some(ObjectId)` of the blob at the path, or `None` if not found.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading tree objects from the repository fails.
+    pub fn find_blob_in_tree(
+        &self,
+        tree_id: gix::ObjectId,
+        path: &str,
+    ) -> crate::error::Result<Option<gix::ObjectId>> {
+        crate::git_utils::find_blob_oid_in_tree(self.repo(), tree_id, path)
+    }
+
+    /// Fetch specific blob OIDs from a remote.
+    ///
+    /// Similar to [`hydrate_blobs`](Self::hydrate_blobs) but takes an
+    /// explicit list of OIDs instead of discovering them via ls-tree.
+    ///
+    /// # Parameters
+    ///
+    /// - `remote_name`: the remote to fetch blobs from
+    /// - `oids`: the blob OIDs to fetch
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fetch subprocess fails.
+    pub fn fetch_blobs(
+        &self,
+        remote_name: &str,
+        oids: &[gix::ObjectId],
+    ) -> crate::error::Result<()> {
+        crate::git_utils::fetch_blob_oids(self.repo(), remote_name, oids)
+    }
 }

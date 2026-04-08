@@ -10,8 +10,8 @@ use anyhow::Result;
 use time::{Duration, OffsetDateTime};
 
 use crate::context::CommandContext;
-use gmeta_core::list_value::list_values_from_json;
 use gmeta_core::Store;
+use gmeta_core::__private::list_values_from_json;
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
