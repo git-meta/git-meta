@@ -1,0 +1,14 @@
+[package]
+name = "gmeta-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gmeta-core = { path = "../gmeta-core" }
+anyhow = { workspace = true }
+gix = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+
+[lints]
+workspace = true

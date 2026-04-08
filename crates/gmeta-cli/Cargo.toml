@@ -7,7 +7,11 @@ edition = "2021"
 name = "gmeta"
 path = "src/main.rs"
 
+[features]
+bench = ["dep:gmeta-bench"]
+
 [dependencies]
+gmeta-bench = { path = "../gmeta-bench", optional = true }
 gmeta-core = { path = "../gmeta-core" }
 anyhow = { workspace = true }
 clap = { version = "4", features = ["derive"] }

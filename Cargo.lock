@@ -1625,6 +1625,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gmeta-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gix",
+ "gmeta-core",
+ "serde_json",
+ "time",
+]
+
+[[package]]
 name = "gmeta-cli"
 version = "0.1.0"
 dependencies = [
@@ -1634,6 +1645,7 @@ dependencies = [
  "dialoguer",
  "gix",
  "gix-testtools",
+ "gmeta-bench",
  "gmeta-core",
  "notify",
  "predicates",
