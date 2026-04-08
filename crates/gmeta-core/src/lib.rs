@@ -4,8 +4,6 @@ pub mod error;
 /// Local SQLite database for caching and querying metadata.
 pub mod db;
 
-// --- Primary API modules (documented, stable) ---
-
 /// Materialize remote metadata into the local SQLite store.
 pub mod materialize;
 /// Pull remote metadata: fetch, materialize, and index history.
@@ -23,42 +21,41 @@ pub mod tree;
 /// Core metadata types: targets, value types, and path-building helpers.
 pub mod types;
 
-// --- Internal modules (not part of the public API) ---
+// Internal modules — only visible when the `internal` feature is enabled.
+// The CLI enables this feature; library consumers do not.
 
+#[cfg(not(feature = "internal"))]
 pub(crate) mod git_utils;
+#[cfg(feature = "internal")]
+pub mod git_utils;
+
+#[cfg(not(feature = "internal"))]
 pub(crate) mod list_value;
+#[cfg(feature = "internal")]
+pub mod list_value;
+
+#[cfg(not(feature = "internal"))]
 pub(crate) mod prune;
+#[cfg(feature = "internal")]
+pub mod prune;
+
+#[cfg(not(feature = "internal"))]
 pub(crate) mod sync;
+#[cfg(feature = "internal")]
+pub mod sync;
 
 // --- Public API re-exports ---
 
-// Core types
 pub use db::Store;
 pub use error::{Error, Result};
+pub use list_value::ListEntry;
 pub use session::Session;
 pub use session_handle::SessionTargetHandle;
+pub use sync::CommitChange;
 pub use types::{MetaValue, Target, TargetType, ValueType};
-
-// ListEntry is part of MetaValue::List, so it's genuinely public.
-pub use list_value::ListEntry;
 
 // Workflow output types
 pub use materialize::{MaterializeOutput, MaterializeRefResult, MaterializeStrategy};
 pub use pull::PullOutput;
 pub use push::PushOutput;
 pub use serialize::SerializeOutput;
-pub use sync::CommitChange;
-
-// --- CLI internals (not for library consumers) ---
-// These are re-exported for the CLI crate's use but hidden from docs.
-// Library consumers should use Session methods and MetaValue instead.
-
-#[doc(hidden)]
-pub mod __private {
-    pub use crate::db::Store;
-    pub use crate::list_value::{
-        encode_entries, list_values_from_json, parse_entries, parse_timestamp_from_entry_name,
-    };
-    pub use crate::prune::{parse_since_to_cutoff_ms, parse_size, read_prune_rules, PruneRules};
-    pub use crate::sync::parse_commit_changes;
-}

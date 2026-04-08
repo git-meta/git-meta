@@ -8,7 +8,7 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
 
-    let remote_name = ctx.session.resolve_remote(remote)?;
+    let remote_name = gmeta_core::git_utils::resolve_meta_remote(ctx.session.repo(), remote)?;
 
     // Gather project info from git config
     let config = repo.config_snapshot();
@@ -75,7 +75,7 @@ pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     }
 
     eprintln!("Pushing README to {}...", remote_name);
-    let result = ctx.session.run_git(&["push", &remote_name, &push_refspec]);
+    let result = gmeta_core::git_utils::run_git(repo, &["push", &remote_name, &push_refspec]);
 
     match result {
         Ok(_) => {
@@ -168,11 +168,11 @@ const MAX_RETRIES: u32 = 5;
 
 pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let resolved_remote = ctx.session.resolve_remote(remote)?;
+    let resolved_remote = gmeta_core::git_utils::resolve_meta_remote(ctx.session.repo(), remote)?;
 
     if verbose {
         let ns = ctx.session.namespace();
-        let local_ref = ctx.session.local_ref();
+        let local_ref = format!("refs/{}/local/main", ns);
         let remote_refspec = format!("refs/{}/main", ns);
         eprintln!("[verbose] remote: {}", resolved_remote);
         eprintln!("[verbose] local ref: {}", local_ref);

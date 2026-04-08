@@ -55,7 +55,7 @@ pub fn run() -> Result<()> {
         let message = decoded.message.to_str_lossy().to_string();
         let first_line = message.lines().next().unwrap_or("");
 
-        match gmeta_core::__private::parse_commit_changes(&message) {
+        match gmeta_core::sync::parse_commit_changes(&message) {
             Some(changes) => {
                 commits_parsed += 1;
                 let mut commit_inserted = 0;
@@ -96,7 +96,7 @@ pub fn run() -> Result<()> {
             None if decoded.parents().count() == 0 => {
                 // Root commit without a change list -- walk its tree
                 let tree_id = decoded.tree();
-                let keys = ctx.session.keys_in_tree(tree_id)?;
+                let keys = gmeta_core::sync::extract_keys_from_tree(repo, tree_id)?;
                 commits_parsed += 1;
                 let mut commit_inserted = 0;
                 let mut commit_skipped = 0;

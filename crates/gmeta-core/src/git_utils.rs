@@ -200,6 +200,7 @@ pub fn hydrate_tip_blobs_counted(
 /// # Errors
 ///
 /// Returns an error if reading tree objects from the repository fails.
+#[cfg_attr(not(feature = "internal"), allow(dead_code))]
 pub fn find_blob_oid_in_tree(
     repo: &gix::Repository,
     tree_id: gix::ObjectId,
@@ -251,6 +252,7 @@ pub fn find_blob_oid_in_tree(
 /// # Errors
 ///
 /// Returns an error if the fetch subprocess fails.
+#[cfg_attr(not(feature = "internal"), allow(dead_code))]
 pub fn fetch_blob_oids(
     repo: &gix::Repository,
     remote_name: &str,

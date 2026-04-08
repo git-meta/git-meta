@@ -535,7 +535,7 @@ fn import_session(
                                 timestamp: *ts + i as i64,
                             });
                         }
-                        let encoded = gmeta_core::__private::encode_entries(&entries)?;
+                        let encoded = gmeta_core::list_value::encode_entries(&entries)?;
                         count += set_value(
                             repo,
                             db,
@@ -732,7 +732,7 @@ fn import_trails(
                             timestamp: ts + i as i64,
                         });
                     }
-                    let encoded = gmeta_core::__private::encode_entries(&entries)?;
+                    let encoded = gmeta_core::list_value::encode_entries(&entries)?;
                     count += set_value(
                         repo,
                         db,

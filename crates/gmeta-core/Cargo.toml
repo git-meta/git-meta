@@ -3,6 +3,11 @@ name = "gmeta-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+## Expose internal plumbing modules for the gmeta CLI.
+## Library consumers should NOT enable this feature.
+internal = []
+
 [dependencies]
 gix = { workspace = true }
 rusqlite = { workspace = true }

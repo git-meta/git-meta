@@ -10,7 +10,7 @@ use gix::prelude::ObjectIdExt;
 use gix::refs::transaction::PreviousValue;
 
 use crate::context::CommandContext;
-use gmeta_core::__private::parse_since_to_cutoff_ms;
+use gmeta_core::prune::parse_since_to_cutoff_ms;
 use gmeta_core::serialize::{build_filtered_tree, count_prune_stats};
 use gmeta_core::tree::filter::{classify_key, parse_filter_rules, MAIN_DEST};
 use gmeta_core::types::TargetType;
@@ -55,7 +55,7 @@ pub fn run(dry_run: bool) -> Result<()> {
             .unwrap_or_else(|| "?".to_string());
 
     // Find the current serialized tree
-    let ref_name = ctx.session.local_ref();
+    let ref_name = format!("refs/{}/local/main", ctx.session.namespace());
     let current_commit_oid = match repo
         .find_reference(&ref_name)
         .ok()

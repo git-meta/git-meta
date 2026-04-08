@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::context::CommandContext;
-use gmeta_core::__private::{parse_since_to_cutoff_ms, read_prune_rules};
+use gmeta_core::prune::{parse_since_to_cutoff_ms, read_prune_rules};
 use gmeta_core::types::TargetType;
 
 pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {

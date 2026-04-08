@@ -4,7 +4,7 @@ use gix::prelude::ObjectIdExt;
 use serde_json::{json, Map, Value};
 
 use crate::context::CommandContext;
-use gmeta_core::__private::list_values_from_json;
+use gmeta_core::list_value::list_values_from_json;
 use gmeta_core::types::{self, Target, TargetType, ValueType};
 use gmeta_core::Store;
 
@@ -151,7 +151,9 @@ fn hydrate_promised_entries(
 
         // Try __value (string) first
         if let Ok(path) = parsed_target.tree_path(key) {
-            if let Some(oid) = session.find_blob_in_tree(tip_tree_id, &path)? {
+            if let Some(oid) =
+                gmeta_core::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &path)?
+            {
                 pending.push(PendingEntry {
                     idx,
                     oids: vec![oid],
@@ -163,7 +165,9 @@ fn hydrate_promised_entries(
 
         // Try __list directory
         if let Ok(path) = parsed_target.list_dir_path(key) {
-            if let Some(dir_oid) = session.find_blob_in_tree(tip_tree_id, &path)? {
+            if let Some(dir_oid) =
+                gmeta_core::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &path)?
+            {
                 // dir_oid is a tree — collect all blob entries in it
                 let list_tree = dir_oid.attach(repo).object()?.into_tree();
                 let oids: Vec<_> = list_tree
@@ -195,7 +199,9 @@ fn hydrate_promised_entries(
         // Try __set directory
         if let Ok(key_path) = parsed_target.key_tree_path(key) {
             let set_path = format!("{}/{}", key_path, types::SET_VALUE_DIR);
-            if let Some(dir_oid) = session.find_blob_in_tree(tip_tree_id, &set_path)? {
+            if let Some(dir_oid) =
+                gmeta_core::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &set_path)?
+            {
                 let set_tree = dir_oid.attach(repo).object()?.into_tree();
                 let oids: Vec<_> = set_tree
                     .iter()
@@ -249,13 +255,13 @@ fn hydrate_promised_entries(
     }
 
     if !missing.is_empty() {
-        let remote_name = session.resolve_remote(None)?;
+        let remote_name = gmeta_core::git_utils::resolve_meta_remote(repo, None)?;
         eprintln!(
             "Fetching {} blob{} from remote...",
             missing.len(),
             if missing.len() == 1 { "" } else { "s" }
         );
-        session.fetch_blobs(&remote_name, &missing)?;
+        gmeta_core::git_utils::fetch_blob_oids(repo, &remote_name, &missing)?;
     }
 
     // Now read blobs and update DB
