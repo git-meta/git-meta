@@ -21,8 +21,8 @@
     },
     {
       step: 1,
-      type: 'git meta set -t set path:src/metrics <k>owners</k> <s>\'["schacon", "caleb"]\'</s>',
-      out: '<mut>→ wrote set (2 members) on path:src/metrics</mut>',
+      type: 'git meta set:add path:src/metrics <k>owners</k> <s>schacon</s>',
+      out: '<mut>→ added `schacon` to set (1 member) on path:src/metrics</mut>',
     },
     {
       step: 2,

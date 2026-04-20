@@ -77,21 +77,16 @@ fn list_pop() {
 }
 
 #[test]
-fn set_list_type() {
+fn list_push_creates_list_from_scratch() {
     let (dir, sha) = setup_repo();
     let target = commit_target(&sha);
 
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "list",
-            &target,
-            "items",
-            r#"["hello","world"]"#,
-        ])
-        .assert()
-        .success();
+    for value in ["hello", "world"] {
+        harness::git_meta(dir.path())
+            .args(["list:push", &target, "items", value])
+            .assert()
+            .success();
+    }
 
     harness::git_meta(dir.path())
         .args(["get", &target, "items"])

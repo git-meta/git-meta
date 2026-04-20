@@ -81,17 +81,17 @@ fn serialize_path_target_uses_raw_segments_and_separator() {
 fn serialize_list_values() {
     let (dir, _sha) = setup_repo();
 
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "list",
-            "branch:sc-branch-1-deadbeef",
-            "agent:chat",
-            r#"["how's it going","pretty good"]"#,
-        ])
-        .assert()
-        .success();
+    for value in ["how's it going", "pretty good"] {
+        harness::git_meta(dir.path())
+            .args([
+                "list:push",
+                "branch:sc-branch-1-deadbeef",
+                "agent:chat",
+                value,
+            ])
+            .assert()
+            .success();
+    }
 
     harness::git_meta(dir.path())
         .args(["serialize"])
@@ -151,17 +151,17 @@ fn serialize_empty() {
 fn serialize_list_uses_stored_timestamp() {
     let (dir, _sha) = setup_repo();
 
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "list",
-            "branch:sc-branch-1-deadbeef",
-            "agent:chat",
-            r#"["hello","world"]"#,
-        ])
-        .assert()
-        .success();
+    for value in ["hello", "world"] {
+        harness::git_meta(dir.path())
+            .args([
+                "list:push",
+                "branch:sc-branch-1-deadbeef",
+                "agent:chat",
+                value,
+            ])
+            .assert()
+            .success();
+    }
 
     harness::git_meta(dir.path())
         .args(["serialize"])

@@ -419,17 +419,12 @@ fn set_add_deduplicates_members() {
 fn set_type_round_trips_and_serializes_members() {
     let (dir, _sha) = setup_repo();
 
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "set",
-            "branch:sc-branch-1-deadbeef",
-            "reviewer",
-            r#"["alice@example.com","bob@example.com","alice@example.com"]"#,
-        ])
-        .assert()
-        .success();
+    for member in ["alice@example.com", "bob@example.com", "alice@example.com"] {
+        harness::git_meta(dir.path())
+            .args(["set:add", "branch:sc-branch-1-deadbeef", "reviewer", member])
+            .assert()
+            .success();
+    }
 
     harness::git_meta(dir.path())
         .args(["get", "branch:sc-branch-1-deadbeef", "reviewer"])

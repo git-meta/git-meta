@@ -77,17 +77,12 @@ fn fast_forward_applies_remote_list_entry_removal() {
     let (dir, _sha) = setup_repo();
     let target = "branch:sc-branch-1-deadbeef";
 
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "list",
-            target,
-            "agent:chat",
-            r#"["a","b","c"]"#,
-        ])
-        .assert()
-        .success();
+    for value in ["a", "b", "c"] {
+        harness::git_meta(dir.path())
+            .args(["list:push", target, "agent:chat", value])
+            .assert()
+            .success();
+    }
     harness::git_meta(dir.path())
         .args(["serialize"])
         .assert()
@@ -125,17 +120,12 @@ fn fast_forward_applies_remote_list_entry_removal() {
     .unwrap();
     drop(repo);
 
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "list",
-            target,
-            "agent:chat",
-            r#"["a","b","c"]"#,
-        ])
-        .assert()
-        .success();
+    for value in ["a", "b", "c"] {
+        harness::git_meta(dir.path())
+            .args(["list:push", target, "agent:chat", value])
+            .assert()
+            .success();
+    }
 
     harness::git_meta(dir.path())
         .args(["materialize"])
@@ -177,30 +167,20 @@ fn serialize_wipe_db_materialize_restores_all_data() {
         .success();
 
     // Set a list value on a branch target.
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "list",
-            "branch:sc-feature-abc123",
-            "agent:chat",
-            r#"["hello","world"]"#,
-        ])
-        .assert()
-        .success();
+    for value in ["hello", "world"] {
+        harness::git_meta(dir.path())
+            .args(["list:push", "branch:sc-feature-abc123", "agent:chat", value])
+            .assert()
+            .success();
+    }
 
     // Set a set value on a branch target.
-    harness::git_meta(dir.path())
-        .args([
-            "set",
-            "-t",
-            "set",
-            "branch:sc-feature-abc123",
-            "reviewer",
-            r#"["alice@example.com","bob@example.com"]"#,
-        ])
-        .assert()
-        .success();
+    for member in ["alice@example.com", "bob@example.com"] {
+        harness::git_meta(dir.path())
+            .args(["set:add", "branch:sc-feature-abc123", "reviewer", member])
+            .assert()
+            .success();
+    }
 
     // Serialize everything to refs/meta/local/main.
     harness::git_meta(dir.path())

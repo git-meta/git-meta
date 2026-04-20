@@ -51,12 +51,11 @@
           <p>This document describes the intended command-line interface at the project level.</p>
 <h2 id="core-commands">Core commands</h2>
 <h3 id="set-a-value">Set a value</h3>
-<pre><code>git meta set [-t &lt;type&gt;] &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
-<p>If <code>-t</code> is not given, the value type defaults to <code>string</code>.</p>
+<pre><code>git meta set &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
+<p><code>git meta set</code> always writes a string value. List and set values are mutated through their own dedicated verbs (see below).</p>
 <p>Examples:</p>
 <pre><code>git meta set commit:314e7f0fa7 agent:model claude-4.6
-git meta set -t list branch:sc-branch-1-deadbeef agent:chat &#x27;[&quot;hello&quot;, &quot;world&quot;]&#x27;
-git meta set -t set path:src/metrics owners &#x27;[&quot;schacon&quot;, &quot;caleb&quot;]&#x27;</code></pre>
+git meta set path:src/metrics review:status approved</code></pre>
 <h3 id="get-values">Get values</h3>
 <pre><code>git meta get &lt;target&gt; [&lt;key&gt;]</code></pre>
 <p>Behavior:</p>
@@ -94,12 +93,8 @@ branch:&lt;name-or-uuid&gt;
 path:src/metrics
 project</code></pre>
 <h2 id="value-encoding">Value encoding</h2>
-<h3 id="string-input">String input</h3>
-<p>Without <code>-t</code>, <code>&lt;value&gt;</code> is interpreted as a string.</p>
-<h3 id="list-input">List input</h3>
-<p>For <code>-t list</code>, <code>&lt;value&gt;</code> should be a JSON array of strings.</p>
-<h3 id="set-input">Set input</h3>
-<p>For <code>-t set</code>, <code>&lt;value&gt;</code> should be a JSON array of unique strings.</p>
+<p><code>git meta set</code> only writes string values. To populate or mutate list and set values, use the dedicated verbs:</p>
+<ul><li><code>git meta list:push &lt;target&gt; &lt;key&gt; &lt;value&gt;</code> to append a list entry</li><li><code>git meta list:pop &lt;target&gt; &lt;key&gt; &lt;value&gt;</code> to drop a list entry</li><li><code>git meta set:add &lt;target&gt; &lt;key&gt; &lt;value&gt;</code> to add a set member</li><li><code>git meta set:rm &lt;target&gt; &lt;key&gt; &lt;value&gt;</code> to remove a set member</li></ul>
 <h2 id="output-modes">Output modes</h2>
 <p><code>git meta get</code> may support:</p>
 <ul><li>human-readable tabular output</li><li><code>--json</code></li><li><code>--with-authorship</code> for author/timestamp metadata in JSON mode</li></ul>
