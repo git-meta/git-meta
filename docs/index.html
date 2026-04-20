@@ -1,72 +1,115 @@
 <!doctype html>
 <html lang="en" data-theme="light">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>git-meta — structured metadata for Git</title>
-<meta name="description" content="git-meta is an open specification for attaching arbitrary, fine-grained metadata to Git objects — provenance, ownership, reviews, attestations — stored locally for fast queries and exchanged over the refs you already push." />
-<link rel="icon" type="image/png" href="assets/git-meta-icon.png" />
-<link rel="canonical" href="https://git-meta.com/" />
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>git-meta — structured metadata for Git</title>
+    <meta
+      name="description"
+      content="git-meta is an open specification for attaching arbitrary, fine-grained metadata to Git objects — provenance, ownership, reviews, attestations — stored locally for fast queries and exchanged over the refs you already push."
+    />
+    <link rel="icon" type="image/png" href="assets/git-meta-icon.png" />
+    <link rel="canonical" href="https://git-meta.com/" />
 
-<meta property="og:type" content="website" />
-<meta property="og:url" content="https://git-meta.com/" />
-<meta property="og:title" content="git-meta — structured metadata for Git" />
-<meta property="og:description" content="An open specification for attaching arbitrary, fine-grained metadata to Git objects, exchanged over the refs you already push." />
-<meta property="og:image" content="https://git-meta.com/assets/git-meta-icon.png" />
-<meta name="twitter:card" content="summary" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://git-meta.com/" />
+    <meta
+      property="og:title"
+      content="git-meta — structured metadata for Git"
+    />
+    <meta
+      property="og:description"
+      content="An open specification for attaching arbitrary, fine-grained metadata to Git objects, exchanged using normal Git servers and refs."
+    />
+    <meta
+      property="og:image"
+      content="https://git-meta.com/assets/git-meta-icon.png"
+    />
+    <meta name="twitter:card" content="summary" />
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-
-<header class="site-header">
-  <div class="wrap nav">
-    <a class="brand" href="#top" aria-label="git-meta home">
-      <img class="brand-mark" src="assets/git-meta-icon.png" width="32" height="32" alt="">
-      <span class="brand-name">git-meta</span>
-      <span class="brand-tag">spec &middot; 0.1-draft</span>
-    </a>
-    <nav class="nav-links" aria-label="Primary">
-      <a href="#use-cases">Use cases</a>
-      <a href="#demo">Demo</a>
-      <a href="#compare">vs. existing</a>
-      <a href="#faq">FAQ</a>
-      <a href="spec/" class="nav-muted">Spec &rarr;</a>
-      <a href="https://github.com/git-meta/git-meta" class="btn btn-ghost btn-sm">GitHub</a>
-    </nav>
-  </div>
-</header>
-
-<main id="top">
-
-  <!-- HERO -->
-  <section class="hero">
-    <div class="wrap">
-      <h1 class="headline">Metadata for Git,<br>for everyone.</h1>
-      <p class="lede">
-        git-meta is an open specification for attaching arbitrary, fine-grained metadata to Git
-        objects &mdash; provenance, ownership, reviews, attestations &mdash; stored locally for fast
-        queries and exchanged over the refs you already push.
-      </p>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/git-meta/git-meta">
-          Try the implementation
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="#top" aria-label="git-meta home">
+          <img
+            class="brand-mark"
+            src="assets/git-meta-icon.png"
+            width="32"
+            height="32"
+            alt=""
+          />
+          <span class="brand-name">git-meta</span>
         </a>
-        <a class="btn btn-ghost" href="spec/">Read the spec</a>
-        <span class="cta-note"><code>v0.1</code> &middot; MIT</span>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#use-cases">Use cases</a>
+          <a href="#demo">Demo</a>
+          <a href="#compare">Compare</a>
+          <a href="#faq">FAQ</a>
+          <a href="spec/" class="nav-muted">Spec &rarr;</a>
+          <a
+            href="https://github.com/git-meta/git-meta"
+            class="btn btn-ghost btn-sm"
+            >GitHub</a
+          >
+        </nav>
       </div>
+    </header>
 
-      <!-- Hero terminal card -->
-      <div class="hero-term" aria-hidden="true">
-        <div class="term-chrome">
-          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-          <span class="term-title">~/acme-api</span>
-        </div>
-<pre class="term-body"><span class="c-mut">$</span> git meta set commit:314e7f0 <span class="c-k">agent:model</span> <span class="c-s">claude-4.6</span>
+    <main id="top">
+      <!-- HERO -->
+      <section class="hero">
+        <div class="wrap">
+          <h1 class="headline">Open, Structured Metadata for Git</h1>
+          <p class="lede">
+            git-meta is an open specification for attaching arbitrary,
+            fine-grained metadata to Git objects &mdash; provenance, ownership,
+            reviews, attestations &mdash; stored locally for fast queries and
+            exchanged using normal Git transfer protocols and servers.
+          </p>
+          <div class="cta-row">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/git-meta/git-meta"
+            >
+              Try the implementation
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 7h8M7 3l4 4-4 4"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </a>
+            <a class="btn btn-ghost" href="spec/">Read the spec</a>
+            <span class="cta-note"><code>v0.1</code> &middot; MIT</span>
+          </div>
+
+          <!-- Hero terminal card -->
+          <div class="hero-term" aria-hidden="true">
+            <div class="term-chrome">
+              <span class="dot r"></span><span class="dot y"></span
+              ><span class="dot g"></span>
+              <span class="term-title">~/acme-api</span>
+            </div>
+            <pre
+              class="term-body"
+            ><span class="c-mut">$</span> git meta set commit:314e7f0 <span class="c-k">agent:model</span> <span class="c-s">claude-4.6</span>
 <span class="c-mut">$</span> git meta set -t set path:src/metrics <span class="c-k">owners</span> <span class="c-s">'["schacon", "caleb"]'</span>
 <span class="c-mut">$</span> git meta get path:src/metrics
 <span class="c-mut">owners           </span><span class="c-s">{schacon, caleb}</span>
@@ -74,448 +117,630 @@
 <span class="c-mut">policy:required  </span><span class="c-s">true</span>
 <span class="c-mut">$</span> git meta push
 <span class="c-ok">&rarr; wrote 1 metadata commit, pushed refs/meta/main</span></pre>
-      </div>
-    </div>
-  </section>
+          </div>
+        </div>
+      </section>
 
-  <!-- WHY STRIP -->
-  <section class="why">
-    <div class="wrap why-grid">
-      <div class="why-item">
-        <div class="why-num">01</div>
-        <div class="why-title">Fine-grained targets</div>
-        <p>Attach keys to commits, branches, paths, change-ids, or the project itself &mdash; not just whole commits.</p>
-      </div>
-      <div class="why-item">
-        <div class="why-num">02</div>
-        <div class="why-title">Mergeable by design</div>
-        <p>Data is modeled as many small tree entries, so concurrent edits merge cleanly without custom resolvers.</p>
-      </div>
-      <div class="why-item">
-        <div class="why-num">03</div>
-        <div class="why-title">Rides on plain Git</div>
-        <p>Metadata is exchanged as commits on <code>refs/meta/*</code>. If you can <code>git push</code>, you can share it.</p>
-      </div>
-      <div class="why-item">
-        <div class="why-num">04</div>
-        <div class="why-title">Fast locally</div>
-        <p>A local index keeps reads and writes cheap, even as metadata grows into millions of entries.</p>
-      </div>
-    </div>
-  </section>
+      <!-- WHY STRIP -->
+      <section class="why">
+        <div class="wrap why-grid">
+          <div class="why-item">
+            <div class="why-num">01</div>
+            <div class="why-title">Fine-grained targets</div>
+            <p>
+              Attach keys to commits, branches, paths, change-ids, or the
+              project itself &mdash; not just whole commits.
+            </p>
+          </div>
+          <div class="why-item">
+            <div class="why-num">02</div>
+            <div class="why-title">Mergeable by design</div>
+            <p>
+              Data is modeled as many small tree entries, so concurrent edits
+              merge cleanly without custom resolvers.
+            </p>
+          </div>
+          <div class="why-item">
+            <div class="why-num">03</div>
+            <div class="why-title">Rides on plain Git</div>
+            <p>
+              Metadata is exchanged as commits on <code>refs/meta/*</code>. If
+              you can <code>git push</code>, you can share it.
+            </p>
+          </div>
+          <div class="why-item">
+            <div class="why-num">04</div>
+            <div class="why-title">Fast locally</div>
+            <p>
+              A local index keeps reads and writes cheap, even as metadata grows
+              into millions of entries.
+            </p>
+          </div>
+        </div>
+      </section>
 
-  <!-- USE CASES -->
-  <section id="use-cases" class="section">
-    <div class="wrap">
-      <div class="section-head">
-        <div class="eyebrow">Use cases</div>
-        <h2>Things that don't belong in a commit message.</h2>
-        <p class="section-lede">Metadata wants its own lane &mdash; structured, queryable, independently mutable &mdash; without polluting your working tree.</p>
-      </div>
+      <!-- USE CASES -->
+      <section id="use-cases" class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="eyebrow">Use cases</div>
+            <h2>Things that don't belong in a commit message.</h2>
+            <p class="section-lede">
+              Metadata wants its own lane &mdash; structured, queryable,
+              independently mutable &mdash; without polluting your working tree.
+            </p>
+          </div>
 
-      <div class="cases">
-        <article class="case">
-          <div class="case-tag">AI provenance</div>
-          <h3>What wrote this code, and how?</h3>
-          <p>Stamp the model, prompt hash, and transcript ref onto the commits an agent produces. Audit later without parsing messages.</p>
-          <pre class="snippet"><span class="c-mut">$</span> git meta set commit:HEAD <span class="c-k">agent:model</span> <span class="c-s">claude-4.6</span>
+          <div class="cases">
+            <article class="case">
+              <div class="case-tag">AI provenance</div>
+              <h3>What wrote this code, and how?</h3>
+              <p>
+                Stamp the model, prompt hash, and transcript ref onto the
+                commits an agent produces. Audit later without parsing messages.
+              </p>
+              <pre
+                class="snippet"
+              ><span class="c-mut">$</span> git meta set commit:HEAD <span class="c-k">agent:model</span> <span class="c-s">claude-4.6</span>
 <span class="c-mut">$</span> git meta set -t list branch:feat-checkout <span class="c-k">agent:chat</span> \
     <span class="c-s">'["msg-0af1", "msg-0af2"]'</span></pre>
-        </article>
+            </article>
 
-        <article class="case">
-          <div class="case-tag">Ownership</div>
-          <h3>CODEOWNERS, but structured.</h3>
-          <p>Keep owners, reviewers, and policy hints against paths &mdash; as sets that merge across branches instead of a single file people fight over.</p>
-          <pre class="snippet"><span class="c-mut">$</span> git meta set -t set path:src/billing <span class="c-k">owners</span> <span class="c-s">'["ali", "jin"]'</span>
+            <article class="case">
+              <div class="case-tag">Ownership</div>
+              <h3>CODEOWNERS, but structured.</h3>
+              <p>
+                Keep owners, reviewers, and policy hints against paths &mdash;
+                as sets that merge across branches instead of a single file
+                people fight over.
+              </p>
+              <pre
+                class="snippet"
+              ><span class="c-mut">$</span> git meta set -t set path:src/billing <span class="c-k">owners</span> <span class="c-s">'["ali", "jin"]'</span>
 <span class="c-mut">$</span> git meta set:add path:src/billing <span class="c-k">reviewers</span> <span class="c-s">mira</span></pre>
-        </article>
+            </article>
 
-        <article class="case">
-          <div class="case-tag">Review &amp; discussion</div>
-          <h3>Comments that travel with the code.</h3>
-          <p>Attach review threads and approvals directly to commits or ranges. Independent of any single forge.</p>
-          <pre class="snippet"><span class="c-mut">$</span> git meta set commit:314e7f0 <span class="c-k">review:status</span> <span class="c-s">approved</span>
+            <article class="case">
+              <div class="case-tag">Review &amp; discussion</div>
+              <h3>Comments that travel with the code.</h3>
+              <p>
+                Attach review threads and approvals directly to commits or
+                ranges. Independent of any single forge.
+              </p>
+              <pre
+                class="snippet"
+              ><span class="c-mut">$</span> git meta set commit:314e7f0 <span class="c-k">review:status</span> <span class="c-s">approved</span>
 <span class="c-mut">$</span> git meta list:push commit:314e7f0 <span class="c-k">review:notes</span> \
     <span class="c-s">"lgtm; verify the retry backoff"</span></pre>
-        </article>
+            </article>
 
-        <article class="case">
-          <div class="case-tag">Attestations</div>
-          <h3>Tests, builds, and signatures.</h3>
-          <p>Record test runs, SBOMs, or signatures as first-class keys &mdash; many independent fields on the same commit, each mutable on its own schedule.</p>
-          <pre class="snippet"><span class="c-mut">$</span> git meta set commit:HEAD <span class="c-k">ci:status</span>  <span class="c-s">passed</span>
+            <article class="case">
+              <div class="case-tag">Attestations</div>
+              <h3>Tests, builds, and signatures.</h3>
+              <p>
+                Record test runs, SBOMs, or signatures as first-class keys
+                &mdash; many independent fields on the same commit, each mutable
+                on its own schedule.
+              </p>
+              <pre
+                class="snippet"
+              ><span class="c-mut">$</span> git meta set commit:HEAD <span class="c-k">ci:status</span>  <span class="c-s">passed</span>
 <span class="c-mut">$</span> git meta set commit:HEAD <span class="c-k">ci:run</span>     <span class="c-s">gha-4912</span>
 <span class="c-mut">$</span> git meta set commit:HEAD <span class="c-k">sbom:sha</span>   <span class="c-s">sha256:ab&hellip;</span></pre>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- HOW IT WORKS / DIAGRAM -->
-  <section id="how" class="section section-alt">
-    <div class="wrap how-grid">
-      <div class="how-copy">
-        <div class="eyebrow">How it works</div>
-        <h2>Two halves, connected by plain Git refs.</h2>
-        <p class="section-lede">
-          Locally, metadata lives in a fast index keyed by target and field. To share, git-meta
-          <strong>serializes</strong> it into a commit on a <code>refs/meta/*</code> ref. When you
-          fetch, <strong>materialization</strong> merges incoming changes back into the local index.
-        </p>
-        <ul class="how-list">
-          <li><span>Local index</span> &mdash; fast queries, cheap mutations, per-key history.</li>
-          <li><span>Serialize</span> &mdash; write current state as a Git tree + commit on <code>refs/meta/&lt;name&gt;</code>.</li>
-          <li><span>Transport</span> &mdash; <code>git push</code> / <code>git fetch</code>. No new servers.</li>
-          <li><span>Materialize</span> &mdash; deterministic three-way merge back into the local index.</li>
-        </ul>
-      </div>
-      <div class="how-diagram" aria-hidden="true">
-        <svg viewBox="0 0 520 360" width="100%" height="auto" role="img" aria-label="Diagram showing local index serialized to a refs/meta commit and materialized back">
-          <defs>
-            <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
-            </marker>
-          </defs>
-
-          <!-- Local index -->
-          <g class="diag-group">
-            <rect x="20" y="30" width="200" height="300" rx="10" class="diag-box"/>
-            <text x="34" y="54" class="diag-title">Local index</text>
-            <text x="34" y="74" class="diag-sub">~/.git/meta</text>
-
-            <g class="diag-row">
-              <rect x="34" y="92" width="172" height="34" rx="5"/>
-              <text x="44" y="106" class="diag-k">commit:314e7f0</text>
-              <text x="44" y="120" class="diag-v">agent:model &rarr; claude-4.6</text>
-            </g>
-            <g class="diag-row">
-              <rect x="34" y="136" width="172" height="34" rx="5"/>
-              <text x="44" y="150" class="diag-k">path:src/metrics</text>
-              <text x="44" y="164" class="diag-v">owners {schacon, caleb}</text>
-            </g>
-            <g class="diag-row">
-              <rect x="34" y="180" width="172" height="34" rx="5"/>
-              <text x="44" y="194" class="diag-k">branch:feat-x</text>
-              <text x="44" y="208" class="diag-v">review:status approved</text>
-            </g>
-            <g class="diag-row">
-              <rect x="34" y="224" width="172" height="34" rx="5"/>
-              <text x="44" y="238" class="diag-k">commit:9a3f&hellip;</text>
-              <text x="44" y="252" class="diag-v">ci:status passed</text>
-            </g>
-            <text x="34" y="288" class="diag-foot">fast reads &middot; per-key history</text>
-          </g>
-
-          <!-- Arrows + labels -->
-          <g class="diag-arrows">
-            <path d="M222 130 L300 130" marker-end="url(#arr)"/>
-            <text x="261" y="122" text-anchor="middle" class="diag-label">serialize</text>
-            <path d="M300 230 L222 230" marker-end="url(#arr)"/>
-            <text x="261" y="248" text-anchor="middle" class="diag-label">materialize</text>
-          </g>
-
-          <!-- refs/meta commit -->
-          <g class="diag-group">
-            <rect x="300" y="30" width="200" height="300" rx="10" class="diag-box"/>
-            <text x="314" y="54" class="diag-title">refs/meta/main</text>
-            <text x="314" y="74" class="diag-sub">normal git commit</text>
-
-            <!-- tree shape -->
-            <g transform="translate(314 92)">
-              <circle cx="12" cy="12" r="6" class="tree-node head"/>
-              <text x="28" y="16" class="diag-v">commit 4c21&hellip;</text>
-
-              <line x1="12" y1="18" x2="12" y2="44" class="tree-edge"/>
-              <circle cx="12" cy="50" r="5" class="tree-node"/>
-              <text x="28" y="54" class="diag-v">tree &middot; targets/</text>
-
-              <line x1="12" y1="56" x2="12" y2="80" class="tree-edge"/>
-              <line x1="12" y1="80" x2="40" y2="80" class="tree-edge"/>
-              <line x1="12" y1="80" x2="12" y2="110" class="tree-edge"/>
-              <line x1="12" y1="110" x2="40" y2="110" class="tree-edge"/>
-              <line x1="12" y1="110" x2="12" y2="140" class="tree-edge"/>
-              <line x1="12" y1="140" x2="40" y2="140" class="tree-edge"/>
-
-              <circle cx="44" cy="80" r="4" class="tree-node"/>
-              <text x="56" y="84" class="diag-v">commit:314e&hellip;</text>
-              <circle cx="44" cy="110" r="4" class="tree-node"/>
-              <text x="56" y="114" class="diag-v">path:src/metrics</text>
-              <circle cx="44" cy="140" r="4" class="tree-node"/>
-              <text x="56" y="144" class="diag-v">branch:feat-x</text>
-
-              <line x1="44" y1="146" x2="44" y2="170" class="tree-edge"/>
-              <line x1="44" y1="170" x2="72" y2="170" class="tree-edge"/>
-              <line x1="44" y1="170" x2="44" y2="194" class="tree-edge"/>
-              <line x1="44" y1="194" x2="72" y2="194" class="tree-edge"/>
-              <circle cx="76" cy="170" r="3" class="tree-node leaf"/>
-              <text x="86" y="174" class="diag-v">review:status</text>
-              <circle cx="76" cy="194" r="3" class="tree-node leaf"/>
-              <text x="86" y="198" class="diag-v">ci:status</text>
-            </g>
-            <text x="314" y="310" class="diag-foot">travels over any git remote</text>
-          </g>
-        </svg>
-      </div>
-    </div>
-  </section>
-
-  <!-- BIG TERMINAL DEMO -->
-  <section id="demo" class="section">
-    <div class="wrap">
-      <div class="section-head">
-        <div class="eyebrow">CLI walkthrough</div>
-        <h2>Five commands you already know how to read.</h2>
-        <p class="section-lede">The surface is intentionally Git-shaped: verbs you recognize, targets that look like refs, values as strings, lists, or sets.</p>
-      </div>
-
-      <div class="demo">
-        <div class="demo-term">
-          <div class="term-chrome">
-            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-            <span class="term-title">git meta &mdash; walkthrough</span>
-            <div class="term-ctrl">
-              <button class="term-btn" id="demo-replay" type="button">Replay</button>
-            </div>
+            </article>
           </div>
-          <pre class="term-body" id="demo-body" aria-live="polite"></pre>
         </div>
+      </section>
 
-        <aside class="demo-side">
-          <ol class="demo-steps">
-            <li data-step="0"><span class="demo-tag">set</span> a string on a commit</li>
-            <li data-step="1"><span class="demo-tag">set</span> a typed set on a path</li>
-            <li data-step="2"><span class="demo-tag">get</span> everything for a target</li>
-            <li data-step="3"><span class="demo-tag">set:add</span> a single member</li>
-            <li data-step="4"><span class="demo-tag">serialize</span> and push over plain git</li>
-          </ol>
-          <p class="demo-foot">Every command maps 1:1 to a spec section. <a href="spec/implementation/cli.html">CLI surface &rarr;</a></p>
-        </aside>
-      </div>
-    </div>
-  </section>
+      <!-- HOW IT WORKS / DIAGRAM -->
+      <section id="how" class="section section-alt">
+        <div class="wrap how-grid">
+          <div class="how-copy">
+            <div class="eyebrow">How it works</div>
+            <h2>Two halves, connected by plain Git refs.</h2>
+            <p class="section-lede">
+              Locally, metadata lives in a fast index keyed by target and field.
+              To share, git-meta
+              <strong>serializes</strong> it into a commit on a
+              <code>refs/meta/*</code> ref. When you fetch,
+              <strong>materialization</strong> merges incoming changes back into
+              the local index.
+            </p>
+            <ul class="how-list">
+              <li>
+                <span>Local index</span> &mdash; fast queries, cheap mutations,
+                per-key history.
+              </li>
+              <li>
+                <span>Serialize</span> &mdash; write current state as a Git tree
+                + commit on <code>refs/meta/&lt;name&gt;</code>.
+              </li>
+              <li>
+                <span>Transport</span> &mdash; <code>git push</code> /
+                <code>git fetch</code>. No new servers.
+              </li>
+              <li>
+                <span>Materialize</span> &mdash; deterministic three-way merge
+                back into the local index.
+              </li>
+            </ul>
+          </div>
+          <div class="how-diagram" aria-hidden="true">
+            <svg
+              viewBox="0 0 520 360"
+              width="100%"
+              height="auto"
+              role="img"
+              aria-label="Diagram showing local index serialized to a refs/meta commit and materialized back"
+            >
+              <defs>
+                <marker
+                  id="arr"
+                  viewBox="0 0 10 10"
+                  refX="8"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+                </marker>
+              </defs>
 
-  <!-- COMPARISON -->
-  <section id="compare" class="section section-alt">
-    <div class="wrap">
-      <div class="section-head">
-        <div class="eyebrow">vs. existing approaches</div>
-        <h2>Where current tools run out of room.</h2>
-        <p class="section-lede">Git already has a handful of metadata escape hatches. Each works for a narrow case; none covers the full surface.</p>
-      </div>
+              <!-- Local index -->
+              <g class="diag-group">
+                <rect
+                  x="20"
+                  y="30"
+                  width="200"
+                  height="300"
+                  rx="10"
+                  class="diag-box"
+                />
+                <text x="34" y="54" class="diag-title">Local index</text>
+                <text x="34" y="74" class="diag-sub">~/.git/meta</text>
 
-      <div class="compare-wrap">
-        <table class="compare">
-          <thead>
-            <tr>
-              <th scope="col"></th>
-              <th scope="col">git notes</th>
-              <th scope="col">commit trailers</th>
-              <th scope="col">CODEOWNERS &amp; co.</th>
-              <th scope="col" class="th-me">git-meta</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">Fine-grained targets<br><span class="row-sub">paths, branches, ranges</span></th>
-              <td class="x">commits only</td>
-              <td class="x">commits only</td>
-              <td class="~">paths only</td>
-              <td class="v">commits &middot; branches &middot; paths &middot; change-ids &middot; project</td>
-            </tr>
-            <tr><th scope="row">Many independent fields</th>
-              <td class="~">one blob</td>
-              <td class="~">flat k/v in message</td>
-              <td class="x">n/a</td>
-              <td class="v">unlimited typed keys per target</td>
-            </tr>
-            <tr><th scope="row">Mergeable under concurrent edits</th>
-              <td class="x">manual resolve</td>
-              <td class="x">immutable</td>
-              <td class="x">text conflicts</td>
-              <td class="v">deterministic per-key merge</td>
-            </tr>
-            <tr><th scope="row">Working tree stays clean</th>
-              <td class="v">yes</td>
-              <td class="v">yes</td>
-              <td class="x">no</td>
-              <td class="v">yes</td>
-            </tr>
-            <tr><th scope="row">Typed values</th>
-              <td class="x">text</td>
-              <td class="x">text</td>
-              <td class="x">text</td>
-              <td class="v">string &middot; list &middot; set</td>
-            </tr>
-            <tr><th scope="row">Scales to large metadata</th>
-              <td class="x">slow</td>
-              <td class="~">bounded</td>
-              <td class="x">file grows</td>
-              <td class="v">indexed locally &middot; sharded in-tree</td>
-            </tr>
-            <tr><th scope="row">Transport</th>
-              <td class="v">refs</td>
-              <td class="v">in commit</td>
-              <td class="v">in tree</td>
-              <td class="v">refs/meta/* &mdash; plain git push</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
+                <g class="diag-row">
+                  <rect x="34" y="92" width="172" height="34" rx="5" />
+                  <text x="44" y="106" class="diag-k">commit:314e7f0</text>
+                  <text x="44" y="120" class="diag-v">
+                    agent:model &rarr; claude-4.6
+                  </text>
+                </g>
+                <g class="diag-row">
+                  <rect x="34" y="136" width="172" height="34" rx="5" />
+                  <text x="44" y="150" class="diag-k">path:src/metrics</text>
+                  <text x="44" y="164" class="diag-v">
+                    owners {schacon, caleb}
+                  </text>
+                </g>
+                <g class="diag-row">
+                  <rect x="34" y="180" width="172" height="34" rx="5" />
+                  <text x="44" y="194" class="diag-k">branch:feat-x</text>
+                  <text x="44" y="208" class="diag-v">
+                    review:status approved
+                  </text>
+                </g>
+                <g class="diag-row">
+                  <rect x="34" y="224" width="172" height="34" rx="5" />
+                  <text x="44" y="238" class="diag-k">commit:9a3f&hellip;</text>
+                  <text x="44" y="252" class="diag-v">ci:status passed</text>
+                </g>
+                <text x="34" y="288" class="diag-foot">
+                  fast reads &middot; per-key history
+                </text>
+              </g>
 
-  <!-- CONTRIBUTORS -->
-  <section id="people" class="section">
-    <div class="wrap">
-      <div class="section-head">
-        <div class="eyebrow">Who's behind it</div>
-        <h2>An open proposal, drafted in public.</h2>
-        <p class="section-lede">git-meta is a spec first. It's being written and refined by folks working on Git tooling, agent frameworks, and forge infrastructure &mdash; and anyone who shows up on GitHub.</p>
-      </div>
+              <!-- Arrows + labels -->
+              <g class="diag-arrows">
+                <path d="M222 130 L300 130" marker-end="url(#arr)" />
+                <text x="261" y="122" text-anchor="middle" class="diag-label">
+                  serialize
+                </text>
+                <path d="M300 230 L222 230" marker-end="url(#arr)" />
+                <text x="261" y="248" text-anchor="middle" class="diag-label">
+                  materialize
+                </text>
+              </g>
 
-      <div class="people">
-        <article class="person">
-          <div class="avatar" data-initials="RB"></div>
-          <div class="person-body">
-            <div class="person-name">Rodrigo Bovendorp</div>
-            <div class="person-role">Spec author &middot; JJCon 2025 talk</div>
-          </div>
-        </article>
-        <article class="person">
-          <div class="avatar" data-initials="SC"></div>
-          <div class="person-body">
-            <div class="person-name">S. Chacon</div>
-            <div class="person-role">Reference implementation</div>
-          </div>
-        </article>
-        <article class="person">
-          <div class="avatar" data-initials="CM"></div>
-          <div class="person-body">
-            <div class="person-name">C. Mason</div>
-            <div class="person-role">Exchange format</div>
-          </div>
-        </article>
-        <article class="person">
-          <div class="avatar" data-initials="+"></div>
-          <div class="person-body">
-            <div class="person-name">You?</div>
-            <div class="person-role"><a href="https://github.com/git-meta/git-meta/issues">Open an issue</a></div>
-          </div>
-        </article>
-      </div>
-    </div>
-  </section>
+              <!-- refs/meta commit -->
+              <g class="diag-group">
+                <rect
+                  x="300"
+                  y="30"
+                  width="200"
+                  height="300"
+                  rx="10"
+                  class="diag-box"
+                />
+                <text x="314" y="54" class="diag-title">refs/meta/main</text>
+                <text x="314" y="74" class="diag-sub">normal git commit</text>
 
-  <!-- FAQ -->
-  <section id="faq" class="section section-alt">
-    <div class="wrap faq-wrap">
-      <div class="faq-head">
-        <div class="eyebrow">FAQ</div>
-        <h2>Common questions.</h2>
-      </div>
-      <div class="faq-list">
-        <details>
-          <summary>Is this an actual tool, or just a spec?</summary>
-          <div class="faq-body">
-            <p>Both. The important part is the <strong>exchange format</strong> &mdash; the agreement
-            needed for different implementations to interoperate. A <strong>reference implementation</strong>
-            lives alongside the spec so you can try the ideas end-to-end.</p>
-          </div>
-        </details>
-        <details>
-          <summary>Does it require changes to Git itself?</summary>
-          <div class="faq-body">
-            <p>No. git-meta uses ordinary Git objects &mdash; trees, commits, and refs under
-            <code>refs/meta/*</code>. Any Git server that accepts arbitrary refs can transport it.</p>
-          </div>
-        </details>
-        <details>
-          <summary>How is this different from <code>git notes</code>?</summary>
-          <div class="faq-body">
-            <p><code>git notes</code> attaches a single blob per commit. git-meta models many small,
-            independently mutable fields against many kinds of targets (paths, branches, change-ids),
-            with typed values and deterministic merges.</p>
-          </div>
-        </details>
-        <details>
-          <summary>What data types are supported?</summary>
-          <div class="faq-body">
-            <p>Three to start: <code>string</code>, <code>list</code>, and <code>set</code>. Each has
-            a documented merge behavior so concurrent edits resolve without custom code.</p>
-          </div>
-        </details>
-        <details>
-          <summary>Will metadata bloat my repo?</summary>
-          <div class="faq-body">
-            <p>Metadata lives on its own <code>refs/meta/*</code> refs, so cloning code doesn't pull
-            metadata unless you ask for it. The local index shards entries and supports auto-pruning
-            for tombstoned keys.</p>
-          </div>
-        </details>
-        <details>
-          <summary>Can I use it for AI provenance?</summary>
-          <div class="faq-body">
-            <p>Yes &mdash; that's one of the motivating use cases. Stamp model, prompt hash, and
-            transcript references onto commits or branches, and query them later without parsing
-            commit messages.</p>
-          </div>
-        </details>
-      </div>
-    </div>
-  </section>
+                <!-- tree shape -->
+                <g transform="translate(314 92)">
+                  <circle cx="12" cy="12" r="6" class="tree-node head" />
+                  <text x="28" y="16" class="diag-v">commit 4c21&hellip;</text>
 
-  <!-- CTA strip -->
-  <section class="cta-strip">
-    <div class="wrap cta-strip-inner">
-      <div>
-        <h2>Read the spec. Try the CLI. Break it.</h2>
-        <p>git-meta is a draft. The fastest way to improve it is to try to use it for something real.</p>
-      </div>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/git-meta/git-meta">Try the implementation</a>
-        <a class="btn btn-ghost" href="spec/">Read the spec</a>
-      </div>
-    </div>
-  </section>
+                  <line x1="12" y1="18" x2="12" y2="44" class="tree-edge" />
+                  <circle cx="12" cy="50" r="5" class="tree-node" />
+                  <text x="28" y="54" class="diag-v">
+                    tree &middot; targets/
+                  </text>
 
-</main>
+                  <line x1="12" y1="56" x2="12" y2="80" class="tree-edge" />
+                  <line x1="12" y1="80" x2="40" y2="80" class="tree-edge" />
+                  <line x1="12" y1="80" x2="12" y2="110" class="tree-edge" />
+                  <line x1="12" y1="110" x2="40" y2="110" class="tree-edge" />
+                  <line x1="12" y1="110" x2="12" y2="140" class="tree-edge" />
+                  <line x1="12" y1="140" x2="40" y2="140" class="tree-edge" />
 
-<footer class="site-footer">
-  <div class="wrap foot-grid">
-    <div>
-      <div class="brand">
-        <img class="brand-mark" src="assets/git-meta-icon.png" width="22" height="22" alt="">
-        <span class="brand-name">git-meta</span>
-      </div>
-      <p class="foot-sub">A proposed metadata exchange format for Git. MIT licensed.</p>
-    </div>
-    <div class="foot-cols">
-      <div>
-        <div class="foot-h">Spec</div>
-        <a href="spec/exchange-format/targets.html">Targets &amp; keys</a>
-        <a href="spec/exchange-format/exchange.html">Serialization</a>
-        <a href="spec/exchange-format/materialization.html">Materialization</a>
-      </div>
-      <div>
-        <div class="foot-h">Implementation</div>
-        <a href="spec/implementation/overview.html">Overview</a>
-        <a href="spec/implementation/cli.html">CLI surface</a>
-        <a href="spec/implementation/standard-keys.html">Standard keys</a>
-      </div>
-      <div>
-        <div class="foot-h">Project</div>
-        <a href="https://github.com/git-meta/git-meta">GitHub</a>
-        <a href="https://github.com/git-meta/git-meta/issues">Issues</a>
-        <a href="https://www.youtube.com/watch?v=46bV6KT0SsQ">JJCon 2025 talk</a>
-      </div>
-    </div>
-  </div>
-  <div class="wrap foot-tail">
-    <span>&copy; git-meta contributors</span>
-    <span>Draft spec &middot; subject to change</span>
-  </div>
-</footer>
+                  <circle cx="44" cy="80" r="4" class="tree-node" />
+                  <text x="56" y="84" class="diag-v">commit:314e&hellip;</text>
+                  <circle cx="44" cy="110" r="4" class="tree-node" />
+                  <text x="56" y="114" class="diag-v">path:src/metrics</text>
+                  <circle cx="44" cy="140" r="4" class="tree-node" />
+                  <text x="56" y="144" class="diag-v">branch:feat-x</text>
 
-<script src="app.js"></script>
-</body>
+                  <line x1="44" y1="146" x2="44" y2="170" class="tree-edge" />
+                  <line x1="44" y1="170" x2="72" y2="170" class="tree-edge" />
+                  <line x1="44" y1="170" x2="44" y2="194" class="tree-edge" />
+                  <line x1="44" y1="194" x2="72" y2="194" class="tree-edge" />
+                  <circle cx="76" cy="170" r="3" class="tree-node leaf" />
+                  <text x="86" y="174" class="diag-v">review:status</text>
+                  <circle cx="76" cy="194" r="3" class="tree-node leaf" />
+                  <text x="86" y="198" class="diag-v">ci:status</text>
+                </g>
+                <text x="314" y="310" class="diag-foot">
+                  travels over any git remote
+                </text>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- BIG TERMINAL DEMO -->
+      <section id="demo" class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="eyebrow">CLI walkthrough</div>
+            <h2>Five commands you already know how to read.</h2>
+            <p class="section-lede">
+              The surface is intentionally Git-shaped: verbs you recognize,
+              targets that look like refs, values as strings, lists, or sets.
+            </p>
+          </div>
+
+          <div class="demo">
+            <div class="demo-term">
+              <div class="term-chrome">
+                <span class="dot r"></span><span class="dot y"></span
+                ><span class="dot g"></span>
+                <span class="term-title">git meta &mdash; walkthrough</span>
+                <div class="term-ctrl">
+                  <button class="term-btn" id="demo-replay" type="button">
+                    Replay
+                  </button>
+                </div>
+              </div>
+              <pre class="term-body" id="demo-body" aria-live="polite"></pre>
+            </div>
+
+            <aside class="demo-side">
+              <ol class="demo-steps">
+                <li data-step="0">
+                  <span class="demo-tag">set</span> a string on a commit
+                </li>
+                <li data-step="1">
+                  <span class="demo-tag">set</span> a typed set on a path
+                </li>
+                <li data-step="2">
+                  <span class="demo-tag">get</span> everything for a target
+                </li>
+                <li data-step="3">
+                  <span class="demo-tag">set:add</span> a single member
+                </li>
+                <li data-step="4">
+                  <span class="demo-tag">serialize</span> and push over plain
+                  git
+                </li>
+              </ol>
+              <p class="demo-foot">
+                Every command maps 1:1 to a spec section.
+                <a href="spec/implementation/cli.html">CLI surface &rarr;</a>
+              </p>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- COMPARISON -->
+      <section id="compare" class="section section-alt">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="eyebrow">vs. existing approaches</div>
+            <h2>Where current tools run out of room.</h2>
+            <p class="section-lede">
+              Git already has a handful of metadata escape hatches. Each works
+              for a narrow case; none covers the full surface.
+            </p>
+          </div>
+
+          <div class="compare-wrap">
+            <table class="compare">
+              <thead>
+                <tr>
+                  <th scope="col"></th>
+                  <th scope="col">git notes</th>
+                  <th scope="col">commit trailers</th>
+                  <th scope="col">CODEOWNERS &amp; co.</th>
+                  <th scope="col" class="th-me">git-meta</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">
+                    Fine-grained targets<br /><span class="row-sub"
+                      >paths, branches, ranges</span
+                    >
+                  </th>
+                  <td class="x">commits only</td>
+                  <td class="x">commits only</td>
+                  <td class="~">paths only</td>
+                  <td class="v">
+                    commits &middot; branches &middot; paths &middot; change-ids
+                    &middot; project
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Many independent fields</th>
+                  <td class="~">one blob</td>
+                  <td class="~">flat k/v in message</td>
+                  <td class="x">n/a</td>
+                  <td class="v">unlimited typed keys per target</td>
+                </tr>
+                <tr>
+                  <th scope="row">Mergeable under concurrent edits</th>
+                  <td class="x">manual resolve</td>
+                  <td class="x">immutable</td>
+                  <td class="x">text conflicts</td>
+                  <td class="v">deterministic per-key merge</td>
+                </tr>
+                <tr>
+                  <th scope="row">Working tree stays clean</th>
+                  <td class="v">yes</td>
+                  <td class="v">yes</td>
+                  <td class="x">no</td>
+                  <td class="v">yes</td>
+                </tr>
+                <tr>
+                  <th scope="row">Typed values</th>
+                  <td class="x">text</td>
+                  <td class="x">text</td>
+                  <td class="x">text</td>
+                  <td class="v">string &middot; list &middot; set</td>
+                </tr>
+                <tr>
+                  <th scope="row">Scales to large metadata</th>
+                  <td class="x">slow</td>
+                  <td class="~">bounded</td>
+                  <td class="x">file grows</td>
+                  <td class="v">indexed locally &middot; sharded in-tree</td>
+                </tr>
+                <tr>
+                  <th scope="row">Transport</th>
+                  <td class="v">refs</td>
+                  <td class="v">in commit</td>
+                  <td class="v">in tree</td>
+                  <td class="v">refs/meta/* &mdash; plain git push</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONTRIBUTORS -->
+      <section id="people" class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="eyebrow">Who's behind it</div>
+            <h2>An open proposal, drafted in public.</h2>
+            <p class="section-lede">
+              git-meta is a spec first. It's being written and refined by folks
+              working on Git tooling, agent frameworks, and forge infrastructure
+              &mdash; and anyone who shows up on GitHub.
+            </p>
+          </div>
+
+          <div class="people">
+            <article class="person">
+              <div class="avatar" data-initials="RB"></div>
+              <div class="person-body">
+                <div class="person-name">Rodrigo Bovendorp</div>
+                <div class="person-role">
+                  Spec author &middot; JJCon 2025 talk
+                </div>
+              </div>
+            </article>
+            <article class="person">
+              <div class="avatar" data-initials="SC"></div>
+              <div class="person-body">
+                <div class="person-name">S. Chacon</div>
+                <div class="person-role">Reference implementation</div>
+              </div>
+            </article>
+            <article class="person">
+              <div class="avatar" data-initials="CM"></div>
+              <div class="person-body">
+                <div class="person-name">C. Mason</div>
+                <div class="person-role">Exchange format</div>
+              </div>
+            </article>
+            <article class="person">
+              <div class="avatar" data-initials="+"></div>
+              <div class="person-body">
+                <div class="person-name">You?</div>
+                <div class="person-role">
+                  <a href="https://github.com/git-meta/git-meta/issues"
+                    >Open an issue</a
+                  >
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section id="faq" class="section section-alt">
+        <div class="wrap faq-wrap">
+          <div class="faq-head">
+            <div class="eyebrow">FAQ</div>
+            <h2>Common questions.</h2>
+          </div>
+          <div class="faq-list">
+            <details>
+              <summary>Is this an actual tool, or just a spec?</summary>
+              <div class="faq-body">
+                <p>
+                  Both. The important part is the
+                  <strong>exchange format</strong> &mdash; the agreement needed
+                  for different implementations to interoperate. A
+                  <strong>reference implementation</strong> lives alongside the
+                  spec so you can try the ideas end-to-end.
+                </p>
+              </div>
+            </details>
+            <details>
+              <summary>Does it require changes to Git itself?</summary>
+              <div class="faq-body">
+                <p>
+                  No. git-meta uses ordinary Git objects &mdash; trees, commits,
+                  and refs under <code>refs/meta/*</code>. Any Git server that
+                  accepts arbitrary refs can transport it.
+                </p>
+              </div>
+            </details>
+            <details>
+              <summary>
+                How is this different from <code>git notes</code>?
+              </summary>
+              <div class="faq-body">
+                <p>
+                  <code>git notes</code> attaches a single blob per commit.
+                  git-meta models many small, independently mutable fields
+                  against many kinds of targets (paths, branches, change-ids),
+                  with typed values and deterministic merges.
+                </p>
+              </div>
+            </details>
+            <details>
+              <summary>What data types are supported?</summary>
+              <div class="faq-body">
+                <p>
+                  Three to start: <code>string</code>, <code>list</code>, and
+                  <code>set</code>. Each has a documented merge behavior so
+                  concurrent edits resolve without custom code.
+                </p>
+              </div>
+            </details>
+            <details>
+              <summary>Will metadata bloat my repo?</summary>
+              <div class="faq-body">
+                <p>
+                  Metadata lives on its own <code>refs/meta/*</code> refs, so
+                  cloning code doesn't pull metadata unless you ask for it. The
+                  local index shards entries and supports auto-pruning for
+                  tombstoned keys.
+                </p>
+              </div>
+            </details>
+            <details>
+              <summary>Can I use it for AI provenance?</summary>
+              <div class="faq-body">
+                <p>
+                  Yes &mdash; that's one of the motivating use cases. Stamp
+                  model, prompt data, and transcript references onto commits or
+                  branches, and query them later without parsing commit
+                  messages.
+                </p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA strip -->
+      <section class="cta-strip">
+        <div class="wrap cta-strip-inner">
+          <div>
+            <h2>Read the spec. Try the CLI. Break it.</h2>
+            <p>
+              git-meta is a draft. The fastest way to improve it is to try to
+              use it for something real.
+            </p>
+          </div>
+          <div class="cta-row">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/git-meta/git-meta"
+              >Try the implementation</a
+            >
+            <a class="btn btn-ghost" href="spec/">Read the spec</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap foot-grid">
+        <div>
+          <div class="brand">
+            <img
+              class="brand-mark"
+              src="assets/git-meta-icon.png"
+              width="22"
+              height="22"
+              alt=""
+            />
+            <span class="brand-name">git-meta</span>
+          </div>
+          <p class="foot-sub">
+            A proposed metadata exchange format for Git. MIT licensed.
+          </p>
+        </div>
+        <div class="foot-cols">
+          <div>
+            <div class="foot-h">Spec</div>
+            <a href="spec/exchange-format/targets.html">Targets &amp; keys</a>
+            <a href="spec/exchange-format/exchange.html">Serialization</a>
+            <a href="spec/exchange-format/materialization.html"
+              >Materialization</a
+            >
+          </div>
+          <div>
+            <div class="foot-h">Implementation</div>
+            <a href="spec/implementation/overview.html">Overview</a>
+            <a href="spec/implementation/cli.html">CLI surface</a>
+            <a href="spec/implementation/standard-keys.html">Standard keys</a>
+          </div>
+          <div>
+            <div class="foot-h">Project</div>
+            <a href="https://github.com/git-meta/git-meta">GitHub</a>
+            <a href="https://github.com/git-meta/git-meta/issues">Issues</a>
+            <a href="https://www.youtube.com/watch?v=46bV6KT0SsQ"
+              >JJCon 2025 talk</a
+            >
+          </div>
+        </div>
+      </div>
+      <div class="wrap foot-tail">
+        <span>&copy; git-meta contributors</span>
+        <span>Draft spec &middot; subject to change</span>
+      </div>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
 </html>

@@ -128,7 +128,7 @@ p  { color: var(--ink-2); margin: 0 0 12px; }
 .btn-ghost:hover { border-color: var(--ink-3); color: var(--ink); background: var(--bg-alt); }
 
 /* ——— HERO ——— */
-.hero { padding: 72px 0 56px; position: relative; }
+.hero { padding: 20px 0 56px; position: relative; }
 .hero::before {
   content: ""; position: absolute; inset: 0;
   background-image:

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Output and query semantics · git-meta</title>
+    <title>Strings · git-meta</title>
     <meta name="description" content="git-meta project documentation generated from the canonical spec markdown files.">
     <link rel="stylesheet" href="../assets/style.css">
     <script>
@@ -18,12 +18,12 @@
       <aside class="sidebar">
         <div class="sidebar-main">
           <a class="brand" href="../index.html">
-            <img class="brand-icon" src="../other/git-meta-icon.png" alt="" width="40" height="40">
+            <img class="brand-icon" src="../../other/git-meta-icon.png" alt="" width="40" height="40">
             <span class="brand-text">git-meta</span>
           </a>
           <p class="tagline">Git metadata specification and project docs</p>
           <nav class="nav">
-            <div class="nav-group"><a href="../index.html">Overview</a></div><div class="nav-group"><h2>Exchange format</h2><a href="../exchange-format/targets.html">Targets and keys</a><a href="../exchange-format/exchange.html">Serialization</a><a href="../exchange-format/materialization.html">Materialization</a></div><div class="nav-group"><h2>Value types</h2><a href="../exchange-format/strings.html">Strings</a><a href="../exchange-format/lists.html">Lists</a><a href="../exchange-format/sets.html">Sets</a></div><div class="nav-group"><h2>Implementation</h2><a href="overview.html">Implementation Overview</a><a href="storage.html">Local storage</a><a href="cli.html">CLI surface</a><a class="active" href="output.html">Output and query semantics</a><a href="pruning.html">Auto-pruning</a></div><div class="nav-group"><h2>Other Considerations</h2><a href="standard-keys.html">Standard keys</a><a href="workflow.html">Workflow</a></div>
+            <div class="nav-group"><a href="../index.html">Overview</a></div><div class="nav-group"><h2>Exchange format</h2><a href="targets.html">Targets and keys</a><a href="exchange.html">Serialization</a><a href="materialization.html">Materialization</a></div><div class="nav-group"><h2>Value types</h2><a class="active" href="strings.html">Strings</a><a href="lists.html">Lists</a><a href="sets.html">Sets</a></div><div class="nav-group"><h2>Implementation</h2><a href="../implementation/overview.html">Implementation Overview</a><a href="../implementation/storage.html">Local storage</a><a href="../implementation/cli.html">CLI surface</a><a href="../implementation/output.html">Output and query semantics</a><a href="../implementation/pruning.html">Auto-pruning</a></div><div class="nav-group"><h2>Other Considerations</h2><a href="../implementation/standard-keys.html">Standard keys</a><a href="../implementation/workflow.html">Workflow</a></div>
           </nav>
         </div>
         <div class="sidebar-footer">
@@ -44,58 +44,30 @@
         <header class="page-header">
           <div class="page-header-main">
             <div class="eyebrow">Generated from <a href="https://github.com/git-meta/git-meta/tree/main/spec"><code>spec/*.md</code></a></div>
-            <h1>Output and query semantics</h1>
+            <h1>Strings</h1>
           </div>
         </header>
         <article class="doc-content">
-          <p>This document describes implementation-level query behavior and display choices.</p>
-<p>The exchange format defines what data means on the wire; this document defines how a specific implementation may expose that data through commands like <code>git meta get</code>.</p>
-<h2 id="query-forms">Query forms</h2>
-<p><code>git meta get</code> should support three basic forms:</p>
-<pre><code>git meta get &lt;target&gt;
-git meta get &lt;target&gt; &lt;key&gt;
-git meta get &lt;target&gt; &lt;partial-key&gt;</code></pre>
-<p>Behavior:</p>
-<ul><li>with only a target, return all visible keys for that target</li><li>with an exact key, return that key if present</li><li>with a partial key, return matching keys in that namespace subtree</li></ul>
-<h2 id="human-readable-output">Human-readable output</h2>
-<p>Example:</p>
-<pre><code>❯ git meta get commit:13a7d29cde8f8557b54fd6474f547a56822180ae
-agent:model  claude-4.6
-agent:provider  anthropic</code></pre>
-<p>Human-readable output should be stable and easy to scan, but exact formatting is an implementation detail.</p>
-<h2 id="json-output">JSON output</h2>
-<p><code>--json</code> should return a structured object representation.</p>
-<p>Example:</p>
-<pre><code>❯ git meta get --json commit:13a7d29cde8f8557b54fd6474f547a56822180ae
-{
-  &quot;agent&quot;: {
-    &quot;model&quot;: &quot;claude-4.6&quot;,
-    &quot;provider&quot;: &quot;anthropic&quot;
-  }
-}</code></pre>
-<h2 id="json-with-authorship">JSON with authorship</h2>
-<p><code>--with-authorship</code> augments JSON values with provenance metadata for the last visible mutation.</p>
-<p>Example:</p>
-<pre><code>❯ git meta get --json --with-authorship commit:13a7d29cde8f8557b54fd6474f547a56822180ae
-{
-  &quot;agent&quot;: {
-    &quot;model&quot;: {
-      &quot;value&quot;: &quot;claude-4.6&quot;,
-      &quot;author&quot;: &quot;schacon@gmail.com&quot;,
-      &quot;timestamp&quot;: 1771232450000
-    },
-    &quot;provider&quot;: {
-      &quot;value&quot;: &quot;anthropic&quot;,
-      &quot;author&quot;: &quot;schacon@gmail.com&quot;,
-      &quot;timestamp&quot;: 1771232450000
-    }
-  }
-}</code></pre>
-<h2 id="collection-output">Collection output</h2>
-<p>Type-specific JSON output should be unsurprising:</p>
-<ul><li>strings render as strings, or as <code>{ value, author, timestamp }</code> with authorship</li><li>lists render as arrays in visible list order</li><li>sets render as arrays in deterministic display order</li></ul>
-<p>The exact JSON envelope may evolve, but two rules should hold:</p>
-<ol><li>output should preserve enough structure to distinguish namespaces</li><li>collection ordering in output should be deterministic</li></ol>
+          <p>Strings are the simplest git-meta value type.</p>
+<p>A string represents one current scalar value for a <code>(target, key)</code> pair.</p>
+<p>Examples:</p>
+<ul><li><code>agent:model = claude-4.6</code></li><li><code>owner = schacon</code></li><li><code>review:signoff = schacon@gmail.com</code></li></ul>
+<h2 id="summary">Summary</h2>
+<ul><li>One current value per key</li><li>Serialized as a single terminal blob</li><li>Removal uses a key tombstone</li><li>Concurrent updates resolve by last-writer-wins</li></ul>
+<h2 id="serialized-tree-shape">Serialized tree shape</h2>
+<p>For a string value, write the string to:</p>
+<p><code>[base]/&lt;key segments&gt;/__value</code></p>
+<p>Examples:</p>
+<ul><li><code>commit/13/&lt;full-target&gt;/agent/model/__value</code></li><li><code>path/src/metrics/__target__/owner/__value</code></li></ul>
+<p>The blob contents are the raw string value.</p>
+<h2 id="tombstones">Tombstones</h2>
+<p>If a string key is removed, serialize a tombstone at:</p>
+<p><code>[base]/__tombstones/&lt;key segments&gt;/__deleted</code></p>
+<p>The tombstone blob should be the same blob as the <code>__value</code> was. This way Git reuses the blob and we can do content comparisons if needed in cases of conflict.</p>
+<p>When a string is set again after deletion, the tombstone is cleared locally and omitted from the next serialization.</p>
+<h2 id="merge-semantics">Merge semantics</h2>
+<p>Merging trees can technically use either <code>ours</code> or <code>theirs</code> strategies, but one value should win out. Projects or individuals can determine which they prefer.</p>
+<p>The default in our implementation is <code>ours</code>, so that both values are in the history and reverting is possible.</p>
         </article>
       </main>
     </div>
