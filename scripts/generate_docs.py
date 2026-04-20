@@ -13,16 +13,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC_DIR = ROOT / "spec"
-DOCS_DIR = ROOT / "docs"
+# The generated spec sub-site lives at docs/spec/ (served from
+# https://git-meta.com/spec/). The marketing landing page and other
+# hand-curated assets at docs/ are intentionally outside the generator's
+# blast radius.
+DOCS_DIR = ROOT / "docs" / "spec"
 TEMPLATE_PATH = ROOT / "templates" / "docs-page.html"
 ASSETS_DIR = DOCS_DIR / "assets"
 
 SITE_ORIGIN = "https://git-meta.com"
-
-# Files and directories under docs/ that the generator must never delete.
-# `other/` holds hand-curated extras and `CNAME` is required by GitHub Pages
-# to map the site to git-meta.com.
-PRESERVED_DOCS_ENTRIES = frozenset({"other", "CNAME"})
+SITE_BASE = f"{SITE_ORIGIN}/spec"
 
 AI_USER_AGENTS = [
     "GPTBot",
@@ -642,8 +642,8 @@ def build_nav(pages: list[Page], current_page: Page) -> str:
 
 
 def page_url(page: Page) -> str:
-    """Canonical absolute URL for a generated page."""
-    return f"{SITE_ORIGIN}/{page.output_rel}"
+    """Canonical absolute URL for a generated page on the spec sub-site."""
+    return f"{SITE_BASE}/{page.output_rel}"
 
 
 def page_lastmod(page: Page) -> str:
@@ -656,14 +656,16 @@ def page_lastmod(page: Page) -> str:
 
 
 def write_robots_txt() -> None:
-    """Write robots.txt with explicit AI crawler rules and Content-Signal directives.
+    """Write the spec sub-site's robots.txt advertising open AI / search use.
 
-    The git-meta spec is intentionally public; we allow indexing and AI use across the board
-    and advertise that intent via Cloudflare/IETF Content Signals so policy is unambiguous
-    even for crawlers that don't read prose.
+    Crawlers only honor `/robots.txt` at the domain root, so the top-level
+    `docs/robots.txt` is the authoritative one. This copy lives at
+    `/spec/robots.txt` purely as a published statement of intent for the spec
+    sub-site itself — it documents the same allow-everything policy in case a
+    crawler probes it directly, and points at the spec's own sitemap.
     """
     lines: list[str] = [
-        "# robots.txt for git-meta.com",
+        "# robots.txt for the git-meta spec sub-site",
         "# The git-meta specification is public and intended for broad reuse,",
         "# including by AI systems that index, search, or train on documentation.",
         "",
@@ -684,7 +686,7 @@ def write_robots_txt() -> None:
         "# ai-train: allow use as training data for AI models",
         "Content-Signal: search=yes, ai-input=yes, ai-train=yes",
         "",
-        f"Sitemap: {SITE_ORIGIN}/sitemap.xml",
+        f"Sitemap: {SITE_BASE}/sitemap.xml",
         "",
     ])
 
@@ -704,7 +706,7 @@ def write_sitemap_xml(pages: list[Page]) -> None:
     for page in pages:
         loc = page_url(page)
         if page.output_rel == "index.html":
-            loc = f"{SITE_ORIGIN}/"
+            loc = f"{SITE_BASE}/"
         entries.append("  <url>")
         entries.append(f"    <loc>{html.escape(loc)}</loc>")
         entries.append(f"    <lastmod>{page_lastmod(page)}</lastmod>")
@@ -720,14 +722,11 @@ def generate_docs() -> None:
     page_map = {page.source_rel: page.output_rel for page in pages}
     template = TEMPLATE_PATH.read_text()
 
+    # docs/spec/ is fully owned by this generator: wipe and rewrite it on
+    # every run. Anything outside (the marketing landing page at docs/, the
+    # hand-curated docs/other/ assets, docs/CNAME) is intentionally untouched.
     if DOCS_DIR.exists():
-        for child in DOCS_DIR.iterdir():
-            if child.name in PRESERVED_DOCS_ENTRIES:
-                continue
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
+        shutil.rmtree(DOCS_DIR)
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     (ASSETS_DIR / "style.css").write_text(STYLE_CSS.strip() + "\n")
 

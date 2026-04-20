@@ -1,7 +1,6 @@
-# robots.txt for git-meta.com
-# The git-meta landing page and specification are public and intended for
-# broad reuse, including by AI systems that index, search, or train on
-# documentation.
+# robots.txt for the git-meta spec sub-site
+# The git-meta specification is public and intended for broad reuse,
+# including by AI systems that index, search, or train on documentation.
 
 User-agent: *
 Allow: /
@@ -52,5 +51,4 @@ Allow: /
 # ai-train: allow use as training data for AI models
 Content-Signal: search=yes, ai-input=yes, ai-train=yes
 
-Sitemap: https://git-meta.com/sitemap.xml
 Sitemap: https://git-meta.com/spec/sitemap.xml
