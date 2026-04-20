@@ -1,12 +1,12 @@
 [package]
-name = "git-meta-rs"
-description = "Command-line tool for structured Git metadata (get/set, serialize, materialize, push/pull)."
+name = "git-meta-cli"
+description = "Command-line tool for structured Git metadata (get/set, serialize, materialize, push/pull). Installs the `git-meta` binary."
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-documentation = "https://docs.rs/git-meta-rs"
+documentation = "https://docs.rs/git-meta-cli"
 keywords = ["git", "metadata", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
