@@ -8,6 +8,7 @@ import re
 import shutil
 import time
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,6 +16,24 @@ SPEC_DIR = ROOT / "spec"
 DOCS_DIR = ROOT / "docs"
 TEMPLATE_PATH = ROOT / "templates" / "docs-page.html"
 ASSETS_DIR = DOCS_DIR / "assets"
+
+SITE_ORIGIN = "https://git-meta.com"
+
+AI_USER_AGENTS = [
+    "GPTBot",
+    "OAI-SearchBot",
+    "ChatGPT-User",
+    "ClaudeBot",
+    "Claude-Web",
+    "anthropic-ai",
+    "Google-Extended",
+    "PerplexityBot",
+    "CCBot",
+    "Applebot-Extended",
+    "Bytespider",
+    "Meta-ExternalAgent",
+    "cohere-ai",
+]
 
 PAGE_ORDER = [
     "README.md",
@@ -589,6 +608,80 @@ def build_nav(pages: list[Page], current_page: Page) -> str:
     return "".join(groups)
 
 
+def page_url(page: Page) -> str:
+    """Canonical absolute URL for a generated page."""
+    return f"{SITE_ORIGIN}/{page.output_rel}"
+
+
+def page_lastmod(page: Page) -> str:
+    """ISO-8601 date for a page's last modification, derived from its spec source."""
+    try:
+        mtime = page.source_path.stat().st_mtime
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).date().isoformat()
+    except OSError:
+        return date.today().isoformat()
+
+
+def write_robots_txt() -> None:
+    """Write robots.txt with explicit AI crawler rules and Content-Signal directives.
+
+    The git-meta spec is intentionally public; we allow indexing and AI use across the board
+    and advertise that intent via Cloudflare/IETF Content Signals so policy is unambiguous
+    even for crawlers that don't read prose.
+    """
+    lines: list[str] = [
+        "# robots.txt for git-meta.com",
+        "# The git-meta specification is public and intended for broad reuse,",
+        "# including by AI systems that index, search, or train on documentation.",
+        "",
+        "User-agent: *",
+        "Allow: /",
+        "",
+        "# Explicit rules for AI crawlers (RFC 9309)",
+    ]
+    for agent in AI_USER_AGENTS:
+        lines.append(f"User-agent: {agent}")
+        lines.append("Allow: /")
+        lines.append("")
+
+    lines.extend([
+        "# Content Signals (https://contentsignals.org/)",
+        "# search:   allow appearing in search results",
+        "# ai-input: allow use as grounding input for AI answers",
+        "# ai-train: allow use as training data for AI models",
+        "Content-Signal: search=yes, ai-input=yes, ai-train=yes",
+        "",
+        f"Sitemap: {SITE_ORIGIN}/sitemap.xml",
+        "",
+    ])
+
+    (DOCS_DIR / "robots.txt").write_text("\n".join(lines))
+
+
+def write_sitemap_xml(pages: list[Page]) -> None:
+    """Write sitemap.xml listing canonical URLs for every generated page.
+
+    Each entry uses the spec source's mtime as <lastmod>, so the sitemap stays
+    accurate as long as the doc generator is re-run on publish.
+    """
+    entries: list[str] = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for page in pages:
+        loc = page_url(page)
+        if page.output_rel == "index.html":
+            loc = f"{SITE_ORIGIN}/"
+        entries.append("  <url>")
+        entries.append(f"    <loc>{html.escape(loc)}</loc>")
+        entries.append(f"    <lastmod>{page_lastmod(page)}</lastmod>")
+        entries.append("  </url>")
+    entries.append("</urlset>")
+    entries.append("")
+
+    (DOCS_DIR / "sitemap.xml").write_text("\n".join(entries))
+
+
 def generate_docs() -> None:
     pages = build_pages()
     page_map = {page.source_rel: page.output_rel for page in pages}
@@ -621,6 +714,9 @@ def generate_docs() -> None:
         )
         page.output_path.parent.mkdir(parents=True, exist_ok=True)
         page.output_path.write_text(rendered)
+
+    write_robots_txt()
+    write_sitemap_xml(pages)
 
     print(f"Generated {len(pages)} documentation pages in {DOCS_DIR}")
 
