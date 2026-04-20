@@ -16,13 +16,20 @@ SPEC_DIR = ROOT / "spec"
 # The generated spec sub-site lives at docs/spec/ (served from
 # https://git-meta.com/spec/). The marketing landing page and other
 # hand-curated assets at docs/ are intentionally outside the generator's
-# blast radius.
-DOCS_DIR = ROOT / "docs" / "spec"
+# blast radius — the only files this script writes outside docs/spec/ are
+# the site-wide robots.txt and sitemap.xml, which must live at the domain
+# root to be honored by crawlers.
+SITE_ROOT_DIR = ROOT / "docs"
+DOCS_DIR = SITE_ROOT_DIR / "spec"
 TEMPLATE_PATH = ROOT / "templates" / "docs-page.html"
 ASSETS_DIR = DOCS_DIR / "assets"
 
 SITE_ORIGIN = "https://git-meta.com"
 SITE_BASE = f"{SITE_ORIGIN}/spec"
+# Path of the marketing landing page relative to docs/. Its mtime is used
+# as the sitemap <lastmod> for the root URL so the sitemap stays accurate
+# whenever the landing page is republished.
+LANDING_PAGE_FILE = "index.html"
 
 AI_USER_AGENTS = [
     "GPTBot",
@@ -656,18 +663,17 @@ def page_lastmod(page: Page) -> str:
 
 
 def write_robots_txt() -> None:
-    """Write the spec sub-site's robots.txt advertising open AI / search use.
+    """Write the site-wide robots.txt advertising open AI / search use.
 
-    Crawlers only honor `/robots.txt` at the domain root, so the top-level
-    `docs/robots.txt` is the authoritative one. This copy lives at
-    `/spec/robots.txt` purely as a published statement of intent for the spec
-    sub-site itself — it documents the same allow-everything policy in case a
-    crawler probes it directly, and points at the spec's own sitemap.
+    Crawlers only honor `/robots.txt` at the domain root, so this writes to
+    `docs/robots.txt`. It covers the marketing landing page and the spec
+    sub-site under the same allow-everything policy.
     """
     lines: list[str] = [
-        "# robots.txt for the git-meta spec sub-site",
-        "# The git-meta specification is public and intended for broad reuse,",
-        "# including by AI systems that index, search, or train on documentation.",
+        "# robots.txt for git-meta.com",
+        "# The git-meta landing page and specification are public and intended",
+        "# for broad reuse, including by AI systems that index, search, or",
+        "# train on documentation.",
         "",
         "User-agent: *",
         "Allow: /",
@@ -686,22 +692,40 @@ def write_robots_txt() -> None:
         "# ai-train: allow use as training data for AI models",
         "Content-Signal: search=yes, ai-input=yes, ai-train=yes",
         "",
-        f"Sitemap: {SITE_BASE}/sitemap.xml",
+        f"Sitemap: {SITE_ORIGIN}/sitemap.xml",
         "",
     ])
 
-    (DOCS_DIR / "robots.txt").write_text("\n".join(lines))
+    (SITE_ROOT_DIR / "robots.txt").write_text("\n".join(lines))
+
+
+def landing_page_lastmod() -> str:
+    """ISO-8601 date for the marketing landing page's last modification.
+
+    Falls back to today if `docs/index.html` is missing for any reason
+    (e.g. a fresh checkout where the landing page hasn't been added yet).
+    """
+    try:
+        mtime = (SITE_ROOT_DIR / LANDING_PAGE_FILE).stat().st_mtime
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).date().isoformat()
+    except OSError:
+        return date.today().isoformat()
 
 
 def write_sitemap_xml(pages: list[Page]) -> None:
-    """Write sitemap.xml listing canonical URLs for every generated page.
+    """Write the site-wide sitemap.xml at the domain root.
 
-    Each entry uses the spec source's mtime as <lastmod>, so the sitemap stays
-    accurate as long as the doc generator is re-run on publish.
+    Includes the marketing landing page (`https://git-meta.com/`) followed by
+    every generated spec page. Each spec entry uses its source markdown's
+    mtime as <lastmod>; the landing page uses `docs/index.html`'s mtime.
     """
     entries: list[str] = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        "  <url>",
+        f"    <loc>{html.escape(SITE_ORIGIN)}/</loc>",
+        f"    <lastmod>{landing_page_lastmod()}</lastmod>",
+        "  </url>",
     ]
     for page in pages:
         loc = page_url(page)
@@ -714,7 +738,7 @@ def write_sitemap_xml(pages: list[Page]) -> None:
     entries.append("</urlset>")
     entries.append("")
 
-    (DOCS_DIR / "sitemap.xml").write_text("\n".join(entries))
+    (SITE_ROOT_DIR / "sitemap.xml").write_text("\n".join(entries))
 
 
 def generate_docs() -> None:
