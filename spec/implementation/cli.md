@@ -95,6 +95,136 @@ git meta materialize --dry-run [<remote>]
 
 Useful for reporting the merge strategy and conflict decisions without applying them.
 
+## Sync commands
+
+`push` and `pull` are the porcelain that bundle a local
+serialize/materialize with the network step against a configured
+metadata remote. They are the two commands a project uses day-to-day;
+`serialize` and `materialize` are the underlying plumbing.
+
+### Push
+
+```bash
+git meta push [<remote>]
+git meta push [<remote>] --readme
+```
+
+Behavior:
+
+- serializes any pending local metadata changes (equivalent to
+  `git meta serialize`) and pushes the resulting metadata commit on
+  `refs/<namespace>/main` to the named remote
+- if `<remote>` is omitted, the first configured metadata remote is used
+- `--readme` instead pushes a starter `README.md` commit to
+  `refs/heads/main` on the metadata remote, and only if that branch does
+  not already exist (no force push). This is purely cosmetic — it gives
+  the metadata repository something human-readable when browsed on the
+  forge — and is independent of the metadata refs themselves
+
+### Pull
+
+```bash
+git meta pull [<remote>]
+```
+
+Behavior:
+
+- fetches `refs/<namespace>/main` from the remote into
+  `refs/<namespace>/remotes/main` and runs the equivalent of
+  `git meta materialize` to merge the new history into the local SQLite
+  database
+- if `<remote>` is omitted, the first configured metadata remote is used
+- prints `Already up-to-date.` when the remote tip is unchanged
+
+## Setup and configuration
+
+These commands wire a project up to a metadata remote, or undo that
+wiring. They never write or read metadata values directly; they only
+manage the local state needed by the sync and exchange commands above.
+
+### Setup
+
+```bash
+git meta setup
+```
+
+Initializes a metadata remote for the current repository from a
+project-local `.git-meta` file at the repository root.
+
+The file format is one URL per line, with `#` comments and blank lines
+ignored; the first usable line is taken as the remote URL. Anything
+after that is ignored, so projects can add human-readable notes
+underneath the URL.
+
+Behavior:
+
+- reads `.git-meta` from the repository work tree
+- runs the equivalent of `git meta remote add <url> --init`, so on a
+  fresh metadata remote the command will also create
+  `refs/<namespace>/local/main` with a starter README and push it to
+  `refs/<namespace>/main`
+- intended to be the one command a teammate runs after cloning to opt
+  in to the project's metadata exchange
+
+### Add a remote
+
+```bash
+git meta remote add <url> [--name <name>] [--namespace <namespace>] [--init]
+```
+
+Configures a new metadata remote for the current repository.
+
+Behavior:
+
+- writes git config entries for the remote: `remote.<name>.url`,
+  `remote.<name>.fetch = +refs/<ns>/main:refs/<ns>/remotes/main`,
+  `remote.<name>.meta = true`, plus partial-clone/promisor settings so
+  blobs are fetched on demand
+- inspects the remote with `git ls-remote` to check that
+  `refs/<ns>/main` exists, and on success runs an initial blobless
+  fetch and `materialize` so values are immediately readable
+- if no metadata refs are present on the remote:
+  - with `--init`, creates (or reuses) `refs/<ns>/local/main` with a
+    starter README commit and pushes it to `refs/<ns>/main` on the
+    remote
+  - on an interactive terminal without `--init`, prompts the user for
+    confirmation and behaves as if `--init` had been passed when they
+    accept
+  - in non-interactive contexts (CI, pipes), bails with an actionable
+    hint to re-run with `--init`
+- if metadata refs are found under a different namespace, bails with a
+  hint to re-run with `--namespace=<that-namespace>`
+
+Defaults:
+
+- `--name`: `meta`
+- `--namespace`: from the `meta.namespace` git config, falling back to
+  `meta`
+
+The companion verbs `git meta remote list` and
+`git meta remote remove <name>` are also available for inspecting and
+removing configured metadata remotes.
+
+### Teardown
+
+```bash
+git meta teardown
+```
+
+Removes the local git meta state from the repository.
+
+Behavior:
+
+- deletes the SQLite database at `.git/git-meta.sqlite`
+- deletes every reference under `refs/<namespace>/`, including local,
+  serialized, and remote-tracking refs
+
+This does **not** touch any remote, and is intended for cases like
+switching namespaces, recovering from local corruption, or cleanly
+uninstalling git meta from a checkout. After teardown,
+`git meta setup` (or `git meta remote add`) re-installs the local
+state.
+
 ## Target syntax
 
 Targets use the syntax documented in [Targets and keys](../exchange-format/targets.md).
