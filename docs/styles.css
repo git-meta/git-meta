@@ -679,8 +679,8 @@ summary {
   font-weight: 500;
   color: var(--ink);
   font-size: 16px;
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 20px;
+  position: relative;
+  padding-right: 32px;
 }
 summary::-webkit-details-marker { display: none; }
 summary::after {
@@ -688,6 +688,10 @@ summary::after {
   font-family: "JetBrains Mono", monospace;
   font-size: 20px;
   color: var(--ink-3);
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   transition: transform .15s;
 }
 details[open] summary::after { content: "−"; }
