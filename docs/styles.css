@@ -181,6 +181,9 @@ p  { color: var(--ink-2); margin: 0 0 12px; }
   stroke-linecap: round;
   fill: none;
 }
+.meta-trunk-branch {
+  stroke-linejoin: round;
+}
 .meta-connector {
   stroke: var(--brand-light);
   stroke-width: 1.4;
