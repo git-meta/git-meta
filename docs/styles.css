@@ -411,33 +411,89 @@ html[data-theme="dark"] .meta-val.str { fill: oklch(0.72 0.13 145); }
   border: 1px solid oklch(0.3 0.01 260 / .4);
 }
 
-/* ——— TRY IT OUT ——— */
-.try-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.try-step {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: 24px 24px 20px;
-  box-shadow: var(--shadow-card);
-  display: flex; flex-direction: column; gap: 10px;
+/* ——— TRY IT OUT ———
+   This section breaks out of the cream zebra stripes with a dark
+   "terminal panel" treatment so it reads as the hands-on, do-it-now
+   moment of the page. Steps stack vertically; explanation on the left,
+   command snippet on the right. */
+.section-try {
+  background: var(--term-bg);
+  border-top: 1px solid oklch(0.32 0.01 40 / 0.6);
+  border-bottom: 1px solid oklch(0.32 0.01 40 / 0.6);
+  color: var(--term-ink);
 }
+.section-try .eyebrow { color: var(--brand-light); }
+.section-try h2 { color: #f5ece2; }
+.section-try .section-lede { color: var(--term-mut); }
+.section-try .section-lede code,
+.section-try .try-step-info code {
+  background: oklch(0.27 0.01 40);
+  border-color: oklch(0.34 0.01 40);
+  color: var(--term-ink);
+}
+
+.try-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.try-step {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 36px;
+  align-items: start;
+  padding: 28px 0;
+  border-top: 1px solid oklch(0.30 0.01 40 / 0.55);
+}
+.try-step:first-child { border-top: none; padding-top: 8px; }
+.try-step:last-child { padding-bottom: 8px; }
+.try-step-info { padding-top: 4px; }
 .try-step-num {
+  display: inline-block;
   font: 500 11px/1 "JetBrains Mono", monospace;
-  color: var(--brand-dark);
-  background: var(--accent-tint);
+  color: var(--brand-light);
+  background: oklch(0.30 0.06 var(--accent-h));
   padding: 6px 10px;
   border-radius: 999px;
-  align-self: flex-start;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  margin-bottom: 12px;
 }
-.try-step h3 { font-size: 18px; margin: 2px 0 0; }
-.try-step p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 6px; }
-.try-foot {
-  margin: 28px 0 0;
+.try-step h3 {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: #f5ece2;
+}
+.try-step p {
   font-size: 14.5px;
-  color: var(--ink-3);
+  color: var(--term-mut);
+  margin: 0;
+  max-width: 44ch;
 }
+.try-step .snippet {
+  margin: 0;
+  background: oklch(0.24 0.005 40);
+  border: 1px solid oklch(0.34 0.008 40);
+  font-size: 13.5px;
+  padding: 16px 18px;
+}
+.try-foot {
+  margin: 32px 0 0;
+  font-size: 14.5px;
+  color: var(--term-mut);
+}
+.section-try p a,
+.try-foot a {
+  color: var(--brand-light);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.section-try p a:hover,
+.try-foot a:hover { color: #f5ece2; }
 
 /* ——— HOW ——— */
 .how-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
@@ -799,7 +855,8 @@ html[data-theme="dark"] .cta-strip { background: var(--brand-dark); color: #fff;
   .why-item:nth-child(2) { border-right: none; }
   .why-item:nth-child(-n+2) { border-bottom: 1px solid var(--line-2); }
   .cases { grid-template-columns: 1fr; }
-  .try-grid { grid-template-columns: 1fr; }
+  .try-step { grid-template-columns: 1fr; gap: 16px; }
+  .try-step p { max-width: none; }
   .how-grid { grid-template-columns: 1fr; gap: 32px; }
   .demo { grid-template-columns: 1fr; }
   .demo-side { position: static; }
