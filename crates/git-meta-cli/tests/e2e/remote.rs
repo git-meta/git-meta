@@ -1,7 +1,7 @@
 use predicates::prelude::*;
 use tempfile::TempDir;
 
-use crate::harness::{self, open_repo, setup_bare_with_meta, setup_repo};
+use crate::harness::{self, open_repo, ref_to_commit_oid, setup_bare_with_meta, setup_repo};
 
 #[test]
 fn remote_add_no_meta_refs() {
@@ -18,7 +18,145 @@ fn remote_add_no_meta_refs() {
         .args(["remote", "add", bare_path])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("no metadata refs found"));
+        .stderr(predicate::str::contains("no metadata refs found"))
+        .stderr(predicate::str::contains("--init"));
+}
+
+#[test]
+fn remote_add_init_creates_ref_and_pushes_readme() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", bare_path, "--init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added meta remote"))
+        .stderr(predicate::str::contains(
+            "Created refs/meta/local/main with initial README commit",
+        ))
+        .stderr(predicate::str::contains(
+            "Initializing refs/meta/main on meta",
+        ));
+
+    let local = open_repo(dir.path());
+    let local_tip = ref_to_commit_oid(&local, "refs/meta/local/main");
+    let tracking_tip = ref_to_commit_oid(&local, "refs/meta/remotes/main");
+    assert_eq!(
+        local_tip, tracking_tip,
+        "remote tracking ref should match the local ref we just pushed"
+    );
+
+    let bare = open_repo(bare_dir.path());
+    let bare_tip = ref_to_commit_oid(&bare, "refs/meta/main");
+    assert_eq!(
+        bare_tip, local_tip,
+        "bare remote should now have refs/meta/main pointing at the README commit"
+    );
+
+    let commit = bare
+        .find_object(bare_tip)
+        .expect("commit exists")
+        .into_commit();
+    let tree_id = commit.tree_id().expect("commit has a tree").detach();
+    let tree = bare.find_object(tree_id).expect("tree exists").into_tree();
+    let entry_names: Vec<String> = tree
+        .iter()
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.filename().to_string())
+        .collect();
+    assert_eq!(
+        entry_names,
+        vec!["README.md".to_string()],
+        "initial commit should contain only README.md"
+    );
+}
+
+#[test]
+fn remote_add_init_with_namespace_uses_that_namespace() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", bare_path, "--namespace=altmeta", "--init"])
+        .assert()
+        .success();
+
+    let local = open_repo(dir.path());
+    let _ = ref_to_commit_oid(&local, "refs/altmeta/local/main");
+    let _ = ref_to_commit_oid(&local, "refs/altmeta/remotes/main");
+
+    let bare = open_repo(bare_dir.path());
+    let _ = ref_to_commit_oid(&bare, "refs/altmeta/main");
+}
+
+#[test]
+fn remote_add_init_reuses_existing_local_ref() {
+    let (dir, _sha) = setup_repo();
+
+    // Pre-seed refs/meta/local/main with an arbitrary commit, simulating a
+    // checkout that already has local metadata history (e.g. from a prior
+    // `git meta serialize` against a different remote).
+    let local = open_repo(dir.path());
+    let sig = gix::actor::Signature {
+        name: "Test User".into(),
+        email: "test@example.com".into(),
+        time: gix::date::Time::new(946684800, 0),
+    };
+    let blob_oid = local.write_blob(b"pre-existing").unwrap().detach();
+    let mut editor = local.empty_tree().edit().unwrap();
+    editor
+        .upsert("seed.txt", gix::objs::tree::EntryKind::Blob, blob_oid)
+        .unwrap();
+    let tree_oid = editor.write().unwrap().detach();
+    let commit = gix::objs::Commit {
+        message: "pre-existing local meta".into(),
+        tree: tree_oid,
+        author: sig.clone(),
+        committer: sig,
+        encoding: None,
+        parents: Default::default(),
+        extra_headers: Default::default(),
+    };
+    let preseeded_tip = local.write_object(&commit).unwrap().detach();
+    local
+        .reference(
+            "refs/meta/local/main",
+            preseeded_tip,
+            gix::refs::transaction::PreviousValue::Any,
+            "pre-seed for test",
+        )
+        .unwrap();
+
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", bare_path, "--init"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Reusing existing refs/meta/local/main",
+        ));
+
+    let local = open_repo(dir.path());
+    let after_tip = ref_to_commit_oid(&local, "refs/meta/local/main");
+    assert_eq!(
+        after_tip, preseeded_tip,
+        "--init must not rewrite an existing local ref"
+    );
+
+    let bare = open_repo(bare_dir.path());
+    let bare_tip = ref_to_commit_oid(&bare, "refs/meta/main");
+    assert_eq!(
+        bare_tip, preseeded_tip,
+        "bare remote should receive whatever the local ref already pointed at"
+    );
 }
 
 #[test]

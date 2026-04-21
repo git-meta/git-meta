@@ -1,4 +1,8 @@
-use anyhow::{bail, Result};
+use std::io::IsTerminal;
+
+use anyhow::{bail, Context, Result};
+use dialoguer::Confirm;
+use gix::refs::transaction::PreviousValue;
 
 use crate::commands::{materialize, serialize};
 use crate::context::CommandContext;
@@ -58,7 +62,170 @@ fn check_remote_refs(
     Ok((has_match, other_namespaces))
 }
 
-pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>) -> Result<()> {
+/// Prompt the user to confirm initializing a fresh metadata remote.
+///
+/// Returns `Ok(true)` if the user accepts. Returns `Ok(false)` when stdin is
+/// not a terminal (so the caller can bail with an actionable hint instead of
+/// hanging in CI), or when the user declines the prompt.
+fn prompt_for_init(url: &str, ns: &str) -> Result<bool> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+    eprintln!();
+    eprintln!("No metadata refs (refs/{ns}/main) found on {url}.");
+    eprintln!("This looks like a fresh metadata remote.");
+    let answer = Confirm::new()
+        .with_prompt(format!(
+            "Initialize refs/{ns}/main with a starter README commit?"
+        ))
+        .default(true)
+        .interact()
+        .unwrap_or(false);
+    Ok(answer)
+}
+
+/// Ensure `refs/{ns}/local/main` exists, creating it with a README commit if
+/// it does not. Returns the OID at the tip of that ref.
+///
+/// If the local ref already exists (e.g. from a previous project on the same
+/// machine), it is reused as-is and no new commit is created -- the caller
+/// will simply push whatever is there.
+///
+/// # Parameters
+/// - `ctx`: command context with the open session
+/// - `ns`: metadata namespace (e.g. `"meta"`)
+/// - `origin_url`: URL of the project's `origin` remote, embedded in the
+///   README so the metadata remote is self-describing
+/// - `meta_url`: URL of the metadata remote being added, also embedded in
+///   the README
+fn ensure_local_meta_ref(
+    ctx: &CommandContext,
+    ns: &str,
+    origin_url: &str,
+    meta_url: &str,
+) -> Result<gix::ObjectId> {
+    let repo = ctx.session.repo();
+    let local_ref = format!("refs/{ns}/local/main");
+
+    if let Ok(reference) = repo.find_reference(&local_ref) {
+        let tip = reference
+            .into_fully_peeled_id()
+            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .detach();
+        eprintln!(
+            "Reusing existing {local_ref} (tip {})",
+            &tip.to_string()[..12]
+        );
+        return Ok(tip);
+    }
+
+    let readme = meta_readme_content(origin_url, meta_url, ns);
+    let blob_oid: gix::ObjectId = repo
+        .write_blob(readme.as_bytes())
+        .context("write README blob")?
+        .into();
+    let tree_oid = {
+        let mut editor = repo
+            .empty_tree()
+            .edit()
+            .context("create tree editor for README")?;
+        editor
+            .upsert("README.md", gix::objs::tree::EntryKind::Blob, blob_oid)
+            .context("insert README into tree")?;
+        editor.write().context("write README tree")?
+    };
+
+    let sig = gix::actor::Signature {
+        name: ctx.session.name().into(),
+        email: ctx.session.email().into(),
+        time: gix::date::Time::now_local_or_utc(),
+    };
+    let commit = gix::objs::Commit {
+        message: format!(
+            "git-meta: initialize {ns} metadata\n\n\
+             First commit on refs/{ns}/local/main, created by `git meta remote add --init`.\n\
+             Stores a README that documents the metadata layout for new contributors."
+        )
+        .into(),
+        tree: tree_oid.into(),
+        author: sig.clone(),
+        committer: sig,
+        encoding: None,
+        parents: vec![].into(),
+        extra_headers: Default::default(),
+    };
+
+    let commit_oid = repo
+        .write_object(&commit)
+        .context("write initial metadata commit")?
+        .detach();
+
+    repo.reference(
+        local_ref.as_str(),
+        commit_oid,
+        PreviousValue::MustNotExist,
+        format!("git-meta: initialize {local_ref}"),
+    )
+    .map_err(|e| anyhow::anyhow!("create {local_ref}: {e}"))?;
+
+    eprintln!(
+        "Created {local_ref} with initial README commit ({})",
+        &commit_oid.to_string()[..12]
+    );
+    Ok(commit_oid)
+}
+
+/// Generate the README body for the initial metadata commit.
+fn meta_readme_content(origin_url: &str, meta_url: &str, namespace: &str) -> String {
+    format!(
+        r#"# Git Metadata Repository
+
+This ref stores structured metadata for the project at:
+
+    {origin_url}
+
+It is managed by [git meta](https://git-meta.com/), which associates
+key-value metadata with Git objects (commits, branches, paths, change-ids,
+and project-wide settings) and synchronises them across repositories using
+ordinary Git transports.
+
+## How it works
+
+Metadata lives locally in a SQLite database (`.git/git-meta.sqlite`) and is
+serialized into Git trees and commits under `refs/{namespace}/` for transport.
+This remote stores the canonical history under `refs/{namespace}/main`; the
+`main` branch you may see at the repository root is unrelated and only exists
+for browsing.
+
+Other contributors do **not** clone this repository directly. Instead they
+configure it as a metadata remote on top of their existing checkout:
+
+```
+git meta remote add {meta_url} --name meta --namespace {namespace}
+git meta pull
+```
+
+After that, reading and writing metadata works against the project's normal
+checkout:
+
+```
+git meta get commit:HEAD
+git meta set commit:HEAD review:status approved
+git meta push
+```
+
+## Important notes
+
+- Metadata is exchanged on `refs/{namespace}/main`, never on `refs/heads/main`.
+- Never push directly to `refs/{namespace}/main` -- always go through
+  `git meta push`, which serializes local changes and resolves conflicts.
+- This README only lives in the very first commit on `refs/{namespace}/main`;
+  later metadata commits replace the tip tree with the metadata layout.
+"#
+    )
+}
+
+pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let ns = namespace_override
