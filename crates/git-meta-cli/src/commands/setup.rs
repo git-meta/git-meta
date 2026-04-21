@@ -11,6 +11,7 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use crate::commands::remote;
 use crate::context::CommandContext;
+use crate::style::Style;
 
 /// Filename, relative to the repo work tree, that holds the recommended
 /// metadata remote URL.
@@ -43,7 +44,12 @@ pub fn run() -> Result<()> {
 
     let url = read_setup_url(&setup_path)?;
 
-    eprintln!("Using metadata remote URL from {}", setup_path.display());
+    let s = Style::detect_stderr();
+    eprintln!(
+        "{} metadata remote URL from {}",
+        s.step("Using"),
+        s.dim(&setup_path.display().to_string()),
+    );
     remote::run_add(&url, DEFAULT_REMOTE_NAME, None, true)
 }
 
@@ -165,7 +171,10 @@ mod tests {
         let input = "\
                      https://example.com/first.git\n\
                      https://example.com/second.git\n";
-        assert_eq!(parse_setup_url(input), Some("https://example.com/first.git"));
+        assert_eq!(
+            parse_setup_url(input),
+            Some("https://example.com/first.git")
+        );
     }
 
     #[test]
@@ -178,10 +187,7 @@ mod tests {
 
     #[test]
     fn keeps_lone_slash() {
-        assert_eq!(
-            strip_optional_trailing_slash_owned("/".to_string()),
-            "/"
-        );
+        assert_eq!(strip_optional_trailing_slash_owned("/".to_string()), "/");
     }
 
     #[test]
@@ -201,6 +207,9 @@ mod tests {
         std::fs::write(&path, "# only a comment\n\n").unwrap();
         let err = read_setup_url(&path).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("empty or contains no metadata remote URL"), "got: {msg}");
+        assert!(
+            msg.contains("empty or contains no metadata remote URL"),
+            "got: {msg}"
+        );
     }
 }

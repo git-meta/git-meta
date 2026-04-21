@@ -6,6 +6,7 @@ use gix::refs::transaction::PreviousValue;
 
 use crate::commands::{materialize, serialize};
 use crate::context::CommandContext;
+use crate::style::Style;
 
 /// Expand shorthand "owner/repo" to a full GitHub SSH URL.
 fn expand_url(url: &str) -> String {
@@ -107,14 +108,17 @@ fn ensure_local_meta_ref(
     let repo = ctx.session.repo();
     let local_ref = format!("refs/{ns}/local/main");
 
+    let s = Style::detect_stderr();
+
     if let Ok(reference) = repo.find_reference(&local_ref) {
         let tip = reference
             .into_fully_peeled_id()
             .map_err(|e| anyhow::anyhow!("{e}"))?
             .detach();
         eprintln!(
-            "Reusing existing {local_ref} (tip {})",
-            &tip.to_string()[..12]
+            "{} existing {local_ref} {}",
+            s.ok("Reusing"),
+            s.dim(&format!("(tip {})", &tip.to_string()[..12])),
         );
         return Ok(tip);
     }
@@ -169,8 +173,9 @@ fn ensure_local_meta_ref(
     .map_err(|e| anyhow::anyhow!("create {local_ref}: {e}"))?;
 
     eprintln!(
-        "Created {local_ref} with initial README commit ({})",
-        &commit_oid.to_string()[..12]
+        "{} {local_ref} with initial README commit {}",
+        s.ok("Created"),
+        s.dim(&format!("({})", &commit_oid.to_string()[..12])),
     );
     Ok(commit_oid)
 }
@@ -233,6 +238,9 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
         .to_string();
     let url = expand_url(url);
 
+    let s_err = Style::detect_stderr();
+    let s_out = Style::detect_stdout();
+
     // Check if this remote name already exists
     let config = repo.config_snapshot();
     let remote_url_key = format!("remote.{name}.url");
@@ -244,7 +252,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
     // under the requested namespace and the user has opted in (either via
     // `--init` or by confirming an interactive prompt), we will initialize
     // the remote with a README commit on `refs/{ns}/main` after configuring.
-    eprintln!("Checking {url}...");
+    eprintln!("{} {url}...", s_err.step("Checking"));
     let mut should_init = false;
     match check_remote_refs(&ctx.session, &url, &ns) {
         Ok((has_match, other_namespaces)) => {
@@ -281,7 +289,10 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
             }
         }
         Err(e) => {
-            eprintln!("Warning: could not inspect remote refs: {e}");
+            eprintln!(
+                "{}: could not inspect remote refs: {e}",
+                s_err.warn("Warning")
+            );
             eprintln!("Proceeding with setup anyway...");
         }
     }
@@ -318,7 +329,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
         run(&[&format!("{prefix}.metanamespace"), &ns])?;
     }
 
-    println!("Added meta remote '{name}' -> {url}");
+    println!("{} meta remote '{name}' -> {url}", s_out.ok("Added"));
 
     // If we are initializing a fresh remote, create a starter commit on
     // `refs/{ns}/local/main` (or reuse one if it already exists) and push it
@@ -330,11 +341,11 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
         ensure_local_meta_ref(&ctx, &ns, &origin_url, &url)?;
 
         let push_refspec = format!("refs/{ns}/local/main:refs/{ns}/main");
-        eprint!("Initializing refs/{ns}/main on {name}...");
+        eprint!("{} refs/{ns}/main on {name}...", s_err.step("Initializing"));
         match git_meta_lib::git_utils::run_git(repo, &["push", name, &push_refspec]) {
-            Ok(_) => eprintln!(" done."),
+            Ok(_) => eprintln!(" {}", s_err.ok("done.")),
             Err(e) => {
-                eprintln!(" failed.");
+                eprintln!(" {}", s_err.err("failed."));
                 bail!(
                     "could not push the initial metadata commit to {name} ({url}): {e}\n\n\
                      The remote was configured locally. To retry the push:\n  \
@@ -346,13 +357,13 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
 
     // Initial blobless fetch
     let fetch_refspec = format!("refs/{ns}/main:refs/{ns}/remotes/main");
-    eprint!("Fetching metadata (blobless)...");
+    eprint!("{} metadata (blobless)...", s_err.step("Fetching"));
     match git_meta_lib::git_utils::run_git(
         repo,
         &["fetch", "--filter=blob:none", name, &fetch_refspec],
     ) {
         Ok(_) => {
-            eprintln!(" done.");
+            eprintln!(" {}", s_err.ok("done."));
 
             // Verify the tracking ref was created
             let remote_ref = format!("{ns}/remotes/main");
@@ -361,14 +372,16 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
                 Ok(r) => {
                     let tip_oid = r.into_fully_peeled_id()?.detach();
                     eprintln!(
-                        "  tracking ref: {} -> {}",
+                        "  {} {} -> {}",
+                        s_err.dim("tracking ref:"),
                         tracking_ref_name,
-                        &tip_oid.to_string()[..12]
+                        s_err.dim(&tip_oid.to_string()[..12]),
                     );
                 }
                 Err(e) => {
                     eprintln!(
-                        "  warning: tracking ref {tracking_ref_name} not found after fetch: {e}"
+                        "  {}: tracking ref {tracking_ref_name} not found after fetch: {e}",
+                        s_err.warn("warning"),
                     );
                     eprintln!("You can try again with: git meta pull");
                     return Ok(());
@@ -376,19 +389,19 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
             }
 
             // Hydrate tip tree blobs so gix can read the metadata
-            eprint!("Hydrating tip blobs...");
+            eprint!("{} tip blobs...", s_err.step("Hydrating"));
             let blob_count =
                 git_meta_lib::git_utils::hydrate_tip_blobs_counted(repo, name, &remote_ref)?;
-            eprintln!(" {blob_count} blobs fetched.");
+            eprintln!(" {}", s_err.ok(&format!("{blob_count} blobs fetched.")));
 
             // Materialize remote metadata into local SQLite
-            eprint!("Serializing local metadata...");
+            eprint!("{} local metadata...", s_err.step("Serializing"));
             serialize::run(false)?;
-            eprintln!(" done.");
+            eprintln!(" {}", s_err.ok("done."));
 
-            eprint!("Materializing remote metadata...");
+            eprint!("{} remote metadata...", s_err.step("Materializing"));
             materialize::run(None, false, false)?;
-            eprintln!(" done.");
+            eprintln!(" {}", s_err.ok("done."));
 
             // Index historical keys as promisor entries
             let tracking_ref_name = format!("refs/{ns}/remotes/main");
@@ -401,13 +414,17 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
                         None,
                     )?;
                     if count > 0 {
-                        eprintln!("Indexed {count} keys from history (available on demand).");
+                        eprintln!(
+                            "{} {count} keys from history {}",
+                            s_err.ok("Indexed"),
+                            s_err.dim("(available on demand)."),
+                        );
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("\nWarning: initial fetch failed: {e}");
+            eprintln!("\n{}: initial fetch failed: {e}", s_err.warn("Warning"));
             eprintln!("You can fetch later with: git meta pull");
         }
     }
@@ -419,6 +436,7 @@ pub fn run_remove(name: &str) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let ns = ctx.session.namespace();
+    let s_out = Style::detect_stdout();
 
     // Verify this is a meta remote
     let config = repo.config_snapshot();
@@ -460,7 +478,7 @@ pub fn run_remove(name: &str) -> Result<()> {
     for refname in &refs_to_delete {
         let reference = repo.find_reference(refname)?;
         reference.delete().map_err(|e| anyhow::anyhow!("{e}"))?;
-        println!("Deleted ref {refname}");
+        println!("{} ref {refname}", s_out.ok("Deleted"));
     }
 
     // Also delete refs under refs/{ns}/local/
@@ -479,10 +497,10 @@ pub fn run_remove(name: &str) -> Result<()> {
     for refname in &local_refs_to_delete {
         let reference = repo.find_reference(refname)?;
         reference.delete().map_err(|e| anyhow::anyhow!("{e}"))?;
-        println!("Deleted ref {refname}");
+        println!("{} ref {refname}", s_out.ok("Deleted"));
     }
 
-    println!("Removed meta remote '{name}'");
+    println!("{} meta remote '{name}'", s_out.ok("Removed"));
     Ok(())
 }
 

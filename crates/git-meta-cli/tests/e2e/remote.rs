@@ -74,6 +74,54 @@ fn remote_add_init_creates_ref_and_pushes_readme() {
     );
 }
 
+/// `CLICOLOR_FORCE=1` must surface ANSI escape sequences in the
+/// progress output so users on a terminal can visually scan the
+/// pipeline. We assert the specific SGR sequences for each role:
+/// step labels render bold cyan, success labels render bold green, and
+/// the dim helper renders the OID detail in dim.
+#[test]
+fn remote_add_init_emits_ansi_color_when_forced() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .env_remove("NO_COLOR")
+        .env("CLICOLOR_FORCE", "1")
+        .args(["remote", "add", bare_path, "--init"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("\x1b[1;36mChecking\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;32mCreated\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;36mInitializing\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;36mFetching\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;32mdone.\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;36mHydrating\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;36mSerializing\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[1;36mMaterializing\x1b[0m"))
+        .stdout(predicate::str::contains("\x1b[1;32mAdded\x1b[0m"));
+}
+
+/// Mirror of [`remote_add_init_emits_ansi_color_when_forced`] for the
+/// default capture-mode case: `assert_cmd` pipes stdout/stderr, so the
+/// TTY check fails and no ANSI sequences should appear.
+#[test]
+fn remote_add_init_omits_ansi_color_when_not_a_tty() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .env_remove("CLICOLOR_FORCE")
+        .args(["remote", "add", bare_path, "--init"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("\x1b[").not())
+        .stdout(predicate::str::contains("\x1b[").not());
+}
+
 #[test]
 fn remote_add_init_with_namespace_uses_that_namespace() {
     let (dir, _sha) = setup_repo();

@@ -16,9 +16,7 @@ fn setup_reads_dot_git_meta_and_initializes_remote() {
         .args(["setup"])
         .assert()
         .success()
-        .stderr(predicate::str::contains(
-            "Using metadata remote URL from",
-        ))
+        .stderr(predicate::str::contains("Using metadata remote URL from"))
         .stderr(predicate::str::contains(".git-meta"))
         .stdout(predicate::str::contains("Added meta remote"));
 
@@ -60,6 +58,48 @@ fn setup_empty_dot_git_meta_bails_with_hint() {
         .stderr(predicate::str::contains(
             "empty or contains no metadata remote URL",
         ));
+}
+
+/// `CLICOLOR_FORCE=1` must surface the colorized "Using" step label so
+/// users on a terminal can visually distinguish setup phases. We rely
+/// on the underlying `remote add --init` test for the rest of the
+/// pipeline; this test only verifies the [`commands::setup`] surface.
+#[test]
+fn setup_emits_ansi_color_when_forced() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+    std::fs::write(dir.path().join(".git-meta"), format!("{bare_path}\n")).unwrap();
+
+    harness::git_meta(dir.path())
+        .env_remove("NO_COLOR")
+        .env("CLICOLOR_FORCE", "1")
+        .args(["setup"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("\x1b[1;36mUsing\x1b[0m"))
+        .stderr(predicate::str::contains("\x1b[2m"))
+        .stdout(predicate::str::contains("\x1b[1;32mAdded\x1b[0m"));
+}
+
+/// Default capture mode: stdout/stderr are pipes, so no ANSI escape
+/// sequences should leak into the captured output.
+#[test]
+fn setup_omits_ansi_color_when_not_a_tty() {
+    let (dir, _sha) = setup_repo();
+    let bare_dir = TempDir::new().unwrap();
+    let _ = gix::init_bare(bare_dir.path()).unwrap();
+    let bare_path = bare_dir.path().to_str().unwrap();
+    std::fs::write(dir.path().join(".git-meta"), format!("{bare_path}\n")).unwrap();
+
+    harness::git_meta(dir.path())
+        .env_remove("CLICOLOR_FORCE")
+        .args(["setup"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("\x1b[").not())
+        .stdout(predicate::str::contains("\x1b[").not());
 }
 
 #[test]
