@@ -4,6 +4,7 @@ mod cli;
 mod commands;
 mod context;
 mod pager;
+mod style;
 
 #[cfg(feature = "bench")]
 mod bench;
@@ -88,12 +89,15 @@ fn main() -> Result<()> {
             value,
         } => commands::set::run_rm(&target, &key, &value, json, timestamp),
 
+        Commands::Setup => commands::setup::run(),
+
         Commands::Remote(args) => match args.action {
             RemoteAction::Add {
                 url,
                 name,
                 namespace,
-            } => commands::remote::run_add(&url, &name, namespace.as_deref()),
+                init,
+            } => commands::remote::run_add(&url, &name, namespace.as_deref(), init),
             RemoteAction::Remove { name } => commands::remote::run_remove(&name),
             RemoteAction::List => commands::remote::run_list(),
         },

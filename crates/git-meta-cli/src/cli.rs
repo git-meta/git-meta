@@ -239,6 +239,15 @@ pub enum Commands {
         since: Option<String>,
     },
 
+    /// Initialize a metadata remote from a project-local `.git-meta` file
+    ///
+    /// Reads the remote URL from `.git-meta` at the repo root and then runs
+    /// the equivalent of `git meta remote add <url> --init`. The file format
+    /// is one URL per line, with `#` comments and blank lines ignored; only
+    /// the first usable line is used.
+    #[command(display_order = 33)]
+    Setup,
+
     /// Manage metadata remote sources
     #[command(display_order = 34)]
     Remote(RemoteArgs),
@@ -380,6 +389,14 @@ pub enum RemoteAction {
         /// Metadata namespace to use (default: from git config or "meta")
         #[arg(long)]
         namespace: Option<String>,
+
+        /// Initialize the remote with a README commit on `refs/{namespace}/main`
+        /// when no metadata refs exist there yet.
+        ///
+        /// On an interactive terminal, you will be prompted instead. Use this
+        /// flag to skip the prompt (e.g. in CI).
+        #[arg(long)]
+        init: bool,
     },
 
     /// Remove a metadata remote source
@@ -474,34 +491,19 @@ const HELP_GROUPS: &[HelpGroup] = &[
         heading: "setup and configuration",
         sections: &[HelpSection {
             label: None,
-            commands: &["remote", "config", "teardown"],
+            commands: &["setup", "remote", "config", "teardown"],
         }],
     },
 ];
 
 /// Decide whether the curated help should emit ANSI color codes.
 ///
-/// Resolution order (first match wins):
-/// 1. `NO_COLOR` is set (any value) → never color, per
-///    <https://no-color.org/>.
-/// 2. `CLICOLOR_FORCE` is set to a non-empty value other than `"0"` →
-///    always color, even when stdout is not a TTY. This matches the
-///    convention used by `ls`, `grep`, and friends, and makes the
-///    colored path deterministically testable in `assert_cmd`.
-/// 3. Otherwise, color iff stdout is connected to a real terminal, so
-///    codes never leak into pipes, log files, or another program's
-///    input as raw escape garbage.
+/// Delegates to [`crate::style::use_color_stdout`], which centralises the
+/// `NO_COLOR` / `CLICOLOR_FORCE` / TTY precedence used everywhere in the
+/// CLI. Wrapping it here keeps [`Palette::detect`] readable and lets the
+/// help-specific call site stay decoupled from the lower-level helper.
 fn use_color() -> bool {
-    if std::env::var_os("NO_COLOR").is_some() {
-        return false;
-    }
-    if let Some(v) = std::env::var_os("CLICOLOR_FORCE") {
-        if !v.is_empty() && v != "0" {
-            return true;
-        }
-    }
-    use std::io::IsTerminal;
-    std::io::stdout().is_terminal()
+    crate::style::use_color_stdout()
 }
 
 /// ANSI styling palette used by [`print_help`].

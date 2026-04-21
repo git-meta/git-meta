@@ -23,7 +23,7 @@
           </a>
           <p class="tagline">Git metadata specification and project docs</p>
           <nav class="nav">
-            <div class="nav-group"><a href="../index.html">Overview</a></div><div class="nav-group"><h2>Exchange format</h2><a href="../exchange-format/targets.html">Targets and keys</a><a href="../exchange-format/exchange.html">Serialization</a><a href="../exchange-format/materialization.html">Materialization</a></div><div class="nav-group"><h2>Value types</h2><a href="../exchange-format/strings.html">Strings</a><a href="../exchange-format/lists.html">Lists</a><a href="../exchange-format/sets.html">Sets</a></div><div class="nav-group"><h2>Implementation</h2><a href="overview.html">Implementation Overview</a><a href="storage.html">Local storage</a><a class="active" href="cli.html">CLI surface</a><a href="output.html">Output and query semantics</a><a href="pruning.html">Auto-pruning</a><a href="auto-sync.html">Syncing with normal Git</a></div><div class="nav-group"><h2>Other Considerations</h2><a href="standard-keys.html">Standard keys</a><a href="workflow.html">Workflow</a></div>
+            <div class="nav-group"><a href="../index.html">Overview</a></div><div class="nav-group"><h2>Exchange format</h2><a href="../exchange-format/targets.html">Targets and keys</a><a href="../exchange-format/exchange.html">Serialization</a><a href="../exchange-format/materialization.html">Materialization</a></div><div class="nav-group"><h2>Value types</h2><a href="../exchange-format/strings.html">Strings</a><a href="../exchange-format/lists.html">Lists</a><a href="../exchange-format/sets.html">Sets</a></div><div class="nav-group"><h2>Implementation</h2><a href="overview.html">Implementation Overview</a><a href="storage.html">Local storage</a><a class="active" href="cli.html">CLI surface</a><a href="output.html">Output and query semantics</a><a href="pruning.html">Auto-pruning</a></div><div class="nav-group"><h2>Other Considerations</h2><a href="standard-keys.html">Standard keys</a><a href="auto-sync.html">Syncing with normal Git</a><a href="workflow.html">Workflow</a></div>
           </nav>
         </div>
         <div class="sidebar-footer">
@@ -84,6 +84,52 @@ git meta set:rm &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
 <h3 id="dry-run-materialize">Dry-run materialize</h3>
 <pre><code>git meta materialize --dry-run [&lt;remote&gt;]</code></pre>
 <p>Useful for reporting the merge strategy and conflict decisions without applying them.</p>
+<h2 id="sync-commands">Sync commands</h2>
+<p><code>push</code> and <code>pull</code> are the porcelain that bundle a local serialize/materialize with the network step against a configured metadata remote. They are the two commands a project uses day-to-day; <code>serialize</code> and <code>materialize</code> are the underlying plumbing.</p>
+<h3 id="push">Push</h3>
+<pre><code>git meta push [&lt;remote&gt;]
+git meta push [&lt;remote&gt;] --readme</code></pre>
+<p>Behavior:</p>
+<p><code>git meta serialize</code>) and pushes the resulting metadata commit on <code>refs/&lt;namespace&gt;/main</code> to the named remote</p>
+<p><code>refs/heads/main</code> on the metadata remote, and only if that branch does not already exist (no force push). This is purely cosmetic — it gives the metadata repository something human-readable when browsed on the forge — and is independent of the metadata refs themselves</p>
+<ul><li>serializes any pending local metadata changes (equivalent to</li><li>if <code>&lt;remote&gt;</code> is omitted, the first configured metadata remote is used</li><li><code>--readme</code> instead pushes a starter <code>README.md</code> commit to</li></ul>
+<h3 id="pull">Pull</h3>
+<pre><code>git meta pull [&lt;remote&gt;]</code></pre>
+<p>Behavior:</p>
+<p><code>refs/&lt;namespace&gt;/remotes/main</code> and runs the equivalent of <code>git meta materialize</code> to merge the new history into the local SQLite database</p>
+<ul><li>fetches <code>refs/&lt;namespace&gt;/main</code> from the remote into</li><li>if <code>&lt;remote&gt;</code> is omitted, the first configured metadata remote is used</li><li>prints <code>Already up-to-date.</code> when the remote tip is unchanged</li></ul>
+<h2 id="setup-and-configuration">Setup and configuration</h2>
+<p>These commands wire a project up to a metadata remote, or undo that wiring. They never write or read metadata values directly; they only manage the local state needed by the sync and exchange commands above.</p>
+<h3 id="setup">Setup</h3>
+<pre><code>git meta setup</code></pre>
+<p>Initializes a metadata remote for the current repository from a project-local <code>.git-meta</code> file at the repository root.</p>
+<p>The file format is one URL per line, with <code>#</code> comments and blank lines ignored; the first usable line is taken as the remote URL. Anything after that is ignored, so projects can add human-readable notes underneath the URL.</p>
+<p>Behavior:</p>
+<p>fresh metadata remote the command will also create <code>refs/&lt;namespace&gt;/local/main</code> with a starter README and push it to <code>refs/&lt;namespace&gt;/main</code></p>
+<p>in to the project&#x27;s metadata exchange</p>
+<ul><li>reads <code>.git-meta</code> from the repository work tree</li><li>runs the equivalent of <code>git meta remote add &lt;url&gt; --init</code>, so on a</li><li>intended to be the one command a teammate runs after cloning to opt</li></ul>
+<h3 id="add-a-remote">Add a remote</h3>
+<pre><code>git meta remote add &lt;url&gt; [--name &lt;name&gt;] [--namespace &lt;namespace&gt;] [--init]</code></pre>
+<p>Configures a new metadata remote for the current repository.</p>
+<p>Behavior:</p>
+<p><code>remote.&lt;name&gt;.fetch = +refs/&lt;ns&gt;/main:refs/&lt;ns&gt;/remotes/main</code>, <code>remote.&lt;name&gt;.meta = true</code>, plus partial-clone/promisor settings so blobs are fetched on demand</p>
+<p><code>refs/&lt;ns&gt;/main</code> exists, and on success runs an initial blobless fetch and <code>materialize</code> so values are immediately readable</p>
+<p>starter README commit and pushes it to <code>refs/&lt;ns&gt;/main</code> on the remote</p>
+<p>confirmation and behaves as if <code>--init</code> had been passed when they accept</p>
+<p>hint to re-run with <code>--init</code></p>
+<p>hint to re-run with <code>--namespace=&lt;that-namespace&gt;</code></p>
+<ul><li>writes git config entries for the remote: <code>remote.&lt;name&gt;.url</code>,</li><li>inspects the remote with <code>git ls-remote</code> to check that</li><li>if no metadata refs are present on the remote:</li><li>with <code>--init</code>, creates (or reuses) <code>refs/&lt;ns&gt;/local/main</code> with a</li><li>on an interactive terminal without <code>--init</code>, prompts the user for</li><li>in non-interactive contexts (CI, pipes), bails with an actionable</li><li>if metadata refs are found under a different namespace, bails with a</li></ul>
+<p>Defaults:</p>
+<p><code>meta</code></p>
+<ul><li><code>--name</code>: <code>meta</code></li><li><code>--namespace</code>: from the <code>meta.namespace</code> git config, falling back to</li></ul>
+<p>The companion verbs <code>git meta remote list</code> and <code>git meta remote remove &lt;name&gt;</code> are also available for inspecting and removing configured metadata remotes.</p>
+<h3 id="teardown">Teardown</h3>
+<pre><code>git meta teardown</code></pre>
+<p>Removes the local git meta state from the repository.</p>
+<p>Behavior:</p>
+<p>serialized, and remote-tracking refs</p>
+<ul><li>deletes the SQLite database at <code>.git/git-meta.sqlite</code></li><li>deletes every reference under <code>refs/&lt;namespace&gt;/</code>, including local,</li></ul>
+<p>This does <strong>not</strong> touch any remote, and is intended for cases like switching namespaces, recovering from local corruption, or cleanly uninstalling git meta from a checkout. After teardown, <code>git meta setup</code> (or <code>git meta remote add</code>) re-installs the local state.</p>
 <h2 id="target-syntax">Target syntax</h2>
 <p>Targets use the syntax documented in <a href="../exchange-format/targets.html">Targets and keys</a>.</p>
 <p>Examples:</p>

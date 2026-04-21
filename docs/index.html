@@ -226,15 +226,18 @@
               </g>
 
               <!-- Card 1: project (no connector, project-level metadata) -->
-              <g class="meta-card" transform="translate(230 10)">
+              <g class="meta-card type-project" transform="translate(230 10)">
                 <rect
                   width="380"
                   height="120"
                   rx="10"
                   filter="url(#meta-card-shadow)"
                 />
+                <path
+                  d="M 10 0 H 370 A 10 10 0 0 1 380 10 V 38 H 0 V 10 A 10 10 0 0 1 10 0 Z"
+                  class="meta-card-header"
+                />
                 <text x="16" y="22" class="meta-card-title">project</text>
-                <circle cx="322" cy="18" r="3.5" class="meta-card-dot" />
                 <line
                   x1="0"
                   y1="38"
@@ -261,15 +264,18 @@
               </g>
 
               <!-- Card 2: commit:HEAD -->
-              <g class="meta-card" transform="translate(230 146)">
+              <g class="meta-card type-commit" transform="translate(230 146)">
                 <rect
                   width="380"
                   height="120"
                   rx="10"
                   filter="url(#meta-card-shadow)"
                 />
+                <path
+                  d="M 10 0 H 370 A 10 10 0 0 1 380 10 V 38 H 0 V 10 A 10 10 0 0 1 10 0 Z"
+                  class="meta-card-header"
+                />
                 <text x="16" y="22" class="meta-card-title">commit:e2f9c1</text>
-                <circle cx="322" cy="18" r="3.5" class="meta-card-dot" />
                 <line
                   x1="0"
                   y1="38"
@@ -296,15 +302,18 @@
               </g>
 
               <!-- Card 3: commit:9a3f -->
-              <g class="meta-card" transform="translate(230 301)">
+              <g class="meta-card type-commit" transform="translate(230 301)">
                 <rect
                   width="380"
                   height="82"
                   rx="10"
                   filter="url(#meta-card-shadow)"
                 />
+                <path
+                  d="M 10 0 H 370 A 10 10 0 0 1 380 10 V 38 H 0 V 10 A 10 10 0 0 1 10 0 Z"
+                  class="meta-card-header"
+                />
                 <text x="16" y="22" class="meta-card-title">commit:9a3f08</text>
-                <circle cx="322" cy="18" r="3.5" class="meta-card-dot" />
                 <line
                   x1="0"
                   y1="38"
@@ -323,17 +332,20 @@
               </g>
 
               <!-- Card 4: branch:feat-metrics (above the branch point card) -->
-              <g class="meta-card" transform="translate(230 418)">
+              <g class="meta-card type-branch" transform="translate(230 418)">
                 <rect
                   width="380"
                   height="120"
                   rx="10"
                   filter="url(#meta-card-shadow)"
                 />
+                <path
+                  d="M 10 0 H 370 A 10 10 0 0 1 380 10 V 38 H 0 V 10 A 10 10 0 0 1 10 0 Z"
+                  class="meta-card-header"
+                />
                 <text x="16" y="22" class="meta-card-title">
                   branch:feat-metrics
                 </text>
-                <circle cx="322" cy="18" r="3.5" class="meta-card-dot" />
                 <line
                   x1="0"
                   y1="38"
@@ -360,15 +372,18 @@
               </g>
 
               <!-- Card 5: commit:314e7f (the branch point) -->
-              <g class="meta-card" transform="translate(230 554)">
+              <g class="meta-card type-commit" transform="translate(230 554)">
                 <rect
                   width="380"
                   height="120"
                   rx="10"
                   filter="url(#meta-card-shadow)"
                 />
+                <path
+                  d="M 10 0 H 370 A 10 10 0 0 1 380 10 V 38 H 0 V 10 A 10 10 0 0 1 10 0 Z"
+                  class="meta-card-header"
+                />
                 <text x="16" y="22" class="meta-card-title">commit:314e7f</text>
-                <circle cx="322" cy="18" r="3.5" class="meta-card-dot" />
                 <line
                   x1="0"
                   y1="38"
@@ -707,12 +722,16 @@
                 <div class="try-step-num">02 &middot; Set up</div>
                 <h3>Point at a meta remote</h3>
                 <p>
-                  Metadata lives under its own ref namespace. Add a remote that
-                  hosts those refs &mdash; the same repo as your code is fine.
+                  Metadata lives under its own ref namespace. Pin the
+                  recommended remote in a <code>.git-meta</code> file at the
+                  repo root &mdash; the same repo as your code is fine
+                  &mdash; then run <code>git meta setup</code> to wire it up
+                  and seed <code>refs/meta/main</code>.
                 </p>
               </div>
               <pre class="snippet"><span class="c-mut">$</span> cd your-project
-<span class="c-mut">$</span> git meta remote add <span class="c-s">git@github.com:you/proj.git</span></pre>
+<span class="c-mut">$</span> echo <span class="c-s">'git@github.com:you/proj.git'</span> &gt; .git-meta
+<span class="c-mut">$</span> git meta setup</pre>
             </li>
 
             <li class="try-step">
@@ -737,16 +756,17 @@
                 <div class="try-step-num">04 &middot; Teammate</div>
                 <h3>Another user fetches and inspects it</h3>
                 <p>
-                  On a different machine, a collaborator clones the repo, points
-                  at the same meta remote, fetches the metadata refs, and
-                  inspects the values you wrote.
+                  On a different machine, a collaborator clones the repo and
+                  runs <code>git meta setup</code>. The committed
+                  <code>.git-meta</code> file from step 02 picks the remote
+                  for them, fetches the metadata refs, and gets them ready
+                  to inspect the values you wrote.
                 </p>
               </div>
               <pre
                 class="snippet"
               ><span class="c-mut">$</span> git clone <span class="c-s">git@github.com:you/proj.git</span> &amp;&amp; cd proj
-<span class="c-mut">$</span> git meta remote add <span class="c-s">git@github.com:you/proj.git</span>
-<span class="c-mut">$</span> git meta pull
+<span class="c-mut">$</span> git meta setup
 <span class="c-mut">$</span> git meta show <span class="c-k">HEAD</span></pre>
             </li>
           </ol>
@@ -772,11 +792,13 @@
             </svg>
             <p>
               This is really just the plumbing for a real metadata sharing
-              workflow. Tools like GitButler, Jujutsu or Entire are working
-              to integrate these low level tools into higher level things
-              like committing, pushing and pulling. To wire it up yourself
-              with Git hooks and aliases, see
-              <a href="spec/implementation/auto-sync.html">Syncing with normal Git</a>.
+              workflow. Tools like GitButler, Jujutsu or Entire are working to
+              integrate these low level tools into higher level things like
+              committing, pushing and pulling. To wire it up yourself with Git
+              hooks and aliases, see
+              <a href="spec/implementation/auto-sync.html"
+                >Syncing with normal Git</a
+              >.
             </p>
           </aside>
         </div>

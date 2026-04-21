@@ -272,7 +272,16 @@ p  { color: var(--ink-2); margin: 0 0 12px; }
   fill: var(--ink);
   letter-spacing: 0.01em;
 }
-.meta-card-dot { fill: var(--brand); }
+
+/* Card header tint, keyed by target type. Lighter than the type pills so
+   pills inside the card body still pop. */
+.meta-card-header { stroke: none; }
+.meta-card.type-project .meta-card-header { fill: #ece6d6; }
+.meta-card.type-commit  .meta-card-header { fill: #dce8f0; }
+.meta-card.type-branch  .meta-card-header { fill: #e6dff0; }
+html[data-theme="dark"] .meta-card.type-project .meta-card-header { fill: #332c1f; }
+html[data-theme="dark"] .meta-card.type-commit  .meta-card-header { fill: #1a2c39; }
+html[data-theme="dark"] .meta-card.type-branch  .meta-card-header { fill: #2a2438; }
 
 .pill text { font: 600 11px "JetBrains Mono", monospace; letter-spacing: 0.02em; }
 .pill.type-string rect { fill: #ecdfc4; }
