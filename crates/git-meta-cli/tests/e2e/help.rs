@@ -10,6 +10,10 @@ const GROUP_HEADINGS: &[&str] = &[
     "setup and configuration",
 ];
 
+/// Sub-section labels rendered under the "read and write data" group,
+/// splitting it by the kind of value each command operates on.
+const SUBGROUP_LABELS: &[&str] = &["(strings)", "(lists)", "(sets)"];
+
 const VISIBLE_COMMANDS: &[&str] = &[
     "set",
     "get",
