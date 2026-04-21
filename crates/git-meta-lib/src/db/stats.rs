@@ -1,3 +1,8 @@
+//! Stats helpers exposed via the `internal` feature for the CLI's `stats`,
+//! `inspect`, and `get` commands. None of these methods are used elsewhere in
+//! the library, so the entire module is gated on the feature at its
+//! declaration site.
+
 use rusqlite::params;
 
 use crate::error::Result;

@@ -1,15 +1,21 @@
 mod lists;
 mod metadata;
 mod promised;
-mod prune;
 mod schema;
 mod sets;
-mod stats;
 mod sync;
 mod tombstones;
 /// Named return types for database query methods.
 pub mod types;
 mod value_ops;
+
+// Modules that exist solely for the CLI to consume via the `internal` feature.
+// Compiling them only when the feature is enabled keeps the lib build free of
+// dead-code warnings while still exporting the methods to the CLI.
+#[cfg(feature = "internal")]
+mod prune;
+#[cfg(feature = "internal")]
+mod stats;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
