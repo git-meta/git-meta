@@ -13,7 +13,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="has-toc">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-main">
@@ -46,6 +46,10 @@
             <div class="eyebrow">Generated from <a href="https://github.com/git-meta/git-meta/tree/main/spec"><code>spec/*.md</code></a></div>
             <h1>git metadata project</h1>
           </div>
+          <a class="page-source-link" href="https://raw.githubusercontent.com/git-meta/git-meta/main/spec/README.md" rel="noopener" title="View raw markdown source on GitHub">
+            <span aria-hidden="true">{ }</span>
+            <span>markdown</span>
+          </a>
         </header>
         <article class="doc-content has-aside">
           <p>This is a proposed specification for a new standardized way to attach and exchange arbitrary metadata in Git projects.</p>
@@ -80,6 +84,7 @@
 <ul><li><a href="implementation/standard-keys.html">Standard keys</a></li></ul>
         </article>
       </main>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#why-this-project-exists">Why this project exists</a><ul class="toc-sub"><li class="toc-h3"><a href="#limitations-of-current-solutions">Limitations of Current Solutions</a></li><li class="toc-h3"><a href="#metadata-use-cases">Metadata Use Cases</a></li><li class="toc-h3"><a href="#overall-goals">Overall Goals</a></li></ul></li><li class="toc-h2"><a href="#approach">Approach</a></li><li class="toc-h2"><a href="#exchange-format">Exchange format</a><ul class="toc-sub"><li class="toc-h3"><a href="#value-types">Value types</a></li></ul></li><li class="toc-h2"><a href="#implementation">Implementation</a><ul class="toc-sub"><li class="toc-h3"><a href="#key-naming-standards">Key Naming Standards</a></li></ul></li></ul></aside>
     </div>
     <script>
       (() => {
@@ -134,6 +139,38 @@
 
         applyTheme(currentTheme());
         applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
       })();
     </script>
   </body>

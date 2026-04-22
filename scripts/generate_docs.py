@@ -26,6 +26,11 @@ ASSETS_DIR = DOCS_DIR / "assets"
 
 SITE_ORIGIN = "https://git-meta.com"
 SITE_BASE = f"{SITE_ORIGIN}/spec"
+# Base URL for raw markdown sources on GitHub. Each generated spec page
+# embeds a "view markdown" link in the page header pointing at this prefix
+# joined with the page's `source_rel` path, so readers can jump straight
+# to the unrendered .md file.
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/git-meta/git-meta/main/spec"
 # Path of the marketing landing page relative to docs/. Its mtime is used
 # as the sitemap <lastmod> for the root URL so the sitemap stays accurate
 # whenever the landing page is republished.
@@ -98,6 +103,7 @@ STYLE_CSS = """
   --doc-max: 1264px;
   --aside-width: 260px;
   --sidebar-width: 260px;
+  --toc-width: 240px;
 }
 
 :root,
@@ -163,6 +169,9 @@ body.sidebar-collapsed {
   --sidebar-width: 72px;
 }
 .layout { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: 100vh; }
+body.has-toc .layout {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--toc-width);
+}
 .sidebar {
   --sidebar-bg: #f7f3ec;
   --sidebar-text: #2a1f1a;
@@ -293,10 +302,38 @@ body.sidebar-collapsed {
 }
 .content { padding: 32px 44px 60px; }
 .page-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 24px;
 }
-.page-header-main { min-width: 0; }
+.page-header-main { min-width: 0; flex: 1; }
 .eyebrow { color: var(--muted); margin-bottom: 8px; }
+/* Small chip-style link in the page header that points at the raw .md
+   source for the current page, so readers can grab the unrendered
+   markdown without hunting through the repo. Sits flush with the page
+   title's top edge so it visually anchors to the heading. */
+.page-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+  background: var(--button-bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.page-source-link:hover {
+  color: var(--text);
+  background: var(--button-hover);
+  border-color: color-mix(in srgb, var(--link) 35%, var(--border));
+}
 .collapse-icon {
   display: inline-block;
   transform: rotate(0deg);
@@ -388,22 +425,240 @@ body.sidebar-collapsed {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
-@media (min-width: 1100px) {
-  .doc-content.has-aside {
-    padding-right: calc(var(--aside-width) + 24px);
+/* ——— Aside callouts that float in the content column ———
+   `[!YOUTUBE]` (and any future "sidebar"-feeling callout) becomes a
+   `.callout-aside`. It floats to the right of the prose so adjacent
+   paragraphs wrap around it — the same placement it had before the
+   right-hand TOC was introduced. The float lives *inside* the content
+   column, so it never collides with the TOC sidebar in the third
+   grid track. */
+/* ——— Key card component ———
+   Triggered by a fenced block with the `key` info-string in the
+   markdown source:
+
+       ```key agent:provider
+       type: string
+       meaning: service or runtime provider
+       examples:
+         - openai
+         - anthropic
+       ```
+
+   Renders as a structured card with a name pill, a type badge, the
+   meaning, and either an examples chip row or a format string. */
+.key-card {
+  /* `--key-color` is overridden per type below; defaults to the
+     neutral border so untyped cards still render cleanly. */
+  --key-color: var(--border);
+  position: relative;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--key-color);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border-radius: 8px;
+  padding: 0 14px 12px;
+  margin: 0 0 0.85rem;
+  overflow: hidden;
+}
+.key-card + .key-card { margin-top: 0.85rem; }
+.key-card.is-string { --key-color: #38bdf8; }
+.key-card.is-list   { --key-color: #34d399; }
+.key-card.is-set    { --key-color: #c084fc; }
+.key-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -14px 8px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--key-color) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--key-color) 30%, var(--border));
+}
+/* Selector specificity matches `.doc-content h3` so the global heading
+   margin (1.7em top / 0.5em bottom) doesn't push the title down inside
+   the header band. line-height is overridden too because the global
+   1.25 still leaves room for visible chrome above/below the glyphs. */
+.key-card .key-card-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.key-card-name code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.key-card-type {
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--key-color) 70%, var(--text));
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--key-color) 45%, var(--border));
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.key-card-meaning {
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.key-card-meaning:last-child { margin-bottom: 0; }
+.key-card-section { margin-top: 10px; }
+.key-card-section:first-of-type { margin-top: 0; }
+.key-card-section p { margin: 0; }
+.key-card-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.key-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.key-card-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 0.85rem;
+}
+/* Footer band that mirrors the header band (full-bleed, tinted with
+   the per-type --key-color) and lists the target types this key may
+   be attached to. Rendered only when the source `key` block declares
+   `targets:`. */
+.key-card-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px -14px -12px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--key-color) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--key-color) 25%, var(--border));
+  color: var(--muted);
+}
+.key-card-footer-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.key-card-targets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.key-card-target {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--key-color) 70%, var(--text));
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--key-color) 35%, var(--border));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.callout-aside {
+  float: right;
+  width: var(--aside-width);
+  max-width: 100%;
+  margin: 0.25rem 0 1rem 1.25rem;
+  clear: right;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border);
+  padding: 14px;
+  border-radius: 12px;
+}
+.callout-aside .callout-youtube-link { border-radius: 8px; }
+.callout-aside .callout-youtube-caption {
+  margin-top: 0.6rem;
+  margin-bottom: 0;
+}
+.callout-aside .callout-youtube-caption p:last-child { margin-bottom: 0; }
+@media (max-width: 720px) {
+  /* Single-column reading width — let the aside take the full content
+     measure inline rather than squeezing it next to the prose. */
+  .callout-aside {
+    float: none;
+    width: auto;
+    margin: 0 0 1rem;
   }
-  .callout.callout-aside {
-    clear: right;
-    float: right;
-    width: var(--aside-width);
-    margin: 0 calc(-1 * (var(--aside-width) + 24px)) 1rem 24px;
+}
+
+/* ——— Right-hand "On this page" TOC sidebar ———
+   The TOC lives in the third grid column when the page has any h2/h3
+   headings (body.has-toc). It's sticky, scrollable independently of the
+   page, and quietly hides on narrower viewports so the content column
+   gets the full width. */
+.toc-aside {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 32px 24px 60px 8px;
+  border-left: 1px solid var(--border);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.toc-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.toc-list, .toc-sub {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.toc-list > li + li { margin-top: 4px; }
+.toc-sub {
+  margin: 4px 0 6px 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.toc-sub > li + li { margin-top: 2px; }
+.toc-aside a {
+  display: block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.toc-aside a:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  text-decoration: none;
+}
+.toc-aside a.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+@media (max-width: 1180px) {
+  body.has-toc .layout {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   }
+  .toc-aside { display: none; }
 }
 @media (max-width: 960px) {
   body.sidebar-collapsed {
     --sidebar-width: 1fr;
   }
-  .layout { grid-template-columns: 1fr; }
+  .layout,
+  body.has-toc .layout { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .content { padding: 24px 18px 48px; }
 }
@@ -466,16 +721,155 @@ def inline_format(text: str, page_map: dict[str, str], current_page: Page) -> st
     return text
 
 
-def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page: Page) -> tuple[str, str, bool]:
+def parse_key_card_body(body_lines: list[str]) -> dict[str, str | list[str]]:
+    """Parse a YAML-ish key-card body into a field dict.
+
+    Top-level lines like ``type: string`` become scalar entries.
+    A line ending in ``:`` (e.g. ``examples:``) opens a list whose
+    items are subsequent indented ``- value`` lines. Surrounding
+    quotes around scalar values are stripped for convenience.
+    """
+    result: dict[str, str | list[str]] = {}
+    current_list: list[str] | None = None
+    current_field: str | None = None
+    for raw in body_lines:
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        # Indented list item belonging to the most recent field.
+        if current_list is not None and re.match(r"^\s+[-*]\s+", line):
+            item = re.sub(r"^\s+[-*]\s+", "", line).strip()
+            if item.startswith(("'", '"')) and item.endswith(item[0]) and len(item) > 1:
+                item = item[1:-1]
+            current_list.append(item)
+            continue
+        # New top-level field.
+        m = re.match(r"^([A-Za-z][\w-]*)\s*:\s*(.*)$", line)
+        if m:
+            current_field = m.group(1)
+            value = m.group(2).strip()
+            if value:
+                if value.startswith(("'", '"')) and value.endswith(value[0]) and len(value) > 1:
+                    value = value[1:-1]
+                result[current_field] = value
+                current_list = None
+            else:
+                current_list = []
+                result[current_field] = current_list
+            continue
+        # Continuation line for a scalar field.
+        if current_field and isinstance(result.get(current_field), str):
+            result[current_field] = (str(result[current_field]) + " " + line.strip()).strip()
+    return result
+
+
+def render_key_card(
+    name: str,
+    body_lines: list[str],
+    page_map: dict[str, str],
+    current_page: "Page",
+) -> tuple[str, str, str]:
+    """Render a ``key <name>`` fenced block as a structured card.
+
+    Returns ``(html, anchor, heading_html)``. The anchor and heading
+    HTML are pushed into the page's heading list by the caller so the
+    right-hand TOC can link into the card.
+    """
+    data = parse_key_card_body(body_lines)
+    anchor = slugify(name)
+    name_html = f"<code>{html.escape(name)}</code>"
+
+    type_value = data.get("type")
+    # `is-{type}` on the card root drives the per-type color stripe,
+    # header tint, and pill accent (see `--key-color` in the CSS).
+    type_class = (
+        f" is-{html.escape(type_value)}"
+        if isinstance(type_value, str) and type_value
+        else ""
+    )
+    parts: list[str] = [f'<section class="key-card{type_class}" id="{html.escape(anchor)}">']
+    header: list[str] = [f'<h3 class="key-card-name">{name_html}</h3>']
+    if isinstance(type_value, str) and type_value:
+        header.append(f'<span class="key-card-type">{html.escape(type_value)}</span>')
+    parts.append(f'<div class="key-card-header">{"".join(header)}</div>')
+
+    meaning = data.get("meaning")
+    if isinstance(meaning, str) and meaning:
+        parts.append(
+            f'<p class="key-card-meaning">{inline_format(meaning, page_map, current_page)}</p>'
+        )
+
+    def section(label: str, body: str) -> str:
+        return (
+            '<div class="key-card-section">'
+            f'<div class="key-card-label">{html.escape(label)}</div>'
+            f'{body}'
+            '</div>'
+        )
+
+    fmt = data.get("format")
+    if isinstance(fmt, str) and fmt:
+        parts.append(section("Format", f'<p>{inline_format(fmt, page_map, current_page)}</p>'))
+
+    examples = data.get("examples")
+    if isinstance(examples, list) and examples:
+        chips = "".join(
+            f'<code class="key-card-chip">{html.escape(item)}</code>' for item in examples
+        )
+        parts.append(section("Examples", f'<div class="key-card-chips">{chips}</div>'))
+
+    # `targets:` constrains the key to specific target types. Accepts a
+    # bare scalar (`targets: commit`), a comma-separated scalar
+    # (`targets: commit, change-id`), or a YAML-style nested list. All
+    # three normalise to a list of trimmed target names rendered as
+    # chips in a footer band coloured with the card's per-type accent.
+    targets_raw = data.get("targets")
+    target_list: list[str] = []
+    if isinstance(targets_raw, list):
+        target_list = [t.strip() for t in targets_raw if t.strip()]
+    elif isinstance(targets_raw, str) and targets_raw.strip():
+        target_list = [t.strip() for t in targets_raw.split(",") if t.strip()]
+
+    if target_list:
+        chips = "".join(
+            f'<code class="key-card-target">{html.escape(t)}</code>' for t in target_list
+        )
+        parts.append(
+            '<footer class="key-card-footer">'
+            '<span class="key-card-footer-label">Attach to</span>'
+            f'<span class="key-card-targets">{chips}</span>'
+            '</footer>'
+        )
+
+    parts.append("</section>")
+    return "".join(parts), anchor, name_html
+
+
+def markdown_to_html(
+    markdown_text: str, page_map: dict[str, str], current_page: Page
+) -> tuple[str, str, bool, list[tuple[int, str, str]]]:
+    """Render markdown to HTML and collect heading metadata for the TOC.
+
+    Returns a 4-tuple of ``(html, title, has_callout, headings)`` where
+    ``headings`` is a list of ``(level, anchor, text_html)`` for every
+    heading at level 2 or deeper. ``text_html`` is the inline-formatted
+    HTML for the heading (e.g. ``<code>agent:provider</code>``), already
+    safe to embed verbatim in the TOC. The page-title h1 is consumed
+    into ``title`` and excluded so the right-hand TOC doesn't repeat it.
+    """
     lines = markdown_text.splitlines()
     out: list[str] = []
     in_code = False
     code_lines: list[str] = []
-    ul_items: list[str] = []
-    ol_items: list[str] = []
+    # List items carry the source indent (in raw whitespace columns) so
+    # `render_list` below can fold sibling/child rows into nested
+    # `<ul>`/`<ol>` structures rather than emitting one flat list.
+    ul_items: list[tuple[int, str]] = []
+    ol_items: list[tuple[int, str]] = []
     paragraph: list[str] = []
     title = "Untitled"
     has_callout = False
+    headings: list[tuple[int, str, str]] = []
 
     def flush_paragraph() -> None:
         nonlocal paragraph
@@ -483,13 +877,55 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
             out.append(f"<p>{inline_format(' '.join(paragraph).strip(), page_map, current_page)}</p>")
             paragraph = []
 
+    def render_list(items: list[tuple[int, str]], tag: str) -> str:
+        """Render a flat (indent, content) list as nested ``<ul>``/``<ol>``.
+
+        Items with an indent strictly greater than the previous one are
+        wrapped in a child list that lives inside the previous ``<li>``,
+        mirroring the way Markdown indents continuation bullets. Returns
+        a single concatenated HTML string with no leading/trailing
+        whitespace.
+        """
+        parts: list[str] = []
+        open_indents: list[int] = []
+        pending_li_close = False
+        for indent, content in items:
+            while open_indents and open_indents[-1] > indent:
+                if pending_li_close:
+                    parts.append("</li>")
+                    pending_li_close = False
+                parts.append(f"</{tag}>")
+                open_indents.pop()
+                # The parent <li> at the now-current indent is still
+                # open and will need closing before the next sibling.
+                pending_li_close = True
+
+            if not open_indents or open_indents[-1] < indent:
+                parts.append(f"<{tag}>")
+                open_indents.append(indent)
+                pending_li_close = False
+            elif pending_li_close:
+                parts.append("</li>")
+
+            parts.append(f"<li>{content}")
+            pending_li_close = True
+
+        while open_indents:
+            if pending_li_close:
+                parts.append("</li>")
+                pending_li_close = False
+            parts.append(f"</{tag}>")
+            open_indents.pop()
+            pending_li_close = bool(open_indents)
+        return "".join(parts)
+
     def flush_lists() -> None:
         nonlocal ul_items, ol_items
         if ul_items:
-            out.append("<ul>" + "".join(ul_items) + "</ul>")
+            out.append(render_list(ul_items, "ul"))
             ul_items = []
         if ol_items:
-            out.append("<ol>" + "".join(ol_items) + "</ol>")
+            out.append(render_list(ol_items, "ol"))
             ol_items = []
 
     i = 0
@@ -510,6 +946,28 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
         if stripped.startswith("```"):
             flush_paragraph()
             flush_lists()
+            info = stripped[3:].strip()
+            # `key` is a custom block: `\`\`\`key <name>` opens a
+            # structured "key card" component (see `render_key_card`).
+            # Anything else is a normal code block.
+            if info.split(" ", 1)[0] == "key":
+                name = info[3:].strip()
+                i += 1
+                body_lines: list[str] = []
+                while i < len(lines) and not lines[i].lstrip().startswith("```"):
+                    body_lines.append(lines[i])
+                    i += 1
+                if i < len(lines):
+                    i += 1
+                # Cards are intentionally NOT added to the TOC: the
+                # parent section heading already represents the group,
+                # and listing every key would crowd the rail. Direct
+                # links into a card still work via the card's anchor id.
+                card_html, _anchor, _heading_html = render_key_card(
+                    name, body_lines, page_map, current_page
+                )
+                out.append(card_html)
+                continue
             in_code = True
             i += 1
             continue
@@ -538,7 +996,12 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
                 i += 1
                 continue
             anchor = slugify(text)
-            out.append(f'<h{level} id="{anchor}">{inline_format(text, page_map, current_page)}</h{level}>')
+            text_html = inline_format(text, page_map, current_page)
+            out.append(f'<h{level} id="{anchor}">{text_html}</h{level}>')
+            # Store the inline-formatted HTML (not the raw markdown) so
+            # the TOC renders code spans, italics, etc. consistently with
+            # the heading itself.
+            headings.append((level, anchor, text_html))
             i += 1
             continue
 
@@ -571,28 +1034,42 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
                         )
                     else:
                         body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
+                    # YouTube callouts float into the right margin of the
+                    # content column on wide viewports (see CSS
+                    # `.callout-aside`). On narrow viewports they fall
+                    # back to a full-width inline card.
                     out.append(f'<div class="callout callout-aside">{body_html}</div>')
                 else:
                     body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
-                    out.append(f'<div class="callout callout-aside"><div class="callout-title">{kind}</div>{body_html}</div>')
+                    # Inline callouts (NOTE, WARNING, …) stay anchored to
+                    # the paragraph they follow; they read better next to
+                    # the prose than floated into the margin.
+                    out.append(
+                        f'<div class="callout callout-{kind_key.lower()}">'
+                        f'<div class="callout-title">{kind}</div>{body_html}</div>'
+                    )
             else:
                 body = " ".join(quote_lines)
                 out.append(f"<blockquote><p>{inline_format(body, page_map, current_page)}</p></blockquote>")
             continue
 
-        if re.match(r"^[-*]\s+", stripped):
+        m_ul = re.match(r"^(\s*)[-*]\s+(.*)$", line.rstrip())
+        if m_ul:
             flush_paragraph()
             if ol_items:
                 flush_lists()
-            ul_items.append(f"<li>{inline_format(re.sub(r'^[-*]\s+', '', stripped), page_map, current_page)}</li>")
+            indent = len(m_ul.group(1).expandtabs(4))
+            ul_items.append((indent, inline_format(m_ul.group(2), page_map, current_page)))
             i += 1
             continue
 
-        if re.match(r"^\d+\.\s+", stripped):
+        m_ol = re.match(r"^(\s*)\d+\.\s+(.*)$", line.rstrip())
+        if m_ol:
             flush_paragraph()
             if ul_items:
                 flush_lists()
-            ol_items.append(f"<li>{inline_format(re.sub(r'^\d+\.\s+', '', stripped), page_map, current_page)}</li>")
+            indent = len(m_ol.group(1).expandtabs(4))
+            ol_items.append((indent, inline_format(m_ol.group(2), page_map, current_page)))
             i += 1
             continue
 
@@ -603,7 +1080,57 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
     flush_lists()
     if in_code:
         out.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
-    return "\n".join(out), title, has_callout
+    return "\n".join(out), title, has_callout, headings
+
+
+def build_toc(headings: list[tuple[int, str, str]]) -> str:
+    """Render a nested ``<aside>`` TOC for the right-hand sidebar.
+
+    Only level-2 (``##``) and level-3 (``###``) headings are surfaced;
+    deeper levels rarely add navigational value and would clutter the
+    rail. Returns an empty string when there's nothing to show, which
+    lets the layout collapse the third grid column for short pages.
+
+    H3s are nested under the most recent H2. Orphan H3s (any H3 that
+    appears before the page's first H2) are promoted to top-level
+    entries so they're still navigable.
+
+    Heading text is treated as already-safe HTML (see
+    ``markdown_to_html``) so code spans in the markdown source (e.g.
+    `` `agent:provider` ``) show up as ``<code>agent:provider</code>``
+    in the rail rather than as literal backticks.
+    """
+    items = [(level, anchor, text) for level, anchor, text in headings if level in (2, 3)]
+    if not items:
+        return ""
+
+    # Build a simple tree: list of (anchor, text_html, [children]) where
+    # each child is (anchor, text_html). Render in one pass below.
+    tree: list[tuple[str, str, list[tuple[str, str]]]] = []
+    for level, anchor, text_html in items:
+        if level == 2 or not tree:
+            tree.append((anchor, text_html, []))
+        else:
+            tree[-1][2].append((anchor, text_html))
+
+    parts: list[str] = []
+    for anchor, text_html, children in tree:
+        link = f'<a href="#{html.escape(anchor)}">{text_html}</a>'
+        if children:
+            sub = "".join(
+                f'<li class="toc-h3"><a href="#{html.escape(c_anchor)}">{c_text_html}</a></li>'
+                for c_anchor, c_text_html in children
+            )
+            parts.append(f'<li class="toc-h2">{link}<ul class="toc-sub">{sub}</ul></li>')
+        else:
+            parts.append(f'<li class="toc-h2">{link}</li>')
+
+    return (
+        '<aside class="toc-aside" aria-label="On this page">'
+        '<div class="toc-title">On this page</div>'
+        f'<ul class="toc-list">{"".join(parts)}</ul>'
+        "</aside>"
+    )
 
 
 def read_title(path: Path) -> str:
@@ -758,16 +1285,27 @@ def generate_docs() -> None:
 
     for page in pages:
         markdown_text = page.source_path.read_text()
-        content, detected_title, has_callout = markdown_to_html(markdown_text, page_map, page)
+        content, detected_title, has_callout, headings = markdown_to_html(
+            markdown_text, page_map, page
+        )
         title = detected_title or page.title
         nav = build_nav(pages, page)
         root = root_prefix(page)
+        toc = build_toc(headings)
+        # `has-aside` lets the content column reserve right-side margin
+        # so floating `.callout-aside` blocks don't crowd the prose. The
+        # leading space keeps it from concatenating onto `doc-content`.
         content_class = " has-aside" if has_callout else ""
+        body_class = "has-toc" if toc else ""
+        markdown_url = f"{GITHUB_RAW_BASE}/{page.source_rel}"
         rendered = (
             template.replace("{{title}}", html.escape(title))
             .replace("{{nav}}", nav)
             .replace("{{content}}", content)
             .replace("{{content_class}}", content_class)
+            .replace("{{toc}}", toc)
+            .replace("{{body_class}}", body_class)
+            .replace("{{markdown_url}}", html.escape(markdown_url))
             .replace("{{root}}", root)
         )
         page.output_path.parent.mkdir(parents=True, exist_ok=True)

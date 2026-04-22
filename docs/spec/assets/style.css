@@ -4,6 +4,7 @@
   --doc-max: 1264px;
   --aside-width: 260px;
   --sidebar-width: 260px;
+  --toc-width: 240px;
 }
 
 :root,
@@ -69,6 +70,9 @@ body.sidebar-collapsed {
   --sidebar-width: 72px;
 }
 .layout { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: 100vh; }
+body.has-toc .layout {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--toc-width);
+}
 .sidebar {
   --sidebar-bg: #f7f3ec;
   --sidebar-text: #2a1f1a;
@@ -199,10 +203,38 @@ body.sidebar-collapsed {
 }
 .content { padding: 32px 44px 60px; }
 .page-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 24px;
 }
-.page-header-main { min-width: 0; }
+.page-header-main { min-width: 0; flex: 1; }
 .eyebrow { color: var(--muted); margin-bottom: 8px; }
+/* Small chip-style link in the page header that points at the raw .md
+   source for the current page, so readers can grab the unrendered
+   markdown without hunting through the repo. Sits flush with the page
+   title's top edge so it visually anchors to the heading. */
+.page-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+  background: var(--button-bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.page-source-link:hover {
+  color: var(--text);
+  background: var(--button-hover);
+  border-color: color-mix(in srgb, var(--link) 35%, var(--border));
+}
 .collapse-icon {
   display: inline-block;
   transform: rotate(0deg);
@@ -294,22 +326,240 @@ body.sidebar-collapsed {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
-@media (min-width: 1100px) {
-  .doc-content.has-aside {
-    padding-right: calc(var(--aside-width) + 24px);
+/* ——— Aside callouts that float in the content column ———
+   `[!YOUTUBE]` (and any future "sidebar"-feeling callout) becomes a
+   `.callout-aside`. It floats to the right of the prose so adjacent
+   paragraphs wrap around it — the same placement it had before the
+   right-hand TOC was introduced. The float lives *inside* the content
+   column, so it never collides with the TOC sidebar in the third
+   grid track. */
+/* ——— Key card component ———
+   Triggered by a fenced block with the `key` info-string in the
+   markdown source:
+
+       ```key agent:provider
+       type: string
+       meaning: service or runtime provider
+       examples:
+         - openai
+         - anthropic
+       ```
+
+   Renders as a structured card with a name pill, a type badge, the
+   meaning, and either an examples chip row or a format string. */
+.key-card {
+  /* `--key-color` is overridden per type below; defaults to the
+     neutral border so untyped cards still render cleanly. */
+  --key-color: var(--border);
+  position: relative;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--key-color);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border-radius: 8px;
+  padding: 0 14px 12px;
+  margin: 0 0 0.85rem;
+  overflow: hidden;
+}
+.key-card + .key-card { margin-top: 0.85rem; }
+.key-card.is-string { --key-color: #38bdf8; }
+.key-card.is-list   { --key-color: #34d399; }
+.key-card.is-set    { --key-color: #c084fc; }
+.key-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -14px 8px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--key-color) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--key-color) 30%, var(--border));
+}
+/* Selector specificity matches `.doc-content h3` so the global heading
+   margin (1.7em top / 0.5em bottom) doesn't push the title down inside
+   the header band. line-height is overridden too because the global
+   1.25 still leaves room for visible chrome above/below the glyphs. */
+.key-card .key-card-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.key-card-name code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.key-card-type {
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--key-color) 70%, var(--text));
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--key-color) 45%, var(--border));
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.key-card-meaning {
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.key-card-meaning:last-child { margin-bottom: 0; }
+.key-card-section { margin-top: 10px; }
+.key-card-section:first-of-type { margin-top: 0; }
+.key-card-section p { margin: 0; }
+.key-card-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.key-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.key-card-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 0.85rem;
+}
+/* Footer band that mirrors the header band (full-bleed, tinted with
+   the per-type --key-color) and lists the target types this key may
+   be attached to. Rendered only when the source `key` block declares
+   `targets:`. */
+.key-card-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px -14px -12px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--key-color) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--key-color) 25%, var(--border));
+  color: var(--muted);
+}
+.key-card-footer-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.key-card-targets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.key-card-target {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--key-color) 70%, var(--text));
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--key-color) 35%, var(--border));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.callout-aside {
+  float: right;
+  width: var(--aside-width);
+  max-width: 100%;
+  margin: 0.25rem 0 1rem 1.25rem;
+  clear: right;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border);
+  padding: 14px;
+  border-radius: 12px;
+}
+.callout-aside .callout-youtube-link { border-radius: 8px; }
+.callout-aside .callout-youtube-caption {
+  margin-top: 0.6rem;
+  margin-bottom: 0;
+}
+.callout-aside .callout-youtube-caption p:last-child { margin-bottom: 0; }
+@media (max-width: 720px) {
+  /* Single-column reading width — let the aside take the full content
+     measure inline rather than squeezing it next to the prose. */
+  .callout-aside {
+    float: none;
+    width: auto;
+    margin: 0 0 1rem;
   }
-  .callout.callout-aside {
-    clear: right;
-    float: right;
-    width: var(--aside-width);
-    margin: 0 calc(-1 * (var(--aside-width) + 24px)) 1rem 24px;
+}
+
+/* ——— Right-hand "On this page" TOC sidebar ———
+   The TOC lives in the third grid column when the page has any h2/h3
+   headings (body.has-toc). It's sticky, scrollable independently of the
+   page, and quietly hides on narrower viewports so the content column
+   gets the full width. */
+.toc-aside {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 32px 24px 60px 8px;
+  border-left: 1px solid var(--border);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.toc-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.toc-list, .toc-sub {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.toc-list > li + li { margin-top: 4px; }
+.toc-sub {
+  margin: 4px 0 6px 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.toc-sub > li + li { margin-top: 2px; }
+.toc-aside a {
+  display: block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.toc-aside a:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  text-decoration: none;
+}
+.toc-aside a.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+@media (max-width: 1180px) {
+  body.has-toc .layout {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   }
+  .toc-aside { display: none; }
 }
 @media (max-width: 960px) {
   body.sidebar-collapsed {
     --sidebar-width: 1fr;
   }
-  .layout { grid-template-columns: 1fr; }
+  .layout,
+  body.has-toc .layout { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .content { padding: 24px 18px 48px; }
 }

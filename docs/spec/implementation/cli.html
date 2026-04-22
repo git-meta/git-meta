@@ -13,7 +13,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="has-toc">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-main">
@@ -46,6 +46,10 @@
             <div class="eyebrow">Generated from <a href="https://github.com/git-meta/git-meta/tree/main/spec"><code>spec/*.md</code></a></div>
             <h1>CLI surface</h1>
           </div>
+          <a class="page-source-link" href="https://raw.githubusercontent.com/git-meta/git-meta/main/spec/implementation/cli.md" rel="noopener" title="View raw markdown source on GitHub">
+            <span aria-hidden="true">{ }</span>
+            <span>markdown</span>
+          </a>
         </header>
         <article class="doc-content">
           <p>This document describes the intended command-line interface at the project level.</p>
@@ -118,7 +122,7 @@ git meta push [&lt;remote&gt;] --readme</code></pre>
 <p>confirmation and behaves as if <code>--init</code> had been passed when they accept</p>
 <p>hint to re-run with <code>--init</code></p>
 <p>hint to re-run with <code>--namespace=&lt;that-namespace&gt;</code></p>
-<ul><li>writes git config entries for the remote: <code>remote.&lt;name&gt;.url</code>,</li><li>inspects the remote with <code>git ls-remote</code> to check that</li><li>if no metadata refs are present on the remote:</li><li>with <code>--init</code>, creates (or reuses) <code>refs/&lt;ns&gt;/local/main</code> with a</li><li>on an interactive terminal without <code>--init</code>, prompts the user for</li><li>in non-interactive contexts (CI, pipes), bails with an actionable</li><li>if metadata refs are found under a different namespace, bails with a</li></ul>
+<ul><li>writes git config entries for the remote: <code>remote.&lt;name&gt;.url</code>,</li><li>inspects the remote with <code>git ls-remote</code> to check that</li><li>if no metadata refs are present on the remote:<ul><li>with <code>--init</code>, creates (or reuses) <code>refs/&lt;ns&gt;/local/main</code> with a</li><li>on an interactive terminal without <code>--init</code>, prompts the user for</li><li>in non-interactive contexts (CI, pipes), bails with an actionable</li></ul></li><li>if metadata refs are found under a different namespace, bails with a</li></ul>
 <p>Defaults:</p>
 <p><code>meta</code></p>
 <ul><li><code>--name</code>: <code>meta</code></li><li><code>--namespace</code>: from the <code>meta.namespace</code> git config, falling back to</li></ul>
@@ -147,6 +151,7 @@ project</code></pre>
 <p>The output model is documented in <a href="output.html">Output</a>.</p>
         </article>
       </main>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#core-commands">Core commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#set-a-value">Set a value</a></li><li class="toc-h3"><a href="#get-values">Get values</a></li><li class="toc-h3"><a href="#remove-a-key">Remove a key</a></li></ul></li><li class="toc-h2"><a href="#list-operations">List operations</a></li><li class="toc-h2"><a href="#set-operations">Set operations</a></li><li class="toc-h2"><a href="#exchange-commands">Exchange commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#serialize">Serialize</a></li><li class="toc-h3"><a href="#materialize">Materialize</a></li><li class="toc-h3"><a href="#dry-run-materialize">Dry-run materialize</a></li></ul></li><li class="toc-h2"><a href="#sync-commands">Sync commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#push">Push</a></li><li class="toc-h3"><a href="#pull">Pull</a></li></ul></li><li class="toc-h2"><a href="#setup-and-configuration">Setup and configuration</a><ul class="toc-sub"><li class="toc-h3"><a href="#setup">Setup</a></li><li class="toc-h3"><a href="#add-a-remote">Add a remote</a></li><li class="toc-h3"><a href="#teardown">Teardown</a></li></ul></li><li class="toc-h2"><a href="#target-syntax">Target syntax</a></li><li class="toc-h2"><a href="#value-encoding">Value encoding</a></li><li class="toc-h2"><a href="#output-modes">Output modes</a></li></ul></aside>
     </div>
     <script>
       (() => {
@@ -201,6 +206,38 @@ project</code></pre>
 
         applyTheme(currentTheme());
         applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
       })();
     </script>
   </body>

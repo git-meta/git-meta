@@ -13,7 +13,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="has-toc">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-main">
@@ -46,6 +46,10 @@
             <div class="eyebrow">Generated from <a href="https://github.com/git-meta/git-meta/tree/main/spec"><code>spec/*.md</code></a></div>
             <h1>Materialization</h1>
           </div>
+          <a class="page-source-link" href="https://raw.githubusercontent.com/git-meta/git-meta/main/spec/exchange-format/materialization.md" rel="noopener" title="View raw markdown source on GitHub">
+            <span aria-hidden="true">{ }</span>
+            <span>markdown</span>
+          </a>
         </header>
         <article class="doc-content">
           <p>This document describes the rules for turning a serialized metadata tree back into local current state.</p>
@@ -86,6 +90,7 @@
 <ul><li>update locally, pruned remotely?</li></ul>
         </article>
       </main>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#materialize-responsibilities">Materialize responsibilities</a></li><li class="toc-h2"><a href="#high-level-scenarios">High-level scenarios</a><ul class="toc-sub"><li class="toc-h3"><a href="#1-initial-sync">1. Initial sync</a></li><li class="toc-h3"><a href="#2-multiple-start-points">2. Multiple start points</a></li><li class="toc-h3"><a href="#3-fast-forward-update">3. Fast-forward update</a></li><li class="toc-h3"><a href="#4-both-sides-mutated-data">4. Both sides mutated data</a></li></ul></li><li class="toc-h2"><a href="#no-common-ancestor-merge">No common ancestor merge</a></li><li class="toc-h2"><a href="#removal-handling">Removal handling</a></li><li class="toc-h2"><a href="#metadata-history-shape">Metadata history shape</a></li><li class="toc-h2"><a href="#merging">Merging</a></li></ul></aside>
     </div>
     <script>
       (() => {
@@ -140,6 +145,38 @@
 
         applyTheme(currentTheme());
         applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
       })();
     </script>
   </body>

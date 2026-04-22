@@ -13,7 +13,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-main">
@@ -46,6 +46,10 @@
             <div class="eyebrow">Generated from <a href="https://github.com/git-meta/git-meta/tree/main/spec"><code>spec/*.md</code></a></div>
             <h1>Implementation Overview</h1>
           </div>
+          <a class="page-source-link" href="https://raw.githubusercontent.com/git-meta/git-meta/main/spec/implementation/overview.md" rel="noopener" title="View raw markdown source on GitHub">
+            <span aria-hidden="true">{ }</span>
+            <span>markdown</span>
+          </a>
         </header>
         <article class="doc-content">
           <p>Everything in this &quot;Implementation&quot; section is how the reference implementation of this metadata spec operates. It is not neccesary for any other implementation to do the same things, but I figured it would be nice to document how I decided to make this work as a plumbing set that follows the exchange spec.</p>
@@ -54,6 +58,7 @@
 <p>That CLI has a few ways of returning data, which I document in <a href="output.html">Output and query semantics</a>.</p>
         </article>
       </main>
+      
     </div>
     <script>
       (() => {
@@ -108,6 +113,38 @@
 
         applyTheme(currentTheme());
         applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
       })();
     </script>
   </body>
