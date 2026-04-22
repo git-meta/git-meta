@@ -399,6 +399,97 @@ body.has-toc .layout {
    right-hand TOC was introduced. The float lives *inside* the content
    column, so it never collides with the TOC sidebar in the third
    grid track. */
+/* ——— Key card component ———
+   Triggered by a fenced block with the `key` info-string in the
+   markdown source:
+
+       ```key agent:provider
+       type: string
+       meaning: service or runtime provider
+       examples:
+         - openai
+         - anthropic
+       ```
+
+   Renders as a structured card with a name pill, a type badge, the
+   meaning, and either an examples chip row or a format string. */
+.key-card {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin: 0 0 1.25rem;
+}
+.key-card + .key-card { margin-top: 1.25rem; }
+.key-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.key-card-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.key-card-name code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.key-card-type {
+  margin-left: auto;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.key-card-type-string {
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.key-card-type-list,
+.key-card-type-set {
+  color: color-mix(in srgb, var(--link) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--link) 35%, var(--border));
+}
+.key-card-meaning {
+  margin: 0 0 12px;
+  color: var(--text);
+}
+.key-card-meaning:last-child { margin-bottom: 0; }
+.key-card-section { margin-top: 14px; }
+.key-card-section:first-of-type { margin-top: 0; }
+.key-card-section p { margin: 0; }
+.key-card-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.key-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.key-card-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.85rem;
+}
+
 .callout-aside {
   float: right;
   width: var(--aside-width);
@@ -556,6 +647,103 @@ def inline_format(text: str, page_map: dict[str, str], current_page: Page) -> st
     return text
 
 
+def parse_key_card_body(body_lines: list[str]) -> dict[str, str | list[str]]:
+    """Parse a YAML-ish key-card body into a field dict.
+
+    Top-level lines like ``type: string`` become scalar entries.
+    A line ending in ``:`` (e.g. ``examples:``) opens a list whose
+    items are subsequent indented ``- value`` lines. Surrounding
+    quotes around scalar values are stripped for convenience.
+    """
+    result: dict[str, str | list[str]] = {}
+    current_list: list[str] | None = None
+    current_field: str | None = None
+    for raw in body_lines:
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        # Indented list item belonging to the most recent field.
+        if current_list is not None and re.match(r"^\s+[-*]\s+", line):
+            item = re.sub(r"^\s+[-*]\s+", "", line).strip()
+            if item.startswith(("'", '"')) and item.endswith(item[0]) and len(item) > 1:
+                item = item[1:-1]
+            current_list.append(item)
+            continue
+        # New top-level field.
+        m = re.match(r"^([A-Za-z][\w-]*)\s*:\s*(.*)$", line)
+        if m:
+            current_field = m.group(1)
+            value = m.group(2).strip()
+            if value:
+                if value.startswith(("'", '"')) and value.endswith(value[0]) and len(value) > 1:
+                    value = value[1:-1]
+                result[current_field] = value
+                current_list = None
+            else:
+                current_list = []
+                result[current_field] = current_list
+            continue
+        # Continuation line for a scalar field.
+        if current_field and isinstance(result.get(current_field), str):
+            result[current_field] = (str(result[current_field]) + " " + line.strip()).strip()
+    return result
+
+
+def render_key_card(
+    name: str,
+    body_lines: list[str],
+    page_map: dict[str, str],
+    current_page: "Page",
+) -> tuple[str, str, str]:
+    """Render a ``key <name>`` fenced block as a structured card.
+
+    Returns ``(html, anchor, heading_html)``. The anchor and heading
+    HTML are pushed into the page's heading list by the caller so the
+    right-hand TOC can link into the card.
+    """
+    data = parse_key_card_body(body_lines)
+    anchor = slugify(name)
+    name_html = f"<code>{html.escape(name)}</code>"
+
+    parts: list[str] = [f'<section class="key-card" id="{html.escape(anchor)}">']
+    header: list[str] = [f'<h3 class="key-card-name">{name_html}</h3>']
+    type_value = data.get("type")
+    if isinstance(type_value, str) and type_value:
+        header.append(
+            f'<span class="key-card-type key-card-type-{html.escape(type_value)}">'
+            f'{html.escape(type_value)}</span>'
+        )
+    parts.append(f'<div class="key-card-header">{"".join(header)}</div>')
+
+    meaning = data.get("meaning")
+    if isinstance(meaning, str) and meaning:
+        parts.append(
+            f'<p class="key-card-meaning">{inline_format(meaning, page_map, current_page)}</p>'
+        )
+
+    def section(label: str, body: str) -> str:
+        return (
+            '<div class="key-card-section">'
+            f'<div class="key-card-label">{html.escape(label)}</div>'
+            f'{body}'
+            '</div>'
+        )
+
+    fmt = data.get("format")
+    if isinstance(fmt, str) and fmt:
+        parts.append(section("Format", f'<p>{inline_format(fmt, page_map, current_page)}</p>'))
+
+    examples = data.get("examples")
+    if isinstance(examples, list) and examples:
+        chips = "".join(
+            f'<code class="key-card-chip">{html.escape(item)}</code>' for item in examples
+        )
+        parts.append(section("Examples", f'<div class="key-card-chips">{chips}</div>'))
+
+    parts.append("</section>")
+    return "".join(parts), anchor, name_html
+
+
 def markdown_to_html(
     markdown_text: str, page_map: dict[str, str], current_page: Page
 ) -> tuple[str, str, bool, list[tuple[int, str, str]]]:
@@ -657,6 +845,26 @@ def markdown_to_html(
         if stripped.startswith("```"):
             flush_paragraph()
             flush_lists()
+            info = stripped[3:].strip()
+            # `key` is a custom block: `\`\`\`key <name>` opens a
+            # structured "key card" component (see `render_key_card`).
+            # Anything else is a normal code block.
+            if info.split(" ", 1)[0] == "key":
+                name = info[3:].strip()
+                i += 1
+                body_lines: list[str] = []
+                while i < len(lines) and not lines[i].lstrip().startswith("```"):
+                    body_lines.append(lines[i])
+                    i += 1
+                if i < len(lines):
+                    i += 1
+                card_html, anchor, heading_html = render_key_card(
+                    name, body_lines, page_map, current_page
+                )
+                if anchor and heading_html:
+                    headings.append((3, anchor, heading_html))
+                out.append(card_html)
+                continue
             in_code = True
             i += 1
             continue

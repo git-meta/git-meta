@@ -12,40 +12,39 @@ These keys can be attached to `commit`, `change-id` or `branch` targets.
 
 Implementations should avoid storing secrets in agent metadata keys.
 
-### `agent:provider`
+```key agent:provider
+type: string
+meaning: service or runtime provider that produced the content
+examples:
+  - openai
+  - anthropic
+  - local
+```
 
-- suggested type: `string`
-- intended meaning: service or runtime provider that produced the content
-- examples:
-  - `openai`
-  - `anthropic`
-  - `local`
+```key agent:model
+type: string
+meaning: model identifier used for generation or analysis
+examples:
+  - gpt-5
+  - claude-sonnet-4
+  - llama-3.3-70b
+```
 
-### `agent:model`
+```key agent:session-id
+type: string
+meaning: provider or tool session identifier
+format: opaque stable string from the originating system
+```
 
-- suggested type: `string`
-- intended meaning: model identifier used for generation or analysis
-- examples:
-  - `gpt-5`
-  - `claude-sonnet-4`
-  - `llama-3.3-70b`
+```key agent:prompt
+type: string
+meaning: canonical prompt or final instruction associated with the target
+```
 
-### `agent:session-id`
-
-- suggested type: `string`
-- intended meaning: provider or tool session identifier
-- suggested format:
-  - opaque stable string from the originating system
-
-### `agent:prompt`
-
-- suggested type: `string`
-- intended meaning: canonical prompt or final instruction associated with the target
-
-### `agent:summary`
-
-- suggested type: `string`
-- intended meaning: human-readable summary of what the agent did or concluded
+```key agent:summary
+type: string
+meaning: human-readable summary of what the agent did or concluded
+```
 
 ## Naming recommendations
 
