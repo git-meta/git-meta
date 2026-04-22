@@ -298,6 +298,35 @@ body.has-toc .layout {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
+/* ——— Aside callouts that float in the content column ———
+   `[!YOUTUBE]` (and any future "sidebar"-feeling callout) becomes a
+   `.callout-aside`. It floats to the right of the prose so adjacent
+   paragraphs wrap around it — the same placement it had before the
+   right-hand TOC was introduced. The float lives *inside* the content
+   column, so it never collides with the TOC sidebar in the third
+   grid track. */
+.callout-aside {
+  float: right;
+  width: var(--aside-width);
+  max-width: 100%;
+  margin: 0.25rem 0 1rem 1.25rem;
+  clear: right;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+.callout-aside .callout-youtube-link { border-radius: 8px; }
+@media (max-width: 720px) {
+  /* Single-column reading width — let the aside take the full content
+     measure inline rather than squeezing it next to the prose. */
+  .callout-aside {
+    float: none;
+    width: auto;
+    margin: 0 0 1rem;
+  }
+}
+
 /* ——— Right-hand "On this page" TOC sidebar ———
    The TOC lives in the third grid column when the page has any h2/h3
    headings (body.has-toc). It's sticky, scrollable independently of the

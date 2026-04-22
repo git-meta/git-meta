@@ -47,7 +47,7 @@
             <h1>Syncing with normal Git</h1>
           </div>
         </header>
-        <article class="doc-content">
+        <article class="doc-content has-aside">
           <p>This document describes how an end user can set up a normal Git repository to automatically push and pull metadata whenever they push and pull code, using only commands the reference CLI already provides (<code>git meta push</code>, <code>git meta pull</code>, <code>git meta show</code>, <code>git meta log</code>) and Git&#x27;s existing hook and alias mechanisms.</p>
 <p>It is intentionally scoped to what works today with stock Git and the published reference CLI. Higher-level integrations that hide these moves entirely are covered in the <a href="workflow.html">Workflow</a> document.</p>
 <h2 id="what-we-are-wiring-up">What we are wiring up</h2>
@@ -68,7 +68,7 @@ git meta push &quot;$remote_name&quot; || {
 }</code></pre>
 <p>Behavior notes:</p>
 <ul><li><code>pre-push</code> runs once per <code>git push</code> invocation regardless of how many refs are being pushed, which matches <code>git meta push</code>&#x27;s once-per-invocation semantics.</li><li>Returning a non-zero exit code from <code>pre-push</code> aborts the entire <code>git push</code>. If you would rather the code push always succeed and metadata sync be best-effort, replace the <code>exit 1</code> with <code>:</code> (no-op) so failures are reported but do not block.</li><li>If <code>git meta</code> is not aware of the remote name passed to the hook, it falls back to the first configured meta remote.</li></ul>
-<div class="callout callout-aside"><div class="callout-title">Note</div><p>There is no <code>post-push</code> hook in core Git. <code>pre-push</code> is the only client-side hook in the push lifecycle.</p></div>
+<div class="callout callout-note"><div class="callout-title">Note</div><p>There is no <code>post-push</code> hook in core Git. <code>pre-push</code> is the only client-side hook in the push lifecycle.</p></div>
 <h2 id="pull-side-post-merge">Pull side: <code>post-merge</code></h2>
 <p>Git&#x27;s <code>post-merge</code> hook runs after a successful merge, including the merge phase of <code>git pull</code>. This is the simplest way to materialize newly fetched metadata into the local database.</p>
 <p>Save the following as <code>.git/hooks/post-merge</code> and make it executable:</p>
@@ -93,7 +93,7 @@ if grep -q &quot;	refs/remotes/&quot; ; then
 fi</code></pre>
 <p>Behavior notes:</p>
 <ul><li>This hook is on the hot path for <em>every</em> ref update Git makes (including <code>git commit</code> writing <code>HEAD</code>). The <code>refs/remotes/</code> filter scopes the work to fetches.</li><li>The <code>&amp;</code> runs <code>git meta pull</code> in the background so it does not block the calling Git command. If you want synchronous behavior, drop the <code>&amp;</code>.</li><li>This hook makes <code>post-merge</code> redundant for users who only fetch via the same Git invocation. Pick one or the other unless you have a reason to layer both.</li></ul>
-<div class="callout callout-aside"><div class="callout-title">Warning</div><p><code>reference-transaction</code> is a relatively low-level mechanism. If a script in this hook fails noisily it can disrupt unrelated Git operations. The redirects to <code>/dev/null</code> and the background <code>&amp;</code> above are deliberate. Test the hook with <code>git fetch -v</code> before relying on it.</p></div>
+<div class="callout callout-warning"><div class="callout-title">Warning</div><p><code>reference-transaction</code> is a relatively low-level mechanism. If a script in this hook fails noisily it can disrupt unrelated Git operations. The redirects to <code>/dev/null</code> and the background <code>&amp;</code> above are deliberate. Test the hook with <code>git fetch -v</code> before relying on it.</p></div>
 <h2 id="aliases-as-a-simpler-alternative">Aliases as a simpler alternative</h2>
 <p>For users who prefer to avoid hooks entirely, Git aliases that combine the code and metadata operations work just as well. Add to <code>~/.gitconfig</code> (global) or <code>.git/config</code> (per-repo):</p>
 <pre><code>[alias]

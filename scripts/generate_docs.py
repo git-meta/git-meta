@@ -392,6 +392,35 @@ body.has-toc .layout {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
+/* ——— Aside callouts that float in the content column ———
+   `[!YOUTUBE]` (and any future "sidebar"-feeling callout) becomes a
+   `.callout-aside`. It floats to the right of the prose so adjacent
+   paragraphs wrap around it — the same placement it had before the
+   right-hand TOC was introduced. The float lives *inside* the content
+   column, so it never collides with the TOC sidebar in the third
+   grid track. */
+.callout-aside {
+  float: right;
+  width: var(--aside-width);
+  max-width: 100%;
+  margin: 0.25rem 0 1rem 1.25rem;
+  clear: right;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+.callout-aside .callout-youtube-link { border-radius: 8px; }
+@media (max-width: 720px) {
+  /* Single-column reading width — let the aside take the full content
+     measure inline rather than squeezing it next to the prose. */
+  .callout-aside {
+    float: none;
+    width: auto;
+    margin: 0 0 1rem;
+  }
+}
+
 /* ——— Right-hand "On this page" TOC sidebar ———
    The TOC lives in the third grid column when the page has any h2/h3
    headings (body.has-toc). It's sticky, scrollable independently of the
@@ -529,8 +558,8 @@ def markdown_to_html(
 
     Returns a 4-tuple of ``(html, title, has_callout, headings)`` where
     ``headings`` is a list of ``(level, anchor, text)`` for every heading
-    at level 2 or deeper. The page-title h1 is consumed into ``title`` and
-    excluded from ``headings`` so the right-hand TOC doesn't repeat it.
+    at level 2 or deeper. The page-title h1 is consumed into ``title``
+    and excluded so the right-hand TOC doesn't repeat it.
     """
     lines = markdown_text.splitlines()
     out: list[str] = []
@@ -638,10 +667,20 @@ def markdown_to_html(
                         )
                     else:
                         body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
+                    # YouTube callouts float into the right margin of the
+                    # content column on wide viewports (see CSS
+                    # `.callout-aside`). On narrow viewports they fall
+                    # back to a full-width inline card.
                     out.append(f'<div class="callout callout-aside">{body_html}</div>')
                 else:
                     body_html = "".join(f"<p>{inline_format(x, page_map, current_page)}</p>" for x in body if x)
-                    out.append(f'<div class="callout callout-aside"><div class="callout-title">{kind}</div>{body_html}</div>')
+                    # Inline callouts (NOTE, WARNING, …) stay anchored to
+                    # the paragraph they follow; they read better next to
+                    # the prose than floated into the margin.
+                    out.append(
+                        f'<div class="callout callout-{kind_key.lower()}">'
+                        f'<div class="callout-title">{kind}</div>{body_html}</div>'
+                    )
             else:
                 body = " ".join(quote_lines)
                 out.append(f"<blockquote><p>{inline_format(body, page_map, current_page)}</p></blockquote>")
@@ -682,8 +721,8 @@ def build_toc(headings: list[tuple[int, str, str]]) -> str:
     lets the layout collapse the third grid column for short pages.
 
     H3s are nested under the most recent H2. Orphan H3s (any H3 that
-    appears before the page's first H2) are promoted to top-level entries
-    so they're still navigable.
+    appears before the page's first H2) are promoted to top-level
+    entries so they're still navigable.
     """
     items = [(level, anchor, text) for level, anchor, text in headings if level in (2, 3)]
     if not items:
@@ -877,11 +916,10 @@ def generate_docs() -> None:
         nav = build_nav(pages, page)
         root = root_prefix(page)
         toc = build_toc(headings)
-        # `has-aside` was the legacy class that reserved right-margin for
-        # floating callouts; with the right-hand TOC sidebar in place we
-        # no longer need it. Kept as an empty placeholder for now in case
-        # downstream CSS still hooks it.
-        content_class = ""
+        # `has-aside` lets the content column reserve right-side margin
+        # so floating `.callout-aside` blocks don't crowd the prose. The
+        # leading space keeps it from concatenating onto `doc-content`.
+        content_class = " has-aside" if has_callout else ""
         body_class = "has-toc" if toc else ""
         rendered = (
             template.replace("{{title}}", html.escape(title))
