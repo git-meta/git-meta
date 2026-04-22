@@ -26,6 +26,11 @@ ASSETS_DIR = DOCS_DIR / "assets"
 
 SITE_ORIGIN = "https://git-meta.com"
 SITE_BASE = f"{SITE_ORIGIN}/spec"
+# Base URL for raw markdown sources on GitHub. Each generated spec page
+# embeds a "view markdown" link in the page header pointing at this prefix
+# joined with the page's `source_rel` path, so readers can jump straight
+# to the unrendered .md file.
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/git-meta/git-meta/main/spec"
 # Path of the marketing landing page relative to docs/. Its mtime is used
 # as the sitemap <lastmod> for the root URL so the sitemap stays accurate
 # whenever the landing page is republished.
@@ -297,10 +302,38 @@ body.has-toc .layout {
 }
 .content { padding: 32px 44px 60px; }
 .page-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 24px;
 }
-.page-header-main { min-width: 0; }
+.page-header-main { min-width: 0; flex: 1; }
 .eyebrow { color: var(--muted); margin-bottom: 8px; }
+/* Small chip-style link in the page header that points at the raw .md
+   source for the current page, so readers can grab the unrendered
+   markdown without hunting through the repo. Sits flush with the page
+   title's top edge so it visually anchors to the heading. */
+.page-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+  background: var(--button-bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.page-source-link:hover {
+  color: var(--text);
+  background: var(--button-hover);
+  border-color: color-mix(in srgb, var(--link) 35%, var(--border));
+}
 .collapse-icon {
   display: inline-block;
   transform: rotate(0deg);
@@ -1206,6 +1239,7 @@ def generate_docs() -> None:
         # leading space keeps it from concatenating onto `doc-content`.
         content_class = " has-aside" if has_callout else ""
         body_class = "has-toc" if toc else ""
+        markdown_url = f"{GITHUB_RAW_BASE}/{page.source_rel}"
         rendered = (
             template.replace("{{title}}", html.escape(title))
             .replace("{{nav}}", nav)
@@ -1213,6 +1247,7 @@ def generate_docs() -> None:
             .replace("{{content_class}}", content_class)
             .replace("{{toc}}", toc)
             .replace("{{body_class}}", body_class)
+            .replace("{{markdown_url}}", html.escape(markdown_url))
             .replace("{{root}}", root)
         )
         page.output_path.parent.mkdir(parents=True, exist_ok=True)
