@@ -562,9 +562,11 @@ def markdown_to_html(
     """Render markdown to HTML and collect heading metadata for the TOC.
 
     Returns a 4-tuple of ``(html, title, has_callout, headings)`` where
-    ``headings`` is a list of ``(level, anchor, text)`` for every heading
-    at level 2 or deeper. The page-title h1 is consumed into ``title``
-    and excluded so the right-hand TOC doesn't repeat it.
+    ``headings`` is a list of ``(level, anchor, text_html)`` for every
+    heading at level 2 or deeper. ``text_html`` is the inline-formatted
+    HTML for the heading (e.g. ``<code>agent:provider</code>``), already
+    safe to embed verbatim in the TOC. The page-title h1 is consumed
+    into ``title`` and excluded so the right-hand TOC doesn't repeat it.
     """
     lines = markdown_text.splitlines()
     out: list[str] = []
@@ -638,8 +640,12 @@ def markdown_to_html(
                 i += 1
                 continue
             anchor = slugify(text)
-            out.append(f'<h{level} id="{anchor}">{inline_format(text, page_map, current_page)}</h{level}>')
-            headings.append((level, anchor, text))
+            text_html = inline_format(text, page_map, current_page)
+            out.append(f'<h{level} id="{anchor}">{text_html}</h{level}>')
+            # Store the inline-formatted HTML (not the raw markdown) so
+            # the TOC renders code spans, italics, etc. consistently with
+            # the heading itself.
+            headings.append((level, anchor, text_html))
             i += 1
             continue
 
@@ -728,27 +734,32 @@ def build_toc(headings: list[tuple[int, str, str]]) -> str:
     H3s are nested under the most recent H2. Orphan H3s (any H3 that
     appears before the page's first H2) are promoted to top-level
     entries so they're still navigable.
+
+    Heading text is treated as already-safe HTML (see
+    ``markdown_to_html``) so code spans in the markdown source (e.g.
+    `` `agent:provider` ``) show up as ``<code>agent:provider</code>``
+    in the rail rather than as literal backticks.
     """
     items = [(level, anchor, text) for level, anchor, text in headings if level in (2, 3)]
     if not items:
         return ""
 
-    # Build a simple tree: list of (anchor, text, [children]) where each
-    # child is (anchor, text). Render in one pass below.
+    # Build a simple tree: list of (anchor, text_html, [children]) where
+    # each child is (anchor, text_html). Render in one pass below.
     tree: list[tuple[str, str, list[tuple[str, str]]]] = []
-    for level, anchor, text in items:
+    for level, anchor, text_html in items:
         if level == 2 or not tree:
-            tree.append((anchor, text, []))
+            tree.append((anchor, text_html, []))
         else:
-            tree[-1][2].append((anchor, text))
+            tree[-1][2].append((anchor, text_html))
 
     parts: list[str] = []
-    for anchor, text, children in tree:
-        link = f'<a href="#{html.escape(anchor)}">{html.escape(text)}</a>'
+    for anchor, text_html, children in tree:
+        link = f'<a href="#{html.escape(anchor)}">{text_html}</a>'
         if children:
             sub = "".join(
-                f'<li class="toc-h3"><a href="#{html.escape(c_anchor)}">{html.escape(c_text)}</a></li>'
-                for c_anchor, c_text in children
+                f'<li class="toc-h3"><a href="#{html.escape(c_anchor)}">{c_text_html}</a></li>'
+                for c_anchor, c_text_html in children
             )
             parts.append(f'<li class="toc-h2">{link}<ul class="toc-sub">{sub}</ul></li>')
         else:
