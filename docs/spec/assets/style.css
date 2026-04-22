@@ -340,15 +340,20 @@ body.has-toc .layout {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 -14px 10px;
-  padding: 8px 14px;
+  margin: 0 -14px 8px;
+  padding: 6px 14px;
   background: color-mix(in srgb, var(--key-color) 12%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--key-color) 30%, var(--border));
 }
-.key-card-name {
+/* Selector specificity matches `.doc-content h3` so the global heading
+   margin (1.7em top / 0.5em bottom) doesn't push the title down inside
+   the header band. line-height is overridden too because the global
+   1.25 still leaves room for visible chrome above/below the glyphs. */
+.key-card .key-card-name {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+  line-height: 1.1;
 }
 .key-card-name code {
   background: transparent;
