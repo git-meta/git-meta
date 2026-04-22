@@ -51,6 +51,12 @@ type: string
 meaning: human-readable summary of what the agent did or concluded
 ```
 
+```key agent:transcript
+type: list
+meaning: ordered record of the agent session, one message per list item
+format: each item is a single JSON Lines (JSONL) record encoding one message (role, content, and any tool calls)
+```
+
 ## Format Recommendations
 
 ### Naming
