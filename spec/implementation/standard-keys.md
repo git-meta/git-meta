@@ -57,34 +57,41 @@ meaning: ordered record of the agent session, one message per list item
 format: each item is a single JSON Lines (JSONL) record encoding one message (role, content, and any tool calls)
 ```
 
-### Commits
+### Commit Data
 
-These keys cover common commit-level metadata that often needs to live alongside or after the commit itself: review state, sign-offs, provenance, and downstream lifecycle (releases, attestations).
+These keys cover common commit/change level metadata that often needs to live alongside or after the commit itself.
 
-They are unprefixed because they apply directly to commit-style targets (`commit`, `change-id`).
+These keys can generally be attached to `commit`, or `change-id` targets, though some only make sense on `commit` as it's contents cannot change (such as signoffs).
 
-```key signoff
+```key branch-id
+type: string
+meaning: stable identifier of the branch the commit originated on, preserved across squash, rebase, or merge operations that would otherwise erase the source branch name
+```
+
+```key signed-off
 type: set
 meaning: identities that have signed off on the commit (e.g. DCO sign-offs, legal or security approvals)
 format: each entry is `Name <email>` or another stable identifier for the signer
 ```
 
-```key reviewer
+```key review:reviewed
 type: set
-meaning: identities that reviewed the change
+meaning: identities of users that reviewed the change
+format: each entry is `Name <email>` or another stable identifier for the signer
 ```
 
-```key approver
+```key review:approved
 type: set
 meaning: identities that approved the change (a subset of reviewers with an explicit approve verdict)
+format: each entry is `Name <email>` or another stable identifier for the signer
 ```
 
-```key pr
+```key review:url
 type: string
 meaning: canonical pull-request, merge-request, or change-list URL or identifier the commit was merged through
 ```
 
-```key issue
+```key issue:id
 type: set
 meaning: external issue or ticket references the commit addresses
 examples:

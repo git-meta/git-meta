@@ -528,6 +528,41 @@ body.has-toc .layout {
   padding: 1px 7px;
   font-size: 0.85rem;
 }
+/* Footer band that mirrors the header band (full-bleed, tinted with
+   the per-type --key-color) and lists the target types this key may
+   be attached to. Rendered only when the source `key` block declares
+   `targets:`. */
+.key-card-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px -14px -12px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--key-color) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--key-color) 25%, var(--border));
+  color: var(--muted);
+}
+.key-card-footer-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.key-card-targets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.key-card-target {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--key-color) 70%, var(--text));
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--key-color) 35%, var(--border));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
 
 .callout-aside {
   float: right;
@@ -782,6 +817,29 @@ def render_key_card(
             f'<code class="key-card-chip">{html.escape(item)}</code>' for item in examples
         )
         parts.append(section("Examples", f'<div class="key-card-chips">{chips}</div>'))
+
+    # `targets:` constrains the key to specific target types. Accepts a
+    # bare scalar (`targets: commit`), a comma-separated scalar
+    # (`targets: commit, change-id`), or a YAML-style nested list. All
+    # three normalise to a list of trimmed target names rendered as
+    # chips in a footer band coloured with the card's per-type accent.
+    targets_raw = data.get("targets")
+    target_list: list[str] = []
+    if isinstance(targets_raw, list):
+        target_list = [t.strip() for t in targets_raw if t.strip()]
+    elif isinstance(targets_raw, str) and targets_raw.strip():
+        target_list = [t.strip() for t in targets_raw.split(",") if t.strip()]
+
+    if target_list:
+        chips = "".join(
+            f'<code class="key-card-target">{html.escape(t)}</code>' for t in target_list
+        )
+        parts.append(
+            '<footer class="key-card-footer">'
+            '<span class="key-card-footer-label">Attach to</span>'
+            f'<span class="key-card-targets">{chips}</span>'
+            '</footer>'
+        )
 
     parts.append("</section>")
     return "".join(parts), anchor, name_html
