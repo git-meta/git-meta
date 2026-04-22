@@ -858,11 +858,13 @@ def markdown_to_html(
                     i += 1
                 if i < len(lines):
                     i += 1
-                card_html, anchor, heading_html = render_key_card(
+                # Cards are intentionally NOT added to the TOC: the
+                # parent section heading already represents the group,
+                # and listing every key would crowd the rail. Direct
+                # links into a card still work via the card's anchor id.
+                card_html, _anchor, _heading_html = render_key_card(
                     name, body_lines, page_map, current_page
                 )
-                if anchor and heading_html:
-                    headings.append((3, anchor, heading_html))
                 out.append(card_html)
                 continue
             in_code = True

@@ -4,7 +4,12 @@ This document suggests a small set of commonly useful metadata keys.
 
 These are not mandatory exchange-format rules. They are implementation-level recommendations intended to improve interoperability between tools that use git-meta.
 
-## Agent metadata
+> [!NOTE]
+> To propose a new standard key, change to an existing one, or report an issue with this list, [open a GitHub issue](https://github.com/git-meta/git-meta/issues/new?labels=standard-keys&title=Standard+keys%3A+).
+
+## Metadata Keys
+
+### Agents
 
 Agent-generated metadata is likely to be common, so a stable namespace is useful.
 
@@ -46,7 +51,9 @@ type: string
 meaning: human-readable summary of what the agent did or concluded
 ```
 
-## Naming recommendations
+## Format Recommendations
+
+### Naming
 
 Keys should use a stable namespace-like structure with `:` separators.
 
@@ -58,17 +65,7 @@ Recommended conventions:
 - reserve plural concepts for collection-typed keys
 - keep the same key meaning across all target types when possible
 
-## Type recommendations
-
-A suggested key should also imply a default value type.
-
-General guidance:
-
-- use `string` for one canonical value
-- use `list` for ordered history, logs, or preference-ranked values
-- use `set` for unordered unique membership
-
-## Format recommendations
+### Format
 
 Where possible, string values should use simple portable text formats:
 
