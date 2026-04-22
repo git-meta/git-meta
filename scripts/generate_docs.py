@@ -405,12 +405,17 @@ body.has-toc .layout {
   max-width: 100%;
   margin: 0.25rem 0 1rem 1.25rem;
   clear: right;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  border-radius: 0;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border);
+  padding: 14px;
+  border-radius: 12px;
 }
 .callout-aside .callout-youtube-link { border-radius: 8px; }
+.callout-aside .callout-youtube-caption {
+  margin-top: 0.6rem;
+  margin-bottom: 0;
+}
+.callout-aside .callout-youtube-caption p:last-child { margin-bottom: 0; }
 @media (max-width: 720px) {
   /* Single-column reading width — let the aside take the full content
      measure inline rather than squeezing it next to the prose. */
