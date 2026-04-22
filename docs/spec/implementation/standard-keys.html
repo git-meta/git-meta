@@ -13,7 +13,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="has-toc">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-main">
@@ -151,6 +151,7 @@
 <ul><li>require all implementations to support all keys</li><li>define access control or privacy policy</li><li>define a schema registry</li><li>prevent future dedicated value types beyond <code>string</code>, <code>list</code>, and <code>set</code></li></ul>
         </article>
       </main>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#goals">Goals</a></li><li class="toc-h2"><a href="#naming-recommendations">Naming recommendations</a></li><li class="toc-h2"><a href="#type-recommendations">Type recommendations</a></li><li class="toc-h2"><a href="#format-recommendations">Format recommendations</a></li><li class="toc-h2"><a href="#commonly-useful-standard-keys">Commonly useful standard keys</a><ul class="toc-sub"><li class="toc-h3"><a href="#ownership">Ownership</a></li><li class="toc-h3"><a href="#review-and-collaboration">Review and collaboration</a></li><li class="toc-h3"><a href="#agent-metadata">Agent metadata</a></li><li class="toc-h3"><a href="#automation-and-ci">Automation and CI</a></li><li class="toc-h3"><a href="#provenance-and-external-references">Provenance and external references</a></li></ul></li><li class="toc-h2"><a href="#target-specific-guidance">Target-specific guidance</a><ul class="toc-sub"><li class="toc-h3"><a href="#project-targets">Project targets</a></li><li class="toc-h3"><a href="#path-targets">Path targets</a></li><li class="toc-h3"><a href="#commit-and-change-targets">Commit and change targets</a></li><li class="toc-h3"><a href="#branch-targets">Branch targets</a></li></ul></li><li class="toc-h2"><a href="#extension-guidance">Extension guidance</a></li><li class="toc-h2"><a href="#non-goals">Non-goals</a></li></ul></aside>
     </div>
     <script>
       (() => {
@@ -205,6 +206,38 @@
 
         applyTheme(currentTheme());
         applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
       })();
     </script>
   </body>

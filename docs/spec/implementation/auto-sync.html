@@ -13,7 +13,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="has-toc">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-main">
@@ -47,7 +47,7 @@
             <h1>Syncing with normal Git</h1>
           </div>
         </header>
-        <article class="doc-content has-aside">
+        <article class="doc-content">
           <p>This document describes how an end user can set up a normal Git repository to automatically push and pull metadata whenever they push and pull code, using only commands the reference CLI already provides (<code>git meta push</code>, <code>git meta pull</code>, <code>git meta show</code>, <code>git meta log</code>) and Git&#x27;s existing hook and alias mechanisms.</p>
 <p>It is intentionally scoped to what works today with stock Git and the published reference CLI. Higher-level integrations that hide these moves entirely are covered in the <a href="workflow.html">Workflow</a> document.</p>
 <h2 id="what-we-are-wiring-up">What we are wiring up</h2>
@@ -122,6 +122,7 @@ fi</code></pre>
 <p>A higher-level VCS that wants any of those behaviors should follow the <a href="workflow.html">Workflow</a> document instead, which describes the integration model for tools like GitButler or Jujutsu.</p>
         </article>
       </main>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#what-we-are-wiring-up">What we are wiring up</a></li><li class="toc-h2"><a href="#push-side-pre-push">Push side: `pre-push`</a></li><li class="toc-h2"><a href="#pull-side-post-merge">Pull side: `post-merge`</a></li><li class="toc-h2"><a href="#fetch-side-reference-transaction">Fetch side: `reference-transaction`</a></li><li class="toc-h2"><a href="#aliases-as-a-simpler-alternative">Aliases as a simpler alternative</a></li><li class="toc-h2"><a href="#reading-metadata-alongside-code-history">Reading metadata alongside code history</a></li><li class="toc-h2"><a href="#recommended-starter-setup">Recommended starter setup</a></li><li class="toc-h2"><a href="#what-this-setup-does-not-do">What this setup does not do</a></li></ul></aside>
     </div>
     <script>
       (() => {
@@ -176,6 +177,38 @@ fi</code></pre>
 
         applyTheme(currentTheme());
         applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
       })();
     </script>
   </body>

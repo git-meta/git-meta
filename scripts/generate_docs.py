@@ -98,6 +98,7 @@ STYLE_CSS = """
   --doc-max: 1264px;
   --aside-width: 260px;
   --sidebar-width: 260px;
+  --toc-width: 240px;
 }
 
 :root,
@@ -163,6 +164,9 @@ body.sidebar-collapsed {
   --sidebar-width: 72px;
 }
 .layout { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: 100vh; }
+body.has-toc .layout {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--toc-width);
+}
 .sidebar {
   --sidebar-bg: #f7f3ec;
   --sidebar-text: #2a1f1a;
@@ -388,22 +392,74 @@ body.sidebar-collapsed {
 .doc-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
 .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 0.6rem 0.7rem; text-align: left; }
 .doc-content th { background: color-mix(in srgb, var(--text) 4%, transparent); }
-@media (min-width: 1100px) {
-  .doc-content.has-aside {
-    padding-right: calc(var(--aside-width) + 24px);
+/* ——— Right-hand "On this page" TOC sidebar ———
+   The TOC lives in the third grid column when the page has any h2/h3
+   headings (body.has-toc). It's sticky, scrollable independently of the
+   page, and quietly hides on narrower viewports so the content column
+   gets the full width. */
+.toc-aside {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 32px 24px 60px 8px;
+  border-left: 1px solid var(--border);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.toc-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.toc-list, .toc-sub {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.toc-list > li + li { margin-top: 4px; }
+.toc-sub {
+  margin: 4px 0 6px 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.toc-sub > li + li { margin-top: 2px; }
+.toc-aside a {
+  display: block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.toc-aside a:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  text-decoration: none;
+}
+.toc-aside a.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+@media (max-width: 1180px) {
+  body.has-toc .layout {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   }
-  .callout.callout-aside {
-    clear: right;
-    float: right;
-    width: var(--aside-width);
-    margin: 0 calc(-1 * (var(--aside-width) + 24px)) 1rem 24px;
-  }
+  .toc-aside { display: none; }
 }
 @media (max-width: 960px) {
   body.sidebar-collapsed {
     --sidebar-width: 1fr;
   }
-  .layout { grid-template-columns: 1fr; }
+  .layout,
+  body.has-toc .layout { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .content { padding: 24px 18px 48px; }
 }
@@ -466,7 +522,16 @@ def inline_format(text: str, page_map: dict[str, str], current_page: Page) -> st
     return text
 
 
-def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page: Page) -> tuple[str, str, bool]:
+def markdown_to_html(
+    markdown_text: str, page_map: dict[str, str], current_page: Page
+) -> tuple[str, str, bool, list[tuple[int, str, str]]]:
+    """Render markdown to HTML and collect heading metadata for the TOC.
+
+    Returns a 4-tuple of ``(html, title, has_callout, headings)`` where
+    ``headings`` is a list of ``(level, anchor, text)`` for every heading
+    at level 2 or deeper. The page-title h1 is consumed into ``title`` and
+    excluded from ``headings`` so the right-hand TOC doesn't repeat it.
+    """
     lines = markdown_text.splitlines()
     out: list[str] = []
     in_code = False
@@ -476,6 +541,7 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
     paragraph: list[str] = []
     title = "Untitled"
     has_callout = False
+    headings: list[tuple[int, str, str]] = []
 
     def flush_paragraph() -> None:
         nonlocal paragraph
@@ -539,6 +605,7 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
                 continue
             anchor = slugify(text)
             out.append(f'<h{level} id="{anchor}">{inline_format(text, page_map, current_page)}</h{level}>')
+            headings.append((level, anchor, text))
             i += 1
             continue
 
@@ -603,7 +670,52 @@ def markdown_to_html(markdown_text: str, page_map: dict[str, str], current_page:
     flush_lists()
     if in_code:
         out.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
-    return "\n".join(out), title, has_callout
+    return "\n".join(out), title, has_callout, headings
+
+
+def build_toc(headings: list[tuple[int, str, str]]) -> str:
+    """Render a nested ``<aside>`` TOC for the right-hand sidebar.
+
+    Only level-2 (``##``) and level-3 (``###``) headings are surfaced;
+    deeper levels rarely add navigational value and would clutter the
+    rail. Returns an empty string when there's nothing to show, which
+    lets the layout collapse the third grid column for short pages.
+
+    H3s are nested under the most recent H2. Orphan H3s (any H3 that
+    appears before the page's first H2) are promoted to top-level entries
+    so they're still navigable.
+    """
+    items = [(level, anchor, text) for level, anchor, text in headings if level in (2, 3)]
+    if not items:
+        return ""
+
+    # Build a simple tree: list of (anchor, text, [children]) where each
+    # child is (anchor, text). Render in one pass below.
+    tree: list[tuple[str, str, list[tuple[str, str]]]] = []
+    for level, anchor, text in items:
+        if level == 2 or not tree:
+            tree.append((anchor, text, []))
+        else:
+            tree[-1][2].append((anchor, text))
+
+    parts: list[str] = []
+    for anchor, text, children in tree:
+        link = f'<a href="#{html.escape(anchor)}">{html.escape(text)}</a>'
+        if children:
+            sub = "".join(
+                f'<li class="toc-h3"><a href="#{html.escape(c_anchor)}">{html.escape(c_text)}</a></li>'
+                for c_anchor, c_text in children
+            )
+            parts.append(f'<li class="toc-h2">{link}<ul class="toc-sub">{sub}</ul></li>')
+        else:
+            parts.append(f'<li class="toc-h2">{link}</li>')
+
+    return (
+        '<aside class="toc-aside" aria-label="On this page">'
+        '<div class="toc-title">On this page</div>'
+        f'<ul class="toc-list">{"".join(parts)}</ul>'
+        "</aside>"
+    )
 
 
 def read_title(path: Path) -> str:
@@ -758,16 +870,26 @@ def generate_docs() -> None:
 
     for page in pages:
         markdown_text = page.source_path.read_text()
-        content, detected_title, has_callout = markdown_to_html(markdown_text, page_map, page)
+        content, detected_title, has_callout, headings = markdown_to_html(
+            markdown_text, page_map, page
+        )
         title = detected_title or page.title
         nav = build_nav(pages, page)
         root = root_prefix(page)
-        content_class = " has-aside" if has_callout else ""
+        toc = build_toc(headings)
+        # `has-aside` was the legacy class that reserved right-margin for
+        # floating callouts; with the right-hand TOC sidebar in place we
+        # no longer need it. Kept as an empty placeholder for now in case
+        # downstream CSS still hooks it.
+        content_class = ""
+        body_class = "has-toc" if toc else ""
         rendered = (
             template.replace("{{title}}", html.escape(title))
             .replace("{{nav}}", nav)
             .replace("{{content}}", content)
             .replace("{{content_class}}", content_class)
+            .replace("{{toc}}", toc)
+            .replace("{{body_class}}", body_class)
             .replace("{{root}}", root)
         )
         page.output_path.parent.mkdir(parents=True, exist_ok=True)
