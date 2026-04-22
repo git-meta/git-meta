@@ -57,6 +57,260 @@ meaning: ordered record of the agent session, one message per list item
 format: each item is a single JSON Lines (JSONL) record encoding one message (role, content, and any tool calls)
 ```
 
+### Commits
+
+These keys cover common commit-level metadata that often needs to live alongside or after the commit itself: review state, sign-offs, provenance, and downstream lifecycle (releases, attestations).
+
+They are unprefixed because they apply directly to commit-style targets (`commit`, `change-id`).
+
+```key signoff
+type: set
+meaning: identities that have signed off on the commit (e.g. DCO sign-offs, legal or security approvals)
+format: each entry is `Name <email>` or another stable identifier for the signer
+```
+
+```key reviewer
+type: set
+meaning: identities that reviewed the change
+```
+
+```key approver
+type: set
+meaning: identities that approved the change (a subset of reviewers with an explicit approve verdict)
+```
+
+```key pr
+type: string
+meaning: canonical pull-request, merge-request, or change-list URL or identifier the commit was merged through
+```
+
+```key issue
+type: set
+meaning: external issue or ticket references the commit addresses
+examples:
+  - GH-1234
+  - JIRA-5678
+```
+
+```key issue:url
+type: set
+meaning: canonical URLs for issues this change addresses
+```
+
+```key conventional:type
+type: set
+meaning: conventional commit style high-level classification of the change
+examples:
+  - feat
+  - fix
+  - docs
+  - refactor
+  - chore
+  - breaking
+```
+
+```key released-in
+type: set
+meaning: release tags or versions that introduced this change
+```
+
+```key attestation
+type: list
+meaning: attestations describing how the content was built or verified, using something like gitsign
+format: each list item is an Signed JSON (DSSE) envelope
+```
+
+### Branch Data
+
+These keys cover common branch level metadata that describes the purpose, lifecycle, and integration state of a branch.
+
+These keys are attached to `branch` targets.
+
+```key description
+type: string
+meaning: human-readable description of the branch's purpose
+```
+
+```key status
+type: string
+meaning: lifecycle state of the branch
+examples:
+  - draft
+  - ready
+  - in-review
+  - merged
+  - abandoned
+  - archived
+```
+
+```key review:url
+type: string
+meaning: canonical pull-request, merge-request, or change-list URL or identifier associated with the branch
+```
+
+```key ci:url
+type: string
+meaning: canonical URL of the most recent CI run for the branch
+```
+
+```key issue:id
+type: set
+meaning: external issue or ticket references the branch addresses
+examples:
+  - GH-1234
+  - JIRA-5678
+```
+
+```key issue:url
+type: set
+meaning: canonical URLs for issues this branch addresses
+```
+
+```key label
+type: set
+meaning: free-form tags or labels applied to the branch
+examples:
+  - security
+  - infra
+  - experiment
+```
+
+### Path Data
+
+These keys describe ownership, provenance, and documentation for a file or directory path in the project. They are useful for replacing checked-in helper files like `CODEOWNERS` and for annotating vendored or imported code.
+
+These keys are attached to `path` targets, but most can also be attached to project if they are the default for all paths.
+
+```key owner
+type: set
+meaning: identities or teams that own the path
+format: each entry is `Name <email>`, a team handle, or another stable identifier
+```
+
+```key reviewer
+type: set
+meaning: identities or teams that should be automatically requested to review changes to this path
+format: each entry is `Name <email>`, a team handle, or another stable identifier
+```
+
+```key description
+type: string
+meaning: human-readable description of what the file or directory is for
+```
+
+```key topic
+type: set
+meaning: domain topics this path relates to
+examples:
+  - auth
+  - billing
+  - search
+```
+
+```key license
+type: string
+meaning: SPDX license identifier for paths whose license differs from the project default
+examples:
+  - Apache-2.0
+  - MIT
+  - GPL-3.0-or-later
+```
+
+```key upstream:url
+type: string
+meaning: canonical origin URL for vendored or imported code at this path
+```
+
+```key upstream:version
+type: string
+meaning: pinned upstream version, tag, or commit identifier for vendored or imported code
+```
+
+```key docs:url
+type: string
+meaning: canonical documentation URL for this module or path
+```
+
+```key agent:instructions
+type: string
+meaning: persistent instructions, system prompt, or rules provided to the agent when working on this path
+```
+
+### Project Data
+
+These keys cover project-wide metadata that applies to the repository as a whole.
+
+These keys are attached to `project` targets.
+
+```key description
+type: string
+meaning: human-readable description of the project
+```
+
+```key homepage:url
+type: string
+meaning: canonical URL for the project's homepage
+```
+
+```key repository:url
+type: string
+meaning: canonical URL of the project's source repository
+```
+
+```key license
+type: string
+meaning: SPDX license identifier for the project
+examples:
+  - Apache-2.0
+  - MIT
+  - GPL-3.0-or-later
+```
+
+The `meta:` namespace is reserved for git-meta protocol configuration (auto-pruning, serialization filters, and similar tooling rules). Project metadata that is not protocol configuration should use a different namespace.
+
+```key meta:prune:since
+type: string
+meaning: retention window used when auto-pruning is triggered during serialization
+format: ISO-8601 date (e.g. `2025-01-01`) or relative duration (`90d`, `6m`, `1y`)
+```
+
+```key meta:prune:max-keys
+type: string
+meaning: integer threshold; when the total number of metadata keys in the serialized tree exceeds this value, an auto-prune is triggered
+examples:
+  - "10000"
+```
+
+```key meta:prune:max-size
+type: string
+meaning: size threshold; when the total size of all blobs in the serialized tree exceeds this value, an auto-prune is triggered
+format: integer with optional human-friendly suffix (`512k`, `10m`, `1g`)
+```
+
+```key meta:prune:min-size
+type: string
+meaning: minimum subtree size threshold passed through to the prune operation; target subtrees smaller than this are kept in full regardless of age
+format: integer with optional human-friendly suffix (`512k`, `10m`)
+```
+
+```key meta:filter
+type: set
+meaning: shared serialization filter rules that exclude keys from serialization or route them to alternative refs
+format: each entry is `<action> <pattern> [<destination>]` where action is `exclude` or `route`, pattern is a `:`-segmented glob, and destination is required for `route`
+examples:
+  - exclude draft:**
+  - route myteam:** private
+```
+
+```key meta:local:filter
+type: set
+meaning: personal serialization filter rules that are themselves never serialized; same format as `meta:filter`
+format: each entry is `<action> <pattern> [<destination>]`
+examples:
+  - exclude scratch:**
+  - route myname:** mine
+```
+
 ## Format Recommendations
 
 ### Naming
