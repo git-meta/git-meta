@@ -262,3 +262,120 @@ fn pull_merges_with_local_data() {
         .success()
         .stdout(predicate::str::contains("hello"));
 }
+
+#[test]
+fn sync_pulls_then_pushes() {
+    let (dir, sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    let target = commit_target(&sha);
+    harness::git_meta(dir.path())
+        .args(["set", &target, "agent:model", "claude-4.6"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["sync"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Already up-to-date from meta."))
+        .stdout(predicate::str::contains("Pushed metadata to meta"));
+
+    harness::git_meta(dir.path())
+        .args(["get", "project", "testing"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+
+    let (reader_dir, _reader_sha) = setup_repo();
+    harness::git_meta(reader_dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    harness::git_meta(reader_dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+    harness::git_meta(reader_dir.path())
+        .args(["get", &target, "agent:model"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("claude-4.6"));
+}
+
+#[test]
+fn sync_merges_remote_and_local_metadata() {
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    let (dir_a, sha_a) = setup_repo();
+    let (dir_b, sha_b) = setup_repo();
+
+    harness::git_meta(dir_a.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    harness::git_meta(dir_b.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+
+    let target_a = commit_target(&sha_a);
+    harness::git_meta(dir_a.path())
+        .args(["set", &target_a, "from:a", "value-a"])
+        .assert()
+        .success();
+    harness::git_meta(dir_a.path())
+        .args(["sync"])
+        .assert()
+        .success();
+
+    let target_b = commit_target(&sha_b);
+    harness::git_meta(dir_b.path())
+        .args(["set", &target_b, "from:b", "value-b"])
+        .assert()
+        .success();
+    harness::git_meta(dir_b.path())
+        .args(["sync"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir_a.path())
+        .args(["sync"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir_a.path())
+        .args(["get", &target_b, "from:b"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("value-b"));
+    harness::git_meta(dir_b.path())
+        .args(["get", &target_a, "from:a"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("value-a"));
+
+    let bare = open_repo(bare_dir.path());
+    let tip_oid = ref_to_commit_oid(&bare, "refs/meta/main");
+    let walk = bare.rev_walk(Some(tip_oid));
+    let iter = walk.all().unwrap();
+    for info_result in iter {
+        let info = info_result.unwrap();
+        let oid = info.id;
+        let commit = oid.attach(&bare).object().unwrap().into_commit();
+        let parent_count = commit.parent_ids().count();
+        assert!(
+            parent_count <= 1,
+            "commit {} has {} parents, merge commits are not allowed in synced history",
+            &oid.to_string()[..8],
+            parent_count
+        );
+    }
+}
