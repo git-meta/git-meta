@@ -23,6 +23,7 @@
 //!
 //! // Open a session for the current git repository
 //! let session = Session::discover()?;
+//! // or Session::open(path)?
 //!
 //! // Write metadata
 //! let commit = session.target(&Target::commit("abc123")?);
@@ -38,17 +39,6 @@
 //! session.serialize()?;
 //! session.push_once(None)?;
 //! # Ok::<(), git_meta_lib::Error>(())
-//! ```
-//!
-//! If you already have a [`gix::Repository`] (e.g. in a host application like
-//! GitButler), clone it cheaply and pass it in:
-//!
-//! ```no_run
-//! # use git_meta_lib::Session;
-//! let repo = gix::open(".")?;
-//! let session = Session::open(repo.clone())?;
-//! // `repo` is still fully usable here
-//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! ## Data Exchange

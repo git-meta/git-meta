@@ -90,7 +90,7 @@ fn large_string_value_roundtrips() {
 
     // Set it in repo A and serialize
     let (dir_a, repo_a) = setup_repo();
-    let session_a = Session::open(repo_a).unwrap().with_timestamp(1000);
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
     session_a
         .target(&Target::project())
         .set("large:payload", large_value.as_str())

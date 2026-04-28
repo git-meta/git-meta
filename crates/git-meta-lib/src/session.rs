@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use time::OffsetDateTime;
 
 /// A session combining a Git repository with its gmeta metadata store.
@@ -50,22 +52,14 @@ impl Session {
 
     /// Open a session for a known repository.
     ///
-    /// Use this when you already have a `gix::Repository` handle (e.g. from
-    /// a host application like GitButler that manages its own repo lifetime).
-    ///
-    /// If you need to keep using the repository after creating a session,
-    /// pass `repo.clone()` — `gix::Repository` is cheaply cloneable since
-    /// its object database and ref store are behind `Arc`.
-    ///
     /// # Example
     ///
     /// ```ignore
     /// let repo = gix::open(".")?;
-    /// let session = Session::open(repo.clone())?;
-    /// // `repo` is still usable here
+    /// let session = Session::open(repo.path())?;
     /// ```
-    pub fn open(repo: gix::Repository) -> crate::error::Result<Self> {
-        Self::from_repo(repo)
+    pub fn open(directory: impl Into<PathBuf>) -> crate::error::Result<Self> {
+        Self::from_repo(gix::open(directory).map_err(|err| crate::error::Error::Git(err.into()))?)
     }
 
     /// Pin all workflow operations to a fixed timestamp.

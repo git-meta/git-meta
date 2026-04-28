@@ -77,7 +77,7 @@ pub fn setup_repo() -> (tempfile::TempDir, gix::Repository) {
 
 /// Open a session from a repo with a fixed timestamp for determinism.
 pub fn open_session(repo: gix::Repository) -> Session {
-    Session::open(repo).unwrap().with_timestamp(1000)
+    Session::open(repo.path()).unwrap().with_timestamp(1000)
 }
 
 /// Return the full 40-char commit SHA from the repo's HEAD.
@@ -138,7 +138,9 @@ pub fn reopen_session(dir: &std::path::Path, timestamp: i64) -> Session {
             .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
     )
     .unwrap();
-    Session::open(repo).unwrap().with_timestamp(timestamp)
+    Session::open(repo.path())
+        .unwrap()
+        .with_timestamp(timestamp)
 }
 
 /// Set up a three-way merge scenario: both repo A and repo C diverge from
@@ -154,7 +156,7 @@ pub fn setup_three_way_base(
 ) -> (tempfile::TempDir, tempfile::TempDir, gix::ObjectId) {
     // Step 1: Create repo A and set up the base state
     let (dir_a, repo_a) = setup_repo();
-    let session_a = Session::open(repo_a).unwrap().with_timestamp(1000);
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
     base_fn(&session_a);
     let _ = session_a.serialize().unwrap();
 
@@ -195,7 +197,9 @@ pub fn setup_three_way_base(
         .unwrap();
 
     // Materialize into C to establish the common base
-    let session_c = Session::open(repo_c_reopen).unwrap().with_timestamp(1500);
+    let session_c = Session::open(repo_c_reopen.path())
+        .unwrap()
+        .with_timestamp(1500);
     let _ = session_c.materialize(None).unwrap();
 
     (dir_a, dir_c, base_oid)
