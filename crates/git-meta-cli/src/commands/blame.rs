@@ -16,13 +16,17 @@ use git_meta_lib::MetaValue;
 ///
 /// - `path`: the repository path to blame.
 /// - `rev`: optional revision to pass to `git blame`.
-/// - `porcelain`: when true, emit JSON grouped blame data.
+/// - `porcelain`: when true, emit full JSON grouped blame data.
+/// - `json`: when true, emit compact JSON with line ranges and PR metadata.
 ///
 /// # Errors
 ///
 /// Returns an error if `git blame` fails, porcelain output cannot be parsed, or
 /// metadata lookup/output serialization fails.
-pub fn run(path: &str, rev: Option<&str>, porcelain: bool) -> Result<()> {
+pub fn run(path: &str, rev: Option<&str>, porcelain: bool, json: bool) -> Result<()> {
+    if porcelain && json {
+        bail!("cannot use --json and --porcelain together");
+    }
     let ctx = CommandContext::open(None)?;
     let output = run_git_blame(path, rev)?;
     let lines = parse_porcelain(&output)?;
@@ -30,6 +34,8 @@ pub fn run(path: &str, rev: Option<&str>, porcelain: bool) -> Result<()> {
 
     if porcelain {
         println!("{}", serde_json::to_string_pretty(&groups)?);
+    } else if json {
+        println!("{}", serde_json::to_string_pretty(&json_groups(&groups))?);
     } else {
         print_text(&groups);
         if groups.iter().all(|group| group.branch_id.is_none()) {
