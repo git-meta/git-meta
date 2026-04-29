@@ -2009,3 +2009,73 @@ fn parse_git_ai_note(text: &str) -> Result<GitAiNote> {
         model,
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn branch_id_sanitizes_path_separators() {
+        assert_eq!(branch_id("feature/import:gh", 42), "feature-import-gh#42");
+    }
+
+    #[test]
+    fn conventional_parser_extracts_type_and_breaking_flag() {
+        assert_eq!(
+            ConventionalType::parse("feat(api)!: add import").unwrap(),
+            ConventionalType {
+                kind: "feat".to_string(),
+                breaking: true,
+            }
+        );
+        assert_eq!(
+            ConventionalType::parse("refactor: simplify").unwrap(),
+            ConventionalType {
+                kind: "refactor".to_string(),
+                breaking: false,
+            }
+        );
+        assert!(ConventionalType::parse("Merge pull request #1").is_none());
+    }
+
+    #[test]
+    fn extracts_closing_issue_ids_from_body() {
+        let issues = extract_closing_issue_ids("This closes #25 and fixes #26.");
+        assert!(issues.contains("#25"));
+        assert!(issues.contains("#26"));
+    }
+
+    #[test]
+    fn parses_gh_pr_json() {
+        let json = r##"[{
+            "number": 42,
+            "title": "Add import",
+            "body": "Closes #25",
+            "url": "https://github.com/owner/repo/pull/42",
+            "headRefName": "feature/import",
+            "baseRefName": "main",
+            "mergedAt": "2026-04-01T12:00:00Z",
+            "mergeCommit": {
+                "oid": "84a1d9b840d428fc523f6ffc1f8adfb43ab5918d",
+                "messageHeadline": "feat: add import"
+            },
+            "commits": [],
+            "comments": [],
+            "reviews": [{"author": {"login": "bob"}, "state": "APPROVED"}],
+            "closingIssuesReferences": [{
+                "number": 25,
+                "url": "https://github.com/owner/repo/issues/25"
+            }]
+        }]"##;
+        let prs: Vec<GhPullRequest> = serde_json::from_str(json).unwrap();
+        let imported = GitHubPullRequestImport::from_pr(prs.into_iter().next().unwrap());
+        assert_eq!(imported.branch_id, "feature-import#42");
+        assert!(imported.approved_by.contains("bob"));
+        assert!(imported.issues.contains("#25"));
+        assert!(imported
+            .issue_urls
+            .contains("https://github.com/owner/repo/issues/25"));
+        assert_eq!(imported.commits.len(), 1);
+    }
+}
