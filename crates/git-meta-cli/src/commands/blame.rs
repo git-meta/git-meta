@@ -3,8 +3,10 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
+use terminal_size::{terminal_size, Width};
 
 use crate::context::CommandContext;
+use crate::style::Style;
 use git_meta_lib::types::{Target, TargetType};
 use git_meta_lib::MetaValue;
 
