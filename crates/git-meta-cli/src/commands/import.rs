@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::context::CommandContext;
 use git_meta_lib::db::Store;
+use git_meta_lib::git_utils;
 use git_meta_lib::types::{Target, TargetType, ValueType, GIT_REF_THRESHOLD};
 use git_meta_lib::MetaValue;
 
@@ -121,7 +122,7 @@ pub fn run_gh(
     }
 
     if !no_tags {
-        eprintln!("release tag mapping is not implemented yet; skipping tags");
+        summary.writes += import_release_tags(&ctx, dry_run)?;
     }
 
     if dry_run {
