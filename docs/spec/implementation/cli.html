@@ -89,7 +89,7 @@ git meta set:rm &lt;target&gt; &lt;key&gt; &lt;value&gt;</code></pre>
 <pre><code>git meta materialize --dry-run [&lt;remote&gt;]</code></pre>
 <p>Useful for reporting the merge strategy and conflict decisions without applying them.</p>
 <h2 id="sync-commands">Sync commands</h2>
-<p><code>push</code> and <code>pull</code> are the porcelain that bundle a local serialize/materialize with the network step against a configured metadata remote. They are the two commands a project uses day-to-day; <code>serialize</code> and <code>materialize</code> are the underlying plumbing.</p>
+<p><code>push</code>, <code>pull</code>, and <code>sync</code> are the porcelain that bundle a local serialize/materialize with the network step against a configured metadata remote. They are the commands a project uses day-to-day; <code>serialize</code> and <code>materialize</code> are the underlying plumbing.</p>
 <h3 id="push">Push</h3>
 <pre><code>git meta push [&lt;remote&gt;]
 git meta push [&lt;remote&gt;] --readme</code></pre>
@@ -102,6 +102,14 @@ git meta push [&lt;remote&gt;] --readme</code></pre>
 <p>Behavior:</p>
 <p><code>refs/&lt;namespace&gt;/remotes/main</code> and runs the equivalent of <code>git meta materialize</code> to merge the new history into the local SQLite database</p>
 <ul><li>fetches <code>refs/&lt;namespace&gt;/main</code> from the remote into</li><li>if <code>&lt;remote&gt;</code> is omitted, the first configured metadata remote is used</li><li>prints <code>Already up-to-date.</code> when the remote tip is unchanged</li></ul>
+<h3 id="sync">Sync</h3>
+<pre><code>git meta sync [&lt;remote&gt;]</code></pre>
+<p>Behavior:</p>
+<p>serializes local metadata for merge, and materializes remote changes into the local SQLite database</p>
+<p>pushing <code>refs/&lt;namespace&gt;/local/main</code> to <code>refs/&lt;namespace&gt;/main</code></p>
+<p>materializes the new remote state, reserializes locally, rewrites the local metadata commit on top of the remote tip, and retries</p>
+<p>first and then all configured metadata remotes are pushed</p>
+<ul><li>pulls remote metadata first, which fetches <code>refs/&lt;namespace&gt;/main</code>,</li><li>pushes the merged local metadata afterward, serializing again and</li><li>if the push is rejected because the remote advanced, fetches and</li><li>if <code>&lt;remote&gt;</code> is omitted, all configured metadata remotes are pulled</li></ul>
 <h2 id="setup-and-configuration">Setup and configuration</h2>
 <p>These commands wire a project up to a metadata remote, or undo that wiring. They never write or read metadata values directly; they only manage the local state needed by the sync and exchange commands above.</p>
 <h3 id="setup">Setup</h3>
@@ -151,7 +159,7 @@ project</code></pre>
 <p>The output model is documented in <a href="output.html">Output</a>.</p>
         </article>
       </main>
-      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#core-commands">Core commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#set-a-value">Set a value</a></li><li class="toc-h3"><a href="#get-values">Get values</a></li><li class="toc-h3"><a href="#remove-a-key">Remove a key</a></li></ul></li><li class="toc-h2"><a href="#list-operations">List operations</a></li><li class="toc-h2"><a href="#set-operations">Set operations</a></li><li class="toc-h2"><a href="#exchange-commands">Exchange commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#serialize">Serialize</a></li><li class="toc-h3"><a href="#materialize">Materialize</a></li><li class="toc-h3"><a href="#dry-run-materialize">Dry-run materialize</a></li></ul></li><li class="toc-h2"><a href="#sync-commands">Sync commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#push">Push</a></li><li class="toc-h3"><a href="#pull">Pull</a></li></ul></li><li class="toc-h2"><a href="#setup-and-configuration">Setup and configuration</a><ul class="toc-sub"><li class="toc-h3"><a href="#setup">Setup</a></li><li class="toc-h3"><a href="#add-a-remote">Add a remote</a></li><li class="toc-h3"><a href="#teardown">Teardown</a></li></ul></li><li class="toc-h2"><a href="#target-syntax">Target syntax</a></li><li class="toc-h2"><a href="#value-encoding">Value encoding</a></li><li class="toc-h2"><a href="#output-modes">Output modes</a></li></ul></aside>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#core-commands">Core commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#set-a-value">Set a value</a></li><li class="toc-h3"><a href="#get-values">Get values</a></li><li class="toc-h3"><a href="#remove-a-key">Remove a key</a></li></ul></li><li class="toc-h2"><a href="#list-operations">List operations</a></li><li class="toc-h2"><a href="#set-operations">Set operations</a></li><li class="toc-h2"><a href="#exchange-commands">Exchange commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#serialize">Serialize</a></li><li class="toc-h3"><a href="#materialize">Materialize</a></li><li class="toc-h3"><a href="#dry-run-materialize">Dry-run materialize</a></li></ul></li><li class="toc-h2"><a href="#sync-commands">Sync commands</a><ul class="toc-sub"><li class="toc-h3"><a href="#push">Push</a></li><li class="toc-h3"><a href="#pull">Pull</a></li><li class="toc-h3"><a href="#sync">Sync</a></li></ul></li><li class="toc-h2"><a href="#setup-and-configuration">Setup and configuration</a><ul class="toc-sub"><li class="toc-h3"><a href="#setup">Setup</a></li><li class="toc-h3"><a href="#add-a-remote">Add a remote</a></li><li class="toc-h3"><a href="#teardown">Teardown</a></li></ul></li><li class="toc-h2"><a href="#target-syntax">Target syntax</a></li><li class="toc-h2"><a href="#value-encoding">Value encoding</a></li><li class="toc-h2"><a href="#output-modes">Output modes</a></li></ul></aside>
     </div>
     <script>
       (() => {

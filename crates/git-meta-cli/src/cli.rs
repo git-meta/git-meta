@@ -278,8 +278,19 @@ pub enum Commands {
         verbose: bool,
     },
 
+    /// Pull, merge, rewrite if needed, and push metadata
+    #[command(display_order = 37)]
+    Sync {
+        /// Remote name (defaults to all meta remotes)
+        remote: Option<String>,
+
+        /// Show detailed information about sync decisions
+        #[arg(short = 'v', long)]
+        verbose: bool,
+    },
+
     /// Walk remote history and index keys as promisor entries
-    #[command(display_order = 37, hide = true)]
+    #[command(display_order = 38, hide = true)]
     Promisor,
 
     /// Watch agent transcripts and auto-attach to commits
@@ -472,7 +483,7 @@ const HELP_GROUPS: &[HelpGroup] = &[
             // blank line from the read-only inspection commands below.
             HelpSection {
                 label: None,
-                commands: &["push", "pull"],
+                commands: &["push", "pull", "sync"],
             },
             HelpSection {
                 label: None,

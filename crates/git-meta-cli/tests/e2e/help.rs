@@ -26,6 +26,7 @@ const VISIBLE_COMMANDS: &[&str] = &[
     "stats",
     "push",
     "pull",
+    "sync",
     "serialize",
     "materialize",
     "remote",
@@ -69,13 +70,13 @@ fn top_level_help_is_curated_for_every_invocation() {
     }
 }
 
-/// Within the porcelain group, the daily-use sync commands `push` and
-/// `pull` come first as their own block, separated from the read-only
+/// Within the porcelain group, the daily-use sync commands `push`,
+/// `pull`, and `sync` come first as their own block, separated from the read-only
 /// inspection commands (`show`, `inspect`, `log`, `stats`) by a blank
 /// line. We verify both the order and the blank-line separator by
 /// matching a multi-line snippet of stdout.
 #[test]
-fn porcelain_group_lists_push_pull_before_inspection_commands() {
+fn porcelain_group_lists_exchange_commands_before_inspection_commands() {
     let dir = TempDir::new().unwrap();
 
     harness::git_meta(dir.path())
@@ -84,12 +85,13 @@ fn porcelain_group_lists_push_pull_before_inspection_commands() {
         .stdout(predicate::function(|out: &str| {
             let push = out.find("   push ").expect("push line missing");
             let pull = out.find("   pull ").expect("pull line missing");
+            let sync = out.find("   sync ").expect("sync line missing");
             let show = out.find("   show ").expect("show line missing");
             let stats = out.find("   stats ").expect("stats line missing");
-            push < pull && pull < show && show < stats
+            push < pull && pull < sync && sync < show && show < stats
         }))
         .stdout(predicate::str::contains(
-            "Pull remote metadata and merge into local database\n\n   show",
+            "Pull, merge, rewrite if needed, and push metadata\n\n   show",
         ));
 }
 

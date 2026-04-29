@@ -114,6 +114,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Pull { remote, verbose } => commands::pull::run(remote.as_deref(), verbose),
+        Commands::Sync { remote, verbose } => commands::sync::run(remote.as_deref(), verbose),
 
         Commands::Promisor => commands::promisor::run(),
 

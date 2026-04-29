@@ -36,7 +36,8 @@ pub struct PushOutput {
     pub commit_oid: String,
 }
 
-/// Execute a single push attempt: serialize, then git push.
+/// Execute a single push attempt: serialize, rewrite onto the tracked remote
+/// tip when needed, then git push.
 ///
 /// Does NOT retry on failure. Returns whether it succeeded or was
 /// rejected. The caller (CLI) implements retry policy.
@@ -80,7 +81,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
 
     // Check if local ref already matches the remote ref (nothing new to push)
     let remote_tracking_ref = format!("refs/{ns}/remotes/main");
-    let local_oid = repo
+    let mut local_oid = repo
         .find_reference(&local_ref)
         .ok()
         .and_then(|r| r.into_fully_peeled_id().ok())
@@ -102,6 +103,13 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
                 commit_oid: local.to_string(),
             });
         }
+
+        rebase_local_on_remote(repo, &local_ref, &remote_tracking_ref)?;
+        local_oid = repo
+            .find_reference(&local_ref)
+            .ok()
+            .and_then(|r| r.into_fully_peeled_id().ok())
+            .map(gix::Id::detach);
     }
 
     let commit_oid_str = local_oid

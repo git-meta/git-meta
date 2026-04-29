@@ -97,9 +97,9 @@ Useful for reporting the merge strategy and conflict decisions without applying 
 
 ## Sync commands
 
-`push` and `pull` are the porcelain that bundle a local
+`push`, `pull`, and `sync` are the porcelain that bundle a local
 serialize/materialize with the network step against a configured
-metadata remote. They are the two commands a project uses day-to-day;
+metadata remote. They are the commands a project uses day-to-day;
 `serialize` and `materialize` are the underlying plumbing.
 
 ### Push
@@ -135,6 +135,25 @@ Behavior:
   database
 - if `<remote>` is omitted, the first configured metadata remote is used
 - prints `Already up-to-date.` when the remote tip is unchanged
+
+### Sync
+
+```bash
+git meta sync [<remote>]
+```
+
+Behavior:
+
+- pulls remote metadata first, which fetches `refs/<namespace>/main`,
+  serializes local metadata for merge, and materializes remote changes
+  into the local SQLite database
+- pushes the merged local metadata afterward, serializing again and
+  pushing `refs/<namespace>/local/main` to `refs/<namespace>/main`
+- if the push is rejected because the remote advanced, fetches and
+  materializes the new remote state, reserializes locally, rewrites the
+  local metadata commit on top of the remote tip, and retries
+- if `<remote>` is omitted, all configured metadata remotes are pulled
+  first and then all configured metadata remotes are pushed
 
 ## Setup and configuration
 
