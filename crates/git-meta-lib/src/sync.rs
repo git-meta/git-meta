@@ -5,9 +5,9 @@ use gix::prelude::ObjectIdExt;
 
 use crate::db::Store;
 use crate::error::{Error, Result};
+use crate::tree::format::parse_path_parts;
 use crate::types::{
-    Target, TargetType, ValueType, LIST_VALUE_DIR, PATH_TARGET_SEPARATOR, SET_VALUE_DIR,
-    STRING_VALUE_BLOB, TOMBSTONE_ROOT,
+    Target, TargetType, ValueType, LIST_VALUE_DIR, SET_VALUE_DIR, STRING_VALUE_BLOB, TOMBSTONE_ROOT,
 };
 
 /// A parsed change from a `git-meta` serialize commit message.

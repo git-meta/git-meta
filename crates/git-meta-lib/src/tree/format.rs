@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use sha1::{Digest, Sha1};
+
 use crate::error::{Error, Result};
 
 use super::model::{Key, ParsedTree, Tombstone, TreeValue};
