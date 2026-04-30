@@ -204,3 +204,51 @@ fn incremental_serialize_only_includes_changes() {
         "incremental serialize should still report changes"
     );
 }
+
+#[test]
+fn serialize_detects_historical_writes_after_prior_serialize() {
+    let (dir, repo) = setup_repo();
+    let session = Session::open(repo).unwrap().with_timestamp(2000);
+
+    session
+        .target(&Target::project())
+        .set("key1", "alpha")
+        .unwrap();
+    let output1 = session.serialize().unwrap();
+    assert!(output1.changes > 0, "first serialize should have changes");
+
+    let session2 = reopen_session(dir.path(), 3000);
+    session2
+        .target(&Target::project())
+        .set("imported:key", "historical")
+        .unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join(".git").join("git-meta.sqlite")).unwrap();
+    conn.execute(
+        "UPDATE metadata
+         SET last_timestamp = 1000
+         WHERE target_type = 'project' AND target_value = '' AND key = 'imported:key'",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE metadata_log
+         SET timestamp = 1000
+         WHERE target_type = 'project' AND target_value = '' AND key = 'imported:key'",
+        [],
+    )
+    .unwrap();
+
+    let output2 = session2.serialize().unwrap();
+    assert!(
+        output2.changes > 0,
+        "serialize should detect writes whose event timestamp predates last_materialized"
+    );
+    assert!(
+        !output2.refs_written.is_empty(),
+        "historical write should update the serialized ref"
+    );
+
+    let output3 = session2.serialize().unwrap();
+    assert_eq!(output3.changes, 0, "unchanged tree should be a no-op");
+    assert!(output3.refs_written.is_empty());
+}

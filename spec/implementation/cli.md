@@ -71,10 +71,12 @@ Notes:
 ### Serialize
 
 ```bash
-git meta serialize
+git meta serialize [--force-full]
 ```
 
 Writes a new metadata commit for the current local shareable state.
+By default this may use incremental dirty-target detection. `--force-full`
+rebuilds the serialized tree from the complete local SQLite state.
 
 ### Materialize
 
@@ -170,10 +172,14 @@ git meta setup
 Initializes a metadata remote for the current repository from a
 project-local `.git-meta` file at the repository root.
 
-The file format is one URL per line, with `#` comments and blank lines
-ignored; the first usable line is taken as the remote URL. Anything
-after that is ignored, so projects can add human-readable notes
-underneath the URL.
+The file is YAML with a required `url` key:
+
+```yaml
+url: git@github.com:org/project-meta.git
+```
+
+Unknown keys are ignored, so future versions can add more project-local
+setup fields without breaking older clients.
 
 Behavior:
 

@@ -48,11 +48,21 @@ exit 1
         std::env::var("PATH").unwrap_or_default()
     );
 
+    git(dir.path(), &["tag", "v1.0.0", &sha]);
+    harness::git_meta(dir.path())
+        .args(["set", &format!("commit:{sha}"), "change-id", "Iabcdef"])
+        .assert()
+        .success();
+
     harness::git_meta(dir.path())
         .env("PATH", &path)
         .args(["import", "gh", "--repo", "owner/repo", "--limit", "1"])
         .assert()
         .success()
+        .stderr(predicate::str::contains(
+            "fetching up to 1 merged PRs with `gh pr list`",
+        ))
+        .stderr(predicate::str::contains("fetching PR #42 details"))
         .stderr(predicate::str::contains("imported 1 PRs"));
 
     harness::git_meta(dir.path())
@@ -68,8 +78,20 @@ exit 1
         .stdout(predicate::str::contains("Add metadata import"))
         .stdout(predicate::str::contains("review:approved"))
         .stdout(predicate::str::contains("bob"))
+        .stdout(predicate::str::contains("commits:author"))
+        .stdout(predicate::str::contains("Test User <test@example.com>"))
+        .stdout(predicate::str::contains("commits:author-date"))
+        .stdout(predicate::str::contains("946684800"))
+        .stdout(predicate::str::contains("released-in"))
+        .stdout(predicate::str::contains("v1.0.0"))
         .stdout(predicate::str::contains("issue:id"))
         .stdout(predicate::str::contains("#25"));
+
+    harness::git_meta(dir.path())
+        .args(["get", "change-id:Iabcdef", "released-in"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("v1.0.0"));
 
     harness::git_meta(dir.path())
         .env("PATH", path)
@@ -77,6 +99,105 @@ exit 1
         .assert()
         .success()
         .stderr(predicate::str::contains("imported 0 PRs"));
+
+    let path = format!(
+        "{}:{}",
+        fake_bin.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    harness::git_meta(dir.path())
+        .env("PATH", path)
+        .args([
+            "import",
+            "gh",
+            "--repo",
+            "owner/repo",
+            "--limit",
+            "1",
+            "--force",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("imported 1 PRs"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn import_gh_without_limit_fetches_all_pages() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (dir, _sha) = harness::setup_repo();
+    let fake_bin = tempfile::TempDir::new().unwrap();
+    let gh_path = fake_bin.path().join("gh");
+    let script = r#"#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  exit 0
+fi
+if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  case "$*" in
+    *cursor=CURSOR1*)
+      cat <<'JSON'
+{"data":{"repository":{"pullRequests":{"nodes":[{"number":100,"title":"Older PR","body":"","url":"https://github.com/owner/repo/pull/100","headRefName":"older","baseRefName":"main","mergedAt":"2026-03-31T12:00:00Z","mergeCommit":null}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+JSON
+      ;;
+    *)
+      cat <<'JSON'
+{"data":{"repository":{"pullRequests":{"nodes":[{"number":101,"title":"Newer PR","body":"","url":"https://github.com/owner/repo/pull/101","headRefName":"newer","baseRefName":"main","mergedAt":"2026-04-01T12:00:00Z","mergeCommit":null}],"pageInfo":{"hasNextPage":true,"endCursor":"CURSOR1"}}}}}
+JSON
+      ;;
+  esac
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  if [ "$3" = "101" ]; then
+    cat <<'JSON'
+{"number":101,"title":"Newer PR","body":"","url":"https://github.com/owner/repo/pull/101","headRefName":"newer","baseRefName":"main","mergedAt":"2026-04-01T12:00:00Z","mergeCommit":null,"commits":[],"comments":[],"reviews":[]}
+JSON
+    exit 0
+  fi
+  if [ "$3" = "100" ]; then
+    cat <<'JSON'
+{"number":100,"title":"Older PR","body":"","url":"https://github.com/owner/repo/pull/100","headRefName":"older","baseRefName":"main","mergedAt":"2026-03-31T12:00:00Z","mergeCommit":null,"commits":[],"comments":[],"reviews":[]}
+JSON
+    exit 0
+  fi
+fi
+echo "unexpected gh args: $@" >&2
+exit 1
+"#;
+    std::fs::write(&gh_path, script).unwrap();
+    let mut permissions = std::fs::metadata(&gh_path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&gh_path, permissions).unwrap();
+
+    let path = format!(
+        "{}:{}",
+        fake_bin.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    harness::git_meta(dir.path())
+        .env("PATH", path)
+        .args([
+            "import",
+            "gh",
+            "--repo",
+            "owner/repo",
+            "--dry-run",
+            "--no-tags",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("fetching merged PR page 1"))
+        .stderr(predicate::str::contains(
+            "fetched merged PR page 2: 1 PRs (2 total)",
+        ))
+        .stderr(predicate::str::contains("fetched 2 merged PR summaries"))
+        .stderr(predicate::str::contains("importing PR #101: Newer PR"))
+        .stderr(predicate::str::contains("importing PR #100: Older PR"))
+        .stderr(predicate::str::contains(
+            "dry-run: would import 2 PRs (2 fetched",
+        ));
 }
 
 #[test]
@@ -114,6 +235,42 @@ fn blame_groups_lines_by_branch_metadata() {
         .assert()
         .success();
     harness::git_meta(dir.path())
+        .args([
+            "set:add",
+            "branch:feature#1",
+            "commits:author",
+            "Alice <alice@example.com>",
+        ])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args([
+            "set:add",
+            "branch:feature#1",
+            "commits:author",
+            "Bob <bob@example.com>",
+        ])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args([
+            "set:add",
+            "branch:feature#1",
+            "commits:author-date",
+            "1775001600",
+        ])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args([
+            "set:add",
+            "branch:feature#1",
+            "commits:author-date",
+            "1775174400",
+        ])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
         .args(["set", &format!("commit:{second}"), "branch-id", "fix#2"])
         .assert()
         .success();
@@ -146,6 +303,15 @@ fn blame_groups_lines_by_branch_metadata() {
         .stdout(predicate::str::contains(
             "\"url\": \"https://github.com/owner/repo/pull/1\"",
         ))
+        .stdout(predicate::str::contains("\"commit_authors\": ["))
+        .stdout(predicate::str::contains("Alice <alice@example.com>"))
+        .stdout(predicate::str::contains("Bob <bob@example.com>"))
+        .stdout(predicate::str::contains("\"commit_author_dates\": ["))
+        .stdout(predicate::str::contains("\"1775001600\""))
+        .stdout(predicate::str::contains("\"1775174400\""))
+        .stdout(predicate::str::contains(
+            "\"commit_author_date_range\": \"2026-04-01..2026-04-03\"",
+        ))
         .stdout(predicate::str::contains("\"lines\"").not());
 
     harness::git_meta(dir.path())
@@ -158,7 +324,12 @@ fn blame_groups_lines_by_branch_metadata() {
         .stdout(predicate::str::contains("\x1b["))
         .stdout(predicate::str::contains(
             "https://github.com/owner/repo/pull/1",
-        ));
+        ))
+        .stdout(predicate::str::contains(
+            "alice@example.com, bob@example.com",
+        ))
+        .stdout(predicate::str::contains("dates:"))
+        .stdout(predicate::str::contains("2026-04-01..2026-04-03"));
 }
 
 fn git(repo: &std::path::Path, args: &[&str]) {

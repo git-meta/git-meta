@@ -58,11 +58,36 @@ impl FromStr for Operation {
             "rm" => Ok(Operation::Remove),
             "push" => Ok(Operation::Push),
             "pop" => Ok(Operation::Pop),
-            "list_rm" => Ok(Operation::ListRemove),
-            "set_add" => Ok(Operation::SetAdd),
-            "set_rm" => Ok(Operation::SetRemove),
+            "list_rm" | "list:rm" => Ok(Operation::ListRemove),
+            "set_add" | "set:add" => Ok(Operation::SetAdd),
+            "set_rm" | "set:rm" => Ok(Operation::SetRemove),
             _ => Err(Error::Other(format!("unknown operation: {s}"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Operation;
+
+    #[test]
+    fn parses_canonical_operations() {
+        assert_eq!(
+            "list_rm".parse::<Operation>().unwrap(),
+            Operation::ListRemove
+        );
+        assert_eq!("set_add".parse::<Operation>().unwrap(), Operation::SetAdd);
+        assert_eq!("set_rm".parse::<Operation>().unwrap(), Operation::SetRemove);
+    }
+
+    #[test]
+    fn parses_legacy_cli_style_operations() {
+        assert_eq!(
+            "list:rm".parse::<Operation>().unwrap(),
+            Operation::ListRemove
+        );
+        assert_eq!("set:add".parse::<Operation>().unwrap(), Operation::SetAdd);
+        assert_eq!("set:rm".parse::<Operation>().unwrap(), Operation::SetRemove);
     }
 }
 

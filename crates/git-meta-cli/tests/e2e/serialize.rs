@@ -148,6 +148,65 @@ fn serialize_empty() {
 }
 
 #[test]
+fn serialize_force_full_rebuilds_from_metadata_table() {
+    let (dir, _sha) = setup_repo();
+
+    harness::git_meta(dir.path())
+        .args(["set", "project", "existing:key", "alpha"])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args([
+            "set",
+            "--timestamp",
+            "1000",
+            "branch:legacy",
+            "historical:key",
+            "beta",
+        ])
+        .assert()
+        .success();
+    let conn = rusqlite::Connection::open(dir.path().join(".git").join("git-meta.sqlite")).unwrap();
+    conn.execute(
+        "DELETE FROM metadata_log
+         WHERE target_type = 'branch' AND target_value = 'legacy' AND key = 'historical:key'",
+        [],
+    )
+    .unwrap();
+    harness::git_meta(dir.path())
+        .args(["set", "project", "new:key", "gamma"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["serialize", "--force-full"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("refs/meta/local/main"));
+
+    let repo = open_repo(dir.path());
+    let commit_oid = ref_to_commit_oid(&repo, "refs/meta/local/main");
+    let commit_obj = commit_oid.attach(&repo).object().unwrap().into_commit();
+    let tree = commit_obj.tree().unwrap();
+
+    let mut results = Vec::new();
+    walk_tree(&repo, tree.id, "", &mut results);
+    let fanout = target_fanout("legacy");
+    let expected_path = format!("branch/{fanout}/legacy/historical/key/__value");
+    assert!(
+        results
+            .iter()
+            .any(|(path, content)| path == &expected_path && content == "beta"),
+        "expected force-full serialization to include historical:key, got: {results:?}"
+    );
+}
+
+#[test]
 fn serialize_list_uses_stored_timestamp() {
     let (dir, _sha) = setup_repo();
 

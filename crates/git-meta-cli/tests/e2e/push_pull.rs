@@ -43,6 +43,34 @@ fn push_simple() {
 }
 
 #[test]
+fn push_set_add() {
+    let (dir, sha) = setup_repo();
+    let bare_dir = setup_bare_with_meta("meta");
+    let bare_path = bare_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", bare_path])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["pull"])
+        .assert()
+        .success();
+
+    let target = commit_target(&sha);
+    harness::git_meta(dir.path())
+        .args(["set:add", &target, "reviewer", "alice@example.com"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Pushed metadata to meta"));
+}
+
+#[test]
 fn push_up_to_date() {
     let (dir, sha) = setup_repo();
     let bare_dir = setup_bare_with_meta("meta");

@@ -115,7 +115,9 @@ git meta push [&lt;remote&gt;] --readme</code></pre>
 <h3 id="setup">Setup</h3>
 <pre><code>git meta setup</code></pre>
 <p>Initializes a metadata remote for the current repository from a project-local <code>.git-meta</code> file at the repository root.</p>
-<p>The file format is one URL per line, with <code>#</code> comments and blank lines ignored; the first usable line is taken as the remote URL. Anything after that is ignored, so projects can add human-readable notes underneath the URL.</p>
+<p>The file is YAML with a required <code>url</code> key:</p>
+<pre><code class="language-yaml">url: git@github.com:org/project-meta.git</code></pre>
+<p>Unknown keys are ignored, so future versions can add more project-local setup fields without breaking older clients.</p>
 <p>Behavior:</p>
 <p>fresh metadata remote the command will also create <code>refs/&lt;namespace&gt;/local/main</code> with a starter README and push it to <code>refs/&lt;namespace&gt;/main</code></p>
 <p>in to the project&#x27;s metadata exchange</p>

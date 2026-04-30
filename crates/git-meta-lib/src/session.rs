@@ -227,7 +227,17 @@ impl Session {
     /// routing and pruning rules. Updates local refs and the materialization
     /// timestamp.
     pub fn serialize(&self) -> crate::error::Result<crate::serialize::SerializeOutput> {
-        crate::serialize::run(self, self.now())
+        crate::serialize::run(self, self.now(), false)
+    }
+
+    /// Serialize local metadata by rebuilding from the complete SQLite state.
+    ///
+    /// This bypasses incremental dirty-target detection while still avoiding a
+    /// new commit when the rebuilt tree is identical to the current serialized
+    /// ref. Applies filter routing and pruning rules. Updates local refs and
+    /// the materialization timestamp when serialization succeeds.
+    pub fn serialize_full(&self) -> crate::error::Result<crate::serialize::SerializeOutput> {
+        crate::serialize::run(self, self.now(), true)
     }
 
     /// Materialize remote metadata into the local store.
