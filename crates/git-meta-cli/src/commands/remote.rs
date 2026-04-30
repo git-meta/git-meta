@@ -396,7 +396,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
 
             // Materialize remote metadata into local SQLite
             eprint!("{} local metadata...", s_err.step("Serializing"));
-            serialize::run(false)?;
+            serialize::run(false, false)?;
             eprintln!(" {}", s_err.ok("done."));
 
             eprint!("{} remote metadata...", s_err.step("Materializing"));

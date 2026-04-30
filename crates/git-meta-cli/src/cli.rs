@@ -206,6 +206,10 @@ pub enum Commands {
         /// Show detailed information about serialization decisions
         #[arg(short = 'v', long)]
         verbose: bool,
+
+        /// Rebuild serialized refs from the full SQLite state
+        #[arg(long = "force-full")]
+        force_full: bool,
     },
 
     /// Materialize remote metadata into local SQLite
@@ -249,9 +253,9 @@ pub enum Commands {
     /// Initialize a metadata remote from a project-local `.git-meta` file
     ///
     /// Reads the remote URL from `.git-meta` at the repo root and then runs
-    /// the equivalent of `git meta remote add <url> --init`. The file format
-    /// is one URL per line, with `#` comments and blank lines ignored; only
-    /// the first usable line is used.
+    /// the equivalent of `git meta remote add <url> --init`. The file is YAML
+    /// with a required `url` key; unknown keys are ignored for forward
+    /// compatibility.
     #[command(display_order = 33)]
     Setup,
 

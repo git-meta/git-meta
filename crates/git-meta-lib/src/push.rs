@@ -70,7 +70,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
     let remote_refspec = format!("refs/{ns}/main");
 
     // Serialize local metadata to the local ref
-    let _ = crate::serialize::run(session, now)?;
+    let _ = crate::serialize::run(session, now, false)?;
 
     // Verify we have something to push
     if repo.find_reference(&local_ref).is_err() {
@@ -192,7 +192,7 @@ pub fn resolve_push_conflict(session: &Session, remote: Option<&str>, now: i64) 
     let _ = crate::materialize::run(session, None, now)?;
 
     // Re-serialize with merged data
-    let _ = crate::serialize::run(session, now)?;
+    let _ = crate::serialize::run(session, now, false)?;
 
     // Rewrite local ref as a single commit on top of the remote tip.
     // This avoids merge commits in the pushed history — the spec

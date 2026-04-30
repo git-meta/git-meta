@@ -365,8 +365,16 @@ impl Store {
 
                 self.conn.execute(
                     "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
-                     VALUES (?1, ?2, ?3, ?4, 'list', 'list:rm', ?5, ?6)",
-                    params![target_type_str, target_value, key, &new_value, email, timestamp],
+                     VALUES (?1, ?2, ?3, ?4, 'list', ?5, ?6, ?7)",
+                    params![
+                        target_type_str,
+                        target_value,
+                        key,
+                        &new_value,
+                        Operation::ListRemove.as_str(),
+                        email,
+                        timestamp
+                    ],
                 )?;
 
                 self.conn.execute(

@@ -104,7 +104,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     git_utils::hydrate_tip_blobs(repo, &remote_name, &short_ref)?;
 
     // Serialize local state so materialize can do a proper 3-way merge
-    let _ = crate::serialize::run(session, now)?;
+    let _ = crate::serialize::run(session, now, false)?;
 
     // Materialize: merge remote tree into local DB
     let _ = crate::materialize::run(session, None, now)?;

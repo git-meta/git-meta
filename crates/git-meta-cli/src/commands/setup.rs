@@ -21,6 +21,13 @@ const SETUP_FILE: &str = ".git-meta";
 /// `git meta remote add --name`.
 const DEFAULT_REMOTE_NAME: &str = "meta";
 
+/// Project-local setup configuration read from `.git-meta`.
+#[derive(Debug, Deserialize)]
+struct SetupConfig {
+    /// Metadata remote URL used by `git meta setup`.
+    url: String,
+}
+
 /// Run `git meta setup`.
 ///
 /// Reads `.git-meta` from the repository work tree, resolves the metadata
@@ -55,27 +62,19 @@ pub fn run() -> Result<()> {
 
 /// Read the metadata remote URL from a `.git-meta` file.
 ///
-/// The file format is intentionally minimal:
-///
-/// - Blank lines are ignored.
-/// - Lines whose first non-whitespace character is `#` are treated as
-///   comments and ignored.
-/// - The first remaining line, with surrounding whitespace stripped, is
-///   returned as the URL.
-///
-/// Anything after the first usable line is ignored, so projects can append
-/// human-readable notes underneath the URL without breaking parsing.
+/// The file is YAML with a required `url` key. Unknown keys are ignored so
+/// future versions can add more project-local setup fields.
 ///
 /// # Errors
 ///
 /// Returns an error if the file does not exist, cannot be read, or contains
-/// only blank/comment lines.
+/// invalid YAML or no usable URL.
 fn read_setup_url(path: &Path) -> Result<String> {
     if !path.exists() {
         bail!(
             "no {SETUP_FILE} file found at {display}\n\n\
-             Create one with the metadata remote URL on a single line, e.g.:\n  \
-             echo 'git@github.com:org/project-meta.git' > {display}\n\n\
+             Create one with the metadata remote URL in YAML, e.g.:\n  \
+             printf 'url: git@github.com:org/project-meta.git\\n' > {display}\n\n\
              Or run `git meta remote add <url> --init` directly to skip the alias.",
             display = path.display(),
         );
@@ -83,32 +82,20 @@ fn read_setup_url(path: &Path) -> Result<String> {
 
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read {SETUP_FILE} at {}", path.display()))?;
-    parse_setup_url(&raw)
-        .ok_or_else(|| {
-            anyhow!(
-                "{} is empty or contains no metadata remote URL\n\n\
-                 Add a single non-comment line with the URL, for example:\n  \
-                 git@github.com:org/project-meta.git",
-                path.display(),
-            )
-        })
-        .map(str::to_string)
-        .map(strip_optional_trailing_slash_owned)
+    parse_setup_url(&raw).with_context(|| format!("parse {SETUP_FILE} at {}", path.display()))
 }
 
 /// Pure parser used by [`read_setup_url`] and unit-tested in isolation.
 ///
-/// Returns the first non-blank, non-comment line trimmed of surrounding
-/// whitespace, or `None` if the input has no such line.
-fn parse_setup_url(contents: &str) -> Option<&str> {
-    contents.lines().find_map(|line| {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            None
-        } else {
-            Some(trimmed)
-        }
-    })
+/// Returns the `url` value trimmed of surrounding whitespace.
+fn parse_setup_url(contents: &str) -> Result<String> {
+    let config = serde_yml::from_str::<Option<SetupConfig>>(contents)?
+        .ok_or_else(|| anyhow!(".git-meta is empty or contains no metadata remote URL"))?;
+    let url = config.url.trim();
+    if url.is_empty() {
+        bail!(".git-meta contains an empty url value");
+    }
+    Ok(strip_optional_trailing_slash_owned(url.to_string()))
 }
 
 /// Trim a single trailing slash from the URL, so users can paste either
@@ -130,50 +117,65 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_single_line_url() {
+    fn parses_url_key() {
         assert_eq!(
-            parse_setup_url("git@github.com:org/repo.git\n"),
-            Some("git@github.com:org/repo.git"),
+            parse_setup_url("url: git@github.com:org/repo.git\n").unwrap(),
+            "git@github.com:org/repo.git",
         );
     }
 
     #[test]
-    fn ignores_blank_and_comment_lines() {
+    fn ignores_comments_and_unknown_keys() {
         let input = "\n\
                      # this is a comment\n\
                      \n\
                         # indented comment\n\
-                     git@github.com:org/repo.git\n\
+                     url: git@github.com:org/repo.git\n\
+                     future-key: ignored\n\
                      # trailing notes ignored\n";
-        assert_eq!(parse_setup_url(input), Some("git@github.com:org/repo.git"));
+        assert_eq!(
+            parse_setup_url(input).unwrap(),
+            "git@github.com:org/repo.git"
+        );
     }
 
     #[test]
-    fn returns_none_for_empty_input() {
-        assert_eq!(parse_setup_url(""), None);
+    fn errors_for_empty_input() {
+        let err = parse_setup_url("").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("empty or contains no metadata remote URL"),
+            "got: {err}"
+        );
     }
 
     #[test]
-    fn returns_none_for_only_comments() {
-        assert_eq!(parse_setup_url("# only a comment\n\n# another\n"), None);
+    fn errors_for_only_comments() {
+        let err = parse_setup_url("# only a comment\n\n# another\n").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("empty or contains no metadata remote URL"),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn trims_surrounding_whitespace() {
         assert_eq!(
-            parse_setup_url("   git@github.com:org/repo.git   \n"),
-            Some("git@github.com:org/repo.git"),
+            parse_setup_url("url: '   git@github.com:org/repo.git   '\n").unwrap(),
+            "git@github.com:org/repo.git",
         );
     }
 
     #[test]
-    fn first_url_wins_when_multiple_lines() {
+    fn errors_when_url_key_is_missing() {
         let input = "\
-                     https://example.com/first.git\n\
-                     https://example.com/second.git\n";
-        assert_eq!(
-            parse_setup_url(input),
-            Some("https://example.com/first.git")
+                     remote: https://example.com/first.git\n\
+                     note: https://example.com/second.git\n";
+        let err = parse_setup_url(input).unwrap_err();
+        assert!(
+            err.to_string().contains("missing field `url`"),
+            "got: {err}"
         );
     }
 
@@ -206,10 +208,20 @@ mod tests {
         let path = dir.path().join(".git-meta");
         std::fs::write(&path, "# only a comment\n\n").unwrap();
         let err = read_setup_url(&path).unwrap_err();
-        let msg = format!("{err}");
+        let msg = format!("{err:#}");
         assert!(
             msg.contains("empty or contains no metadata remote URL"),
             "got: {msg}"
         );
+    }
+
+    #[test]
+    fn read_setup_url_invalid_yaml_errors_helpfully() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".git-meta");
+        std::fs::write(&path, "url: [").unwrap();
+        let err = read_setup_url(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("parse .git-meta"), "got: {msg}");
     }
 }

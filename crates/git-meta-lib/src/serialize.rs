@@ -48,14 +48,16 @@ pub struct SerializeOutput {
 /// Serialize local metadata to Git tree(s) and commit(s).
 ///
 /// Determines incremental vs full mode automatically based on
-/// `last_materialized`. Applies filter routing and pruning rules.
-/// Updates local refs and the materialization timestamp.
+/// `last_materialized`, unless `force_full` is true. Applies filter routing
+/// and pruning rules. Updates local refs and the materialization timestamp.
 ///
 /// # Parameters
 ///
 /// - `session`: the gmeta session providing the repository, store, and config.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
 ///   used for the commit signature and the `last_materialized` marker.
+/// - `force_full`: when true, ignore incremental dirty-target detection and
+///   rebuild serialized trees from the complete SQLite state.
 ///
 /// # Returns
 ///
@@ -65,24 +67,13 @@ pub struct SerializeOutput {
 /// # Errors
 ///
 /// Returns an error if database reads, Git object writes, or ref updates fail.
-pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
+pub fn run(session: &Session, now: i64, force_full: bool) -> Result<SerializeOutput> {
     let repo = &session.repo;
     let local_ref_name = session.local_ref();
     let last_materialized = session.store.get_last_materialized()?;
 
     // Determine existing tree for incremental mode
-    let existing_tree_oid = repo
-        .find_reference(&local_ref_name)
-        .ok()
-        .and_then(|r| r.into_fully_peeled_id().ok())
-        .and_then(|id| {
-            id.object()
-                .ok()?
-                .into_commit()
-                .tree_id()
-                .ok()
-                .map(gix::Id::detach)
-        });
+    let existing_tree_oid = ref_tree_oid(repo, &local_ref_name)?;
 
     // Determine incremental vs full mode and collect entries + changes
     let (
@@ -92,38 +83,35 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
         list_tombstone_entries,
         dirty_target_bases,
         changes,
-    ) = if let Some(since) = last_materialized {
+    ) = if let (false, Some(since)) = (force_full, last_materialized) {
         let modified = session.store.get_modified_since(since)?;
-        if modified.is_empty() && existing_tree_oid.is_some() {
-            return Ok(SerializeOutput {
-                changes: 0,
-                refs_written: Vec::new(),
-                pruned: 0,
-            });
-        }
-
-        let changes: Vec<(char, String, String)> = modified
-            .iter()
-            .map(|entry| {
-                let op_char = match entry.operation {
-                    Operation::Remove => 'D',
-                    Operation::Set => {
-                        if existing_tree_oid.is_some() {
-                            'M'
-                        } else {
-                            'A'
+        let metadata = session.store.get_all_metadata()?;
+        let changes: Vec<(char, String, String)> = if modified.is_empty() {
+            metadata.iter().map(metadata_add_change).collect()
+        } else {
+            modified
+                .iter()
+                .map(|entry| {
+                    let op_char = match entry.operation {
+                        Operation::Remove => 'D',
+                        Operation::Set => {
+                            if existing_tree_oid.is_some() {
+                                'M'
+                            } else {
+                                'A'
+                            }
                         }
-                    }
-                    _ => 'M',
-                };
-                let target_label = if entry.target_type == TargetType::Project {
-                    "project".to_string()
-                } else {
-                    format!("{}:{}", entry.target_type, entry.target_value)
-                };
-                (op_char, target_label, entry.key.clone())
-            })
-            .collect();
+                        _ => 'M',
+                    };
+                    let target_label = if entry.target_type == TargetType::Project {
+                        "project".to_string()
+                    } else {
+                        format!("{}:{}", entry.target_type, entry.target_value)
+                    };
+                    (op_char, target_label, entry.key.clone())
+                })
+                .collect()
+        };
 
         // Compute dirty target base paths from modified entries
         let mut dirty_bases: BTreeSet<String> = BTreeSet::new();
@@ -136,7 +124,6 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
             dirty_bases.insert(tree_paths::tree_base_path(&target));
         }
 
-        let metadata = session.store.get_all_metadata()?;
         let tombstones = session.store.get_all_tombstones()?;
         let set_tombstones = session.store.get_all_set_tombstones()?;
         let list_tombstones = session.store.get_all_list_tombstones()?;
@@ -146,7 +133,7 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
             tombstones,
             set_tombstones,
             list_tombstones,
-            if existing_tree_oid.is_some() {
+            if existing_tree_oid.is_some() && !modified.is_empty() {
                 Some(dirty_bases)
             } else {
                 None
@@ -156,17 +143,8 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
     } else {
         let metadata = session.store.get_all_metadata()?;
 
-        let changes: Vec<(char, String, String)> = metadata
-            .iter()
-            .map(|e| {
-                let target_label = if e.target_type == TargetType::Project {
-                    "project".to_string()
-                } else {
-                    format!("{}:{}", e.target_type, e.target_value)
-                };
-                ('A', target_label, e.key.clone())
-            })
-            .collect();
+        let changes: Vec<(char, String, String)> =
+            metadata.iter().map(metadata_add_change).collect();
 
         (
             metadata,
@@ -269,7 +247,22 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
     all_dests.extend(dest_set_tombstones.keys().cloned());
     all_dests.extend(dest_list_tombstones.keys().cloned());
 
-    let total_changes: usize = dest_metadata.values().map(std::vec::Vec::len).sum();
+    let total_changes: usize = dest_metadata
+        .values()
+        .map(std::vec::Vec::len)
+        .sum::<usize>()
+        + dest_tombstones
+            .values()
+            .map(std::vec::Vec::len)
+            .sum::<usize>()
+        + dest_set_tombstones
+            .values()
+            .map(std::vec::Vec::len)
+            .sum::<usize>()
+        + dest_list_tombstones
+            .values()
+            .map(std::vec::Vec::len)
+            .sum::<usize>();
 
     let name = session.name();
     let email = session.email();
@@ -312,6 +305,19 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
             .ok()
             .and_then(|r| r.into_fully_peeled_id().ok())
             .map(gix::Id::detach);
+
+        let parent_tree_oid = parent_oid.as_ref().and_then(|oid| {
+            oid.attach(repo)
+                .object()
+                .ok()?
+                .into_commit()
+                .tree_id()
+                .ok()
+                .map(gix::Id::detach)
+        });
+        if parent_tree_oid == Some(tree_oid) {
+            continue;
+        }
 
         let parents: Vec<gix::ObjectId> = parent_oid.into_iter().collect();
         let commit_message = build_commit_message(&changes);
@@ -399,10 +405,38 @@ pub fn run(session: &Session, now: i64) -> Result<SerializeOutput> {
     session.store.set_last_materialized(now)?;
 
     Ok(SerializeOutput {
-        changes: total_changes,
+        changes: if refs_written.is_empty() {
+            0
+        } else {
+            total_changes
+        },
         refs_written,
         pruned: pruned_count + auto_pruned,
     })
+}
+
+fn metadata_add_change(entry: &SerializableEntry) -> (char, String, String) {
+    let target_label = if entry.target_type == TargetType::Project {
+        "project".to_string()
+    } else {
+        format!("{}:{}", entry.target_type, entry.target_value)
+    };
+    ('A', target_label, entry.key.clone())
+}
+
+fn ref_tree_oid(repo: &gix::Repository, ref_name: &str) -> Result<Option<gix::ObjectId>> {
+    repo.find_reference(ref_name)
+        .ok()
+        .and_then(|r| r.into_fully_peeled_id().ok())
+        .map(|id| {
+            id.object()
+                .map_err(|e| Error::Other(format!("{e}")))?
+                .into_commit()
+                .tree_id()
+                .map(gix::Id::detach)
+                .map_err(|e| Error::Other(format!("{e}")))
+        })
+        .transpose()
 }
 
 /// Build a commit message from a list of changes.

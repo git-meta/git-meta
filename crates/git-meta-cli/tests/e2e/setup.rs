@@ -10,7 +10,7 @@ fn setup_reads_dot_git_meta_and_initializes_remote() {
     let _ = gix::init_bare(bare_dir.path()).unwrap();
     let bare_path = bare_dir.path().to_str().unwrap();
 
-    std::fs::write(dir.path().join(".git-meta"), format!("{bare_path}\n")).unwrap();
+    std::fs::write(dir.path().join(".git-meta"), format!("url: {bare_path}\n")).unwrap();
 
     harness::git_meta(dir.path())
         .args(["setup"])
@@ -70,7 +70,7 @@ fn setup_emits_ansi_color_when_forced() {
     let bare_dir = TempDir::new().unwrap();
     let _ = gix::init_bare(bare_dir.path()).unwrap();
     let bare_path = bare_dir.path().to_str().unwrap();
-    std::fs::write(dir.path().join(".git-meta"), format!("{bare_path}\n")).unwrap();
+    std::fs::write(dir.path().join(".git-meta"), format!("url: {bare_path}\n")).unwrap();
 
     harness::git_meta(dir.path())
         .env_remove("NO_COLOR")
@@ -91,7 +91,7 @@ fn setup_omits_ansi_color_when_not_a_tty() {
     let bare_dir = TempDir::new().unwrap();
     let _ = gix::init_bare(bare_dir.path()).unwrap();
     let bare_path = bare_dir.path().to_str().unwrap();
-    std::fs::write(dir.path().join(".git-meta"), format!("{bare_path}\n")).unwrap();
+    std::fs::write(dir.path().join(".git-meta"), format!("url: {bare_path}\n")).unwrap();
 
     harness::git_meta(dir.path())
         .env_remove("CLICOLOR_FORCE")
@@ -103,7 +103,7 @@ fn setup_omits_ansi_color_when_not_a_tty() {
 }
 
 #[test]
-fn setup_ignores_comments_and_extra_lines() {
+fn setup_ignores_comments_and_unknown_yaml_keys() {
     let (dir, _sha) = setup_repo();
     let bare_dir = TempDir::new().unwrap();
     let _ = gix::init_bare(bare_dir.path()).unwrap();
@@ -113,9 +113,10 @@ fn setup_ignores_comments_and_extra_lines() {
         "# Pin the metadata remote for this project.\n\
          # Anyone running `git meta setup` here picks it up automatically.\n\
          \n\
-         {bare_path}\n\
+         url: {bare_path}\n\
+         future-key: ignored\n\
          \n\
-         # Trailing notes are ignored.\n"
+         # Trailing comments are ignored.\n"
     );
     std::fs::write(dir.path().join(".git-meta"), contents).unwrap();
 

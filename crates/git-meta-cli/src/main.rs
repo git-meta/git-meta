@@ -115,7 +115,10 @@ fn main() -> Result<()> {
 
         Commands::Promisor => commands::promisor::run(),
 
-        Commands::Serialize { verbose } => commands::serialize::run(verbose),
+        Commands::Serialize {
+            verbose,
+            force_full,
+        } => commands::serialize::run(verbose, force_full),
 
         Commands::Materialize {
             remote,
