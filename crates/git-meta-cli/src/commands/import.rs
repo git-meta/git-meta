@@ -69,14 +69,20 @@ pub fn run_gh(
     force: bool,
 ) -> Result<()> {
     let since_epoch = parse_since_epoch(since)?;
+    eprintln!("checking GitHub CLI authentication...");
     ensure_gh_auth()?;
 
     let ctx = CommandContext::open(None)?;
     let repo_name = match repo {
         Some(repo) => repo.to_string(),
-        None => resolve_gh_repo()?,
+        None => {
+            eprintln!("resolving GitHub repository...");
+            resolve_gh_repo()?
+        }
     };
+    eprintln!("importing GitHub pull requests from {repo_name}");
     let prs = fetch_merged_prs(&repo_name, limit, include_comments)?;
+    eprintln!("fetched {} merged PR summaries", prs.len());
     let mut imported = imported_pr_numbers(ctx.session.store())?;
 
     let mut summary = GhImportSummary::default();
@@ -85,14 +91,17 @@ pub fn run_gh(
         if let Some(cutoff) = since_epoch {
             if pr.merged_timestamp_seconds().unwrap_or_default() < cutoff {
                 summary.skipped += 1;
+                eprintln!("skipping PR #{}: merged before --since cutoff", pr.number);
                 continue;
             }
         }
         if !force && imported.contains(&pr.number.to_string()) {
             summary.skipped += 1;
+            eprintln!("skipping PR #{}: already imported", pr.number);
             continue;
         }
 
+        eprintln!("fetching PR #{} details...", pr.number);
         let pr = fetch_pr_detail(&repo_name, pr.number, include_comments)?;
         let imported_pr = GitHubPullRequestImport::from_pr(pr);
         summary.comments += imported_pr.comments.len() as u64;
@@ -108,6 +117,7 @@ pub fn run_gh(
             &mut summary.missing_commits,
         )?;
         summary.imported += 1;
+        imported.insert(imported_pr.number.to_string());
     }
 
     if !no_tags {
@@ -211,6 +221,38 @@ struct GhPullRequest {
     reviews: Vec<GhReview>,
     #[serde(default, alias = "closingIssuesReferences")]
     closing_issues: Vec<GhIssue>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhGraphQlResponse {
+    data: GhGraphQlData,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhGraphQlData {
+    repository: GhGraphQlRepository,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhGraphQlRepository {
+    pull_requests: GhGraphQlPullRequestConnection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhGraphQlPullRequestConnection {
+    nodes: Vec<GhPullRequest>,
+    page_info: GhGraphQlPageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhGraphQlPageInfo {
+    has_next_page: bool,
+    end_cursor: Option<String>,
 }
 
 impl GhPullRequest {
@@ -460,9 +502,14 @@ fn resolve_gh_repo() -> Result<String> {
 
 fn fetch_merged_prs(
     repo: &str,
-    limit: usize,
+    limit: Option<usize>,
     _include_comments: bool,
 ) -> Result<Vec<GhPullRequest>> {
+    let Some(limit) = limit else {
+        return fetch_all_merged_prs(repo);
+    };
+
+    eprintln!("fetching up to {limit} merged PRs with `gh pr list`...");
     let fields = [
         "number",
         "title",
@@ -495,6 +542,115 @@ fn fetch_merged_prs(
     }
 
     serde_json::from_slice(&output.stdout).context("parsing `gh pr list` JSON")
+}
+
+fn fetch_all_merged_prs(repo: &str) -> Result<Vec<GhPullRequest>> {
+    let (owner, name) = split_gh_repo(repo)?;
+    let mut prs = Vec::new();
+    let mut cursor = None;
+    let mut page_number = 1u64;
+
+    eprintln!("fetching all merged PRs with GitHub GraphQL pagination...");
+
+    loop {
+        eprintln!("fetching merged PR page {page_number}...");
+        let page = fetch_merged_pr_page(owner, name, GH_PR_PAGE_SIZE, cursor.as_deref())?;
+        let has_next_page = page.page_info.has_next_page;
+        let next_cursor = page.page_info.end_cursor;
+        let fetched = page.nodes.len();
+        prs.extend(page.nodes);
+        eprintln!(
+            "fetched merged PR page {page_number}: {fetched} PRs ({} total)",
+            prs.len()
+        );
+
+        if !has_next_page || fetched == 0 {
+            break;
+        }
+
+        cursor = Some(
+            next_cursor
+                .with_context(|| format!("GitHub did not return a cursor after {fetched} PRs"))?,
+        );
+        page_number += 1;
+    }
+
+    Ok(prs)
+}
+
+fn fetch_merged_pr_page(
+    owner: &str,
+    name: &str,
+    page_size: usize,
+    cursor: Option<&str>,
+) -> Result<GhGraphQlPullRequestConnection> {
+    let query = r#"
+query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: MERGED, first: $pageSize, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number
+        title
+        body
+        url
+        headRefName
+        baseRefName
+        mergedAt
+        mergeCommit {
+          oid
+          messageHeadline
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+"#;
+
+    let page_size_arg = format!("pageSize={page_size}");
+    let owner_arg = format!("owner={owner}");
+    let name_arg = format!("name={name}");
+    let query_arg = format!("query={query}");
+    let mut command = Command::new("gh");
+    command.args([
+        "api",
+        "graphql",
+        "-f",
+        &owner_arg,
+        "-f",
+        &name_arg,
+        "-F",
+        &page_size_arg,
+        "-f",
+        &query_arg,
+    ]);
+    let cursor_arg = cursor.map(|value| format!("cursor={value}"));
+    if let Some(cursor_arg) = &cursor_arg {
+        command.args(["-f", cursor_arg]);
+    }
+
+    let output = command.output().context("failed to run `gh api graphql`")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("failed to fetch merged GitHub PRs: {}", stderr.trim());
+    }
+
+    let response: GhGraphQlResponse =
+        serde_json::from_slice(&output.stdout).context("parsing `gh api graphql` JSON")?;
+    Ok(response.data.repository.pull_requests)
+}
+
+fn split_gh_repo(repo: &str) -> Result<(&str, &str)> {
+    let Some((owner, name)) = repo.split_once('/') else {
+        bail!("GitHub repository must be in OWNER/NAME form");
+    };
+    if owner.is_empty() || name.is_empty() || name.contains('/') {
+        bail!("GitHub repository must be in OWNER/NAME form");
+    }
+    Ok((owner, name))
 }
 
 fn fetch_pr_detail(repo: &str, number: u64, include_comments: bool) -> Result<GhPullRequest> {
@@ -540,6 +696,197 @@ fn imported_pr_numbers(db: &Store) -> Result<HashSet<String>> {
         Some(MetaValue::Set(values)) => Ok(values.into_iter().collect()),
         _ => Ok(HashSet::new()),
     }
+}
+
+fn imported_tag_names(db: &Store) -> Result<HashSet<String>> {
+    let target = Target::project();
+    match db.get_value(&target, "github:imported-tag")? {
+        Some(MetaValue::Set(values)) => Ok(values.into_iter().collect()),
+        _ => Ok(HashSet::new()),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ReleaseTag {
+    name: String,
+}
+
+fn import_release_tags(ctx: &CommandContext, dry_run: bool) -> Result<u64> {
+    let tags = release_tags(ctx.session.repo())?;
+    if tags.is_empty() {
+        return Ok(0);
+    }
+
+    let imported = imported_tag_names(ctx.session.store())?;
+    let mut writes = 0u64;
+    let mut imported_count = 0u64;
+    let mut previous: Option<&ReleaseTag> = None;
+    for tag in &tags {
+        if imported.contains(&tag.name) {
+            previous = Some(tag);
+            continue;
+        }
+
+        let commits = commits_between_tags(ctx.session.repo(), previous, tag)?;
+        eprintln!(
+            "mapping release tag {} to {} commits",
+            tag.name,
+            commits.len()
+        );
+        for commit in commits {
+            writes += apply_released_in(ctx, dry_run, &commit, &tag.name)?;
+        }
+        writes += set_import_member(
+            ctx.session.store(),
+            dry_run,
+            &Target::project(),
+            "github:imported-tag",
+            &tag.name,
+            ctx.session.email(),
+            import_timestamp_ms(),
+        )?;
+        imported_count += 1;
+        previous = Some(tag);
+    }
+
+    eprintln!("mapped {imported_count} release tags");
+    Ok(writes)
+}
+
+fn release_tags(repo: &gix::Repository) -> Result<Vec<ReleaseTag>> {
+    let output = git_utils::run_git(
+        repo,
+        &[
+            "for-each-ref",
+            "--sort=creatordate",
+            "--format=%(refname:short)",
+            "refs/tags",
+        ],
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| ReleaseTag {
+            name: name.to_string(),
+        })
+        .collect())
+}
+
+fn commits_between_tags(
+    repo: &gix::Repository,
+    previous: Option<&ReleaseTag>,
+    tag: &ReleaseTag,
+) -> Result<Vec<String>> {
+    let range = previous.map_or_else(
+        || tag.name.clone(),
+        |prev| format!("{}..{}", prev.name, tag.name),
+    );
+    let output = git_utils::run_git(repo, &["rev-list", "--reverse", &range])
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|sha| !sha.is_empty())
+        .map(std::string::ToString::to_string)
+        .collect())
+}
+
+fn apply_released_in(
+    ctx: &CommandContext,
+    dry_run: bool,
+    commit_sha: &str,
+    tag_name: &str,
+) -> Result<u64> {
+    let mut writes = 0u64;
+    let db = ctx.session.store();
+    let email = ctx.session.email();
+    let ts = import_timestamp_ms();
+
+    let commit_target = Target::from_parts(TargetType::Commit, Some(commit_sha.to_string()));
+    writes += set_import_member(
+        db,
+        dry_run,
+        &commit_target,
+        "released-in",
+        tag_name,
+        email,
+        ts,
+    )?;
+
+    if let Some(branch_id) = get_string_value(db, &commit_target, "branch-id")? {
+        let branch_target = Target::branch(&branch_id);
+        writes += set_import_member(
+            db,
+            dry_run,
+            &branch_target,
+            "released-in",
+            tag_name,
+            email,
+            ts,
+        )?;
+    }
+
+    if let Some(change_id) = change_id_for_commit(ctx.session.repo(), db, commit_sha)? {
+        let change_target = Target::change_id(&change_id);
+        writes += set_import_member(
+            db,
+            dry_run,
+            &change_target,
+            "released-in",
+            tag_name,
+            email,
+            ts,
+        )?;
+    }
+
+    Ok(writes)
+}
+
+fn get_string_value(db: &Store, target: &Target, key: &str) -> Result<Option<String>> {
+    match db.get_value(target, key)? {
+        Some(MetaValue::String(value)) => Ok(Some(value)),
+        _ => Ok(None),
+    }
+}
+
+fn change_id_for_commit(
+    repo: &gix::Repository,
+    db: &Store,
+    commit_sha: &str,
+) -> Result<Option<String>> {
+    let commit_target = Target::from_parts(TargetType::Commit, Some(commit_sha.to_string()));
+    if let Some(change_id) = get_string_value(db, &commit_target, "change-id")? {
+        return Ok(Some(change_id));
+    }
+
+    let Some(message) = commit_message(repo, commit_sha)? else {
+        return Ok(None);
+    };
+    Ok(message.lines().rev().find_map(|line| {
+        line.trim()
+            .strip_prefix("Change-Id:")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(std::string::ToString::to_string)
+    }))
+}
+
+fn commit_message(repo: &gix::Repository, commit_sha: &str) -> Result<Option<String>> {
+    let Ok(object_id) = gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
+        return Ok(None);
+    };
+    let Ok(object) = object_id.attach(repo).object() else {
+        return Ok(None);
+    };
+    let commit = object.into_commit();
+    let decoded = commit.decode()?;
+    Ok(Some(decoded.message.to_str_lossy().to_string()))
+}
+
+fn import_timestamp_ms() -> i64 {
+    time::OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000
 }
 
 fn apply_gh_import(
@@ -681,11 +1028,13 @@ fn apply_gh_import(
         ts += 1;
     }
 
+    let mut commit_stats = BranchCommitStats::default();
     for commit in &pr.commits {
-        if !commit_exists(repo, &commit.oid) {
+        let Some(local_commit) = local_commit_metadata(repo, &commit.oid)? else {
             *missing_commits += 1;
             continue;
-        }
+        };
+        commit_stats.add(local_commit);
         let commit_target = Target::from_parts(TargetType::Commit, Some(commit.oid.clone()));
         writes += set_import_string(
             db,
@@ -722,6 +1071,30 @@ fn apply_gh_import(
                 ts += 1;
             }
         }
+    }
+    for author in commit_stats.authors() {
+        writes += set_import_member(
+            db,
+            dry_run,
+            &branch_target,
+            "commits:author",
+            author,
+            email,
+            ts,
+        )?;
+        ts += 1;
+    }
+    for author_date in commit_stats.author_dates() {
+        writes += set_import_member(
+            db,
+            dry_run,
+            &branch_target,
+            "commits:author-date",
+            &author_date.to_string(),
+            email,
+            ts,
+        )?;
+        ts += 1;
     }
 
     writes += set_import_string(
@@ -834,11 +1207,49 @@ fn push_import_list(
     Ok(1)
 }
 
-fn commit_exists(repo: &gix::Repository, oid: &str) -> bool {
+struct LocalCommitMetadata {
+    author: String,
+    author_time: i64,
+}
+
+#[derive(Default)]
+struct BranchCommitStats {
+    authors: BTreeSet<String>,
+    author_dates: BTreeSet<i64>,
+}
+
+impl BranchCommitStats {
+    fn add(&mut self, commit: LocalCommitMetadata) {
+        self.authors.insert(commit.author);
+        self.author_dates.insert(commit.author_time);
+    }
+
+    fn authors(&self) -> impl Iterator<Item = &String> {
+        self.authors.iter()
+    }
+
+    fn author_dates(&self) -> impl Iterator<Item = i64> + '_ {
+        self.author_dates.iter().copied()
+    }
+}
+
+fn local_commit_metadata(repo: &gix::Repository, oid: &str) -> Result<Option<LocalCommitMetadata>> {
     let Ok(object_id) = gix::ObjectId::from_hex(oid.as_bytes()) else {
-        return false;
+        return Ok(None);
     };
-    object_id.attach(repo).object().is_ok()
+    let Ok(object) = object_id.attach(repo).object() else {
+        return Ok(None);
+    };
+    let commit = object.into_commit();
+    let decoded = commit.decode()?;
+    let author = decoded.author().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let name = author.name.to_str_lossy();
+    let email = author.email.to_str_lossy();
+    let author_time = author.time().map_err(|e| anyhow::anyhow!("{e}"))?.seconds;
+    Ok(Some(LocalCommitMetadata {
+        author: format!("{name} <{email}>"),
+        author_time,
+    }))
 }
 
 fn branch_id(head_ref: &str, number: u64) -> String {
