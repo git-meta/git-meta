@@ -110,7 +110,9 @@ fn serialize_and_materialize_roundtrip() {
         .unwrap();
 
     // -- Materialize in C --
-    let session_c = Session::open(repo_c_reopen).unwrap().with_timestamp(2000);
+    let session_c = Session::open(repo_c_reopen.path())
+        .unwrap()
+        .with_timestamp(2000);
     let mat_output = session_c.materialize(None).unwrap();
     assert!(
         !mat_output.results.is_empty(),
@@ -157,7 +159,7 @@ fn serialize_empty_is_no_op() {
 #[test]
 fn incremental_serialize_only_includes_changes() {
     let (dir, repo) = setup_repo();
-    let session = Session::open(repo).unwrap().with_timestamp(1000);
+    let session = Session::open(repo.path()).unwrap().with_timestamp(1000);
 
     // First serialize: set key1
     session

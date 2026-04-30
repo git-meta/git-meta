@@ -9,7 +9,7 @@ use helpers::*;
 fn tombstone_survives_serialize_materialize() {
     // Repo A: set key, serialize
     let (dir_a, repo_a) = setup_repo();
-    let session_a = Session::open(repo_a).unwrap().with_timestamp(1000);
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
     session_a
         .target(&Target::project())
         .set("ephemeral", "temp-value")
@@ -66,7 +66,7 @@ fn tombstone_survives_serialize_materialize() {
 #[test]
 fn filter_routes_keys_to_destinations() {
     let (dir, repo) = setup_repo();
-    let session = Session::open(repo).unwrap().with_timestamp(1000);
+    let session = Session::open(repo.path()).unwrap().with_timestamp(1000);
 
     // Set a filter rule: route "private:**" keys to "private" destination
     session

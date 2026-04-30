@@ -11,8 +11,8 @@ fn session_with_timestamp_is_deterministic() {
     let (_dir1, repo1) = setup_repo();
     let (_dir2, repo2) = setup_repo();
 
-    let session1 = Session::open(repo1).unwrap().with_timestamp(42_000);
-    let session2 = Session::open(repo2).unwrap().with_timestamp(42_000);
+    let session1 = Session::open(repo1.path()).unwrap().with_timestamp(42_000);
+    let session2 = Session::open(repo2.path()).unwrap().with_timestamp(42_000);
 
     // Set identical data in both
     session1
