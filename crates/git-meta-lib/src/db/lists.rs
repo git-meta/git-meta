@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 
 use super::{
     blob_if_large, load_list_entries_by_metadata_id, load_list_entries_by_metadata_id_tx,
-    load_list_rows_by_metadata_id_tx, Store,
+    load_list_rows_by_metadata_id_tx, types::Operation, Store,
 };
 use crate::list_value::{encode_entries, ensure_unique_timestamp, ListEntry};
 use crate::types::{validate_key, Target};

@@ -2,7 +2,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::{Error, Result};
 
-use super::{encode_set_values_by_metadata_id, Store};
+use super::{encode_set_values_by_metadata_id, types::Operation, Store};
 use crate::types::{validate_key, Target};
 
 impl Store {
