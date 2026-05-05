@@ -209,8 +209,8 @@ fn incremental_serialize_only_includes_changes() {
 
 #[test]
 fn serialize_detects_historical_writes_after_prior_serialize() {
-    let (dir, repo) = setup_repo();
-    let session = Session::open(repo).unwrap().with_timestamp(2000);
+    let (dir, _repo) = setup_repo();
+    let session = Session::open(dir.path()).unwrap().with_timestamp(2000);
 
     session
         .target(&Target::project())
