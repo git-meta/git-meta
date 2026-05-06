@@ -9,7 +9,7 @@ This is a reference implementation of the gmeta spec ([docs](https://git-meta.co
 
 ## Rust Style and Idioms
 
-- Use traits for behaviour boundaries.
+- Use traits only for real behaviour boundaries: multiple implementations, dependency inversion, or a clear test seam. Do not add traits just to make code look extensible.
 - Derive `Default` when all fields have sensible defaults.
 - Use concrete types (`struct`/`enum`) over `serde_json::Value` wherever shape is known.
 - **Match on types, never strings.** Only convert to strings at serialization/display boundaries.
@@ -20,7 +20,7 @@ This is a reference implementation of the gmeta spec ([docs](https://git-meta.co
 - Prefer `Option<T>` over sentinel values.
 - Use `time` crate (workspace dep) for date/time — no manual epoch math or magic constants like `86400`.
 - Prefer guard clauses (early returns) over nested `if` blocks.
-- Prefer iterators/combinators over manual loops. Use `Cow<'_, str>` when allocation is conditional.
+- Prefer the clearest Rust. Iterators are good when they improve clarity; simple `for` loops are fine when they are easier to read. Use `Cow<'_, str>` when allocation is conditional and the added type complexity is worth it.
 - **No banner/separator comments.** Do not use decorative divider comments like `// ── Section ───`. Use normal `//` comments or doc comments to explain *why*, not to visually partition files.
 
 ## Dependencies
@@ -29,11 +29,23 @@ This is a reference implementation of the gmeta spec ([docs](https://git-meta.co
 
 ## Architecture and Design
 
-- For code that you create, **always** include doc comments for all public functions, structs, enums, and methods and also document function parameters, return values, and errors.
+- For public API code, include useful doc comments explaining purpose, invariants, errors, and examples when helpful. Avoid boilerplate docs that merely repeat names or types.
 - Documentation and comments **must** be kept up-to-date with code changes.
 - Do not re-discover Git repositories, instead take them as inputs to functions and methods.
 - Avoid implicitly using the current time like `std::time::SystemTime::now()`, instead pass the current time as argument.
 - Keep public API surfaces small. Use `#[must_use]` where return values matter.
+
+## AI Code Review Pass
+
+Before finishing generated Rust, review it as if it came from an overeager AI:
+
+- Delete fake extensibility.
+- Collapse one-use traits/types/functions.
+- Rename generic concepts to domain concepts.
+- Prefer passing explicit inputs over rediscovering state.
+- Remove comments that describe what the next line already says.
+- Keep error handling intentional: typed errors for library boundaries, `anyhow` for app/CLI boundaries.
+- Preserve behavior; do not turn cleanup into a refactor.
 
 ## Testing
 
@@ -44,5 +56,5 @@ This is a reference implementation of the gmeta spec ([docs](https://git-meta.co
 
 ## Committing and Version Control
 
-- If available, always prefer the `but` (GitButler) cli over `git`. Always load the respective skill.
+- Prefer repository/library APIs over shelling out to `git` in production code. In tests, use project test helpers where available. Use the `git` CLI only when testing CLI interoperability or behavior that specifically depends on Git’s command-line semantics.
 - When you are done making changes, always run `cargo fmt` and `cargo clippy --fix --allow-dirty` and ensure no warnings remain.
