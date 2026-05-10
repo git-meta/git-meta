@@ -1,6 +1,8 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::session::Session;
 use crate::types::{MetaValue, Target, ValueType};
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{Map, Value};
 
 /// A scoped handle for operations on a specific target within a session.
 ///
@@ -50,6 +52,111 @@ impl<'a> SessionTargetHandle<'a> {
             self.session.email(),
             self.session.now(),
         )
+    }
+
+    /// Merge string metadata fields under a common key prefix.
+    ///
+    /// The record must serialize to a JSON object. Object field names, including
+    /// `serde` renames, become key suffixes. String values are written as
+    /// `prefix:field`.
+    ///
+    /// This is a partial update, not a replacement operation. Null fields are
+    /// skipped and existing keys are left untouched. This makes `Option<T>`
+    /// fields useful for patch-style records, but callers that need to clear a
+    /// field must remove that key explicitly.
+    ///
+    /// ```ignore
+    /// #[derive(serde::Serialize)]
+    /// #[serde(rename_all = "kebab-case")]
+    /// struct Source<'a> {
+    ///     agent: &'a str,
+    ///     tool_version: Option<&'a str>,
+    /// }
+    ///
+    /// handle.set_record("agent-session:abc:source:def", &Source {
+    ///     agent: "codex",
+    ///     tool_version: Some("1.2.3"),
+    /// })?;
+    ///
+    /// // Later updates that serialize `tool_version` as null do not remove the
+    /// // existing `agent-session:abc:source:def:tool-version` key.
+    /// handle.set_record("agent-session:abc:source:def", &Source {
+    ///     agent: "codex",
+    ///     tool_version: None,
+    /// })?;
+    /// ```
+    pub fn set_record(&self, prefix: &str, record: impl Serialize) -> Result<()> {
+        let Value::Object(fields) = serde_json::to_value(record)? else {
+            return Err(Error::InvalidValue(
+                "record metadata must serialize to a JSON object".to_string(),
+            ));
+        };
+
+        for (field, value) in fields {
+            match value {
+                Value::Null => {}
+                Value::String(value) => self.set(&format!("{prefix}:{field}"), value)?,
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "record metadata field '{field}' must serialize to a string or null"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Read string metadata fields under a common key prefix into a record.
+    ///
+    /// This is the read-side pair to [`set_record`](Self::set_record). Immediate
+    /// child keys like `prefix:field` become JSON object fields before being
+    /// deserialized into `T`. Missing records return `Ok(None)`. Nested keys such
+    /// as `prefix:child:field` are ignored because they belong to a deeper
+    /// metadata subtree, not this record.
+    ///
+    /// Because [`set_record`](Self::set_record) leaves null or omitted fields
+    /// untouched, `get_record` reads the current merged field set under the
+    /// prefix, not the exact last value passed to `set_record`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an immediate child field exists but is not a string,
+    /// or if the collected fields do not deserialize into `T`.
+    pub fn get_record<T>(&self, prefix: &str) -> Result<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        let field_prefix = format!("{prefix}:");
+        let mut fields = Map::new();
+
+        for (key, value) in self.get_all_values(Some(prefix))? {
+            let Some(field) = key.strip_prefix(&field_prefix) else {
+                continue;
+            };
+            if field.contains(':') {
+                continue;
+            }
+
+            match value {
+                MetaValue::String(value) => {
+                    fields.insert(field.to_string(), Value::String(value));
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "record metadata field '{field}' must be a string"
+                    )));
+                }
+            }
+        }
+
+        if fields.is_empty() {
+            return Ok(None);
+        }
+
+        serde_json::from_value(Value::Object(fields))
+            .map(Some)
+            .map_err(Into::into)
     }
 
     /// Remove a metadata key.
