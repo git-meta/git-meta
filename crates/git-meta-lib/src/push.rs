@@ -134,7 +134,7 @@ pub fn push_once_with_progress(
     let mut local_oid = peeled_ref_oid(repo, &local_ref);
     let remote_oid = peeled_ref_oid(repo, &remote_tracking_ref);
 
-    if should_serialize_before_push(session, local_oid.as_ref(), remote_oid.as_ref())? {
+    if should_serialize_before_push(session, local_oid.as_ref())? {
         progress(PushProgress::Serializing);
         let _ = crate::serialize::run(session, now, false)?;
         local_oid = peeled_ref_oid(repo, &local_ref);
@@ -226,15 +226,10 @@ fn peeled_ref_oid(repo: &gix::Repository, ref_name: &str) -> Option<gix::ObjectI
 fn should_serialize_before_push(
     session: &Session,
     local_oid: Option<&gix::ObjectId>,
-    remote_oid: Option<&gix::ObjectId>,
 ) -> Result<bool> {
-    let Some(local) = local_oid else {
+    if local_oid.is_none() {
         return Ok(true);
     };
-
-    if remote_oid.is_some_and(|remote| remote == local) {
-        return Ok(true);
-    }
 
     let Some(last_materialized) = session.store.get_last_materialized()? else {
         return Ok(true);
@@ -404,4 +399,35 @@ fn rebase_local_on_remote(repo: &gix::Repository, local_ref: &str, remote_ref: &
     .map_err(|e| Error::Other(format!("{e}")))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_store_with_local_ref_does_not_need_serialization() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let _repo = gix::init(dir.path()).unwrap();
+        let status = std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let status = std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let session = Session::open(dir.path()).unwrap();
+        session.store.set_last_materialized(1000).unwrap();
+        let local_oid =
+            gix::ObjectId::from_hex(b"0000000000000000000000000000000000000000").unwrap();
+
+        assert!(!should_serialize_before_push(&session, Some(&local_oid)).unwrap());
+    }
 }
