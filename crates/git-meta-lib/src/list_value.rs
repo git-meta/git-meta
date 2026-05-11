@@ -74,16 +74,6 @@ pub fn list_values_from_json(raw: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Ensure the proposed timestamp is strictly greater than any existing entry.
-pub(crate) fn ensure_unique_timestamp(mut timestamp: i64, entries: &[ListEntry]) -> i64 {
-    if let Some(last) = entries.last() {
-        if timestamp <= last.timestamp {
-            timestamp = last.timestamp + 1;
-        }
-    }
-    timestamp
-}
-
 /// Build a deterministic entry name used for Git tree serialization.
 pub fn make_entry_name(entry: &ListEntry) -> String {
     make_entry_name_from_parts(entry.timestamp, &entry.value)

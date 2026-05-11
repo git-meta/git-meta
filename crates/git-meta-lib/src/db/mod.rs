@@ -26,13 +26,12 @@ use rusqlite::{params, Connection};
 use crate::error::{Error, Result};
 
 use crate::list_value::{encode_entries, ListEntry};
-use crate::types::GIT_REF_THRESHOLD;
-
 /// Global counter for generating unique savepoint names.
 static SAVEPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The time to wait when the database is locked before giving up.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+const COLLECTION_LOG_VALUE: &str = "[]";
 
 /// Applies performance and correctness pragmas to a freshly opened SQLite connection.
 ///
@@ -57,10 +56,10 @@ fn configure_connection(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// SQLite-backed metadata database with optional git repository for blob resolution.
+/// SQLite-backed metadata database with optional git repository for git-ref blobs.
 pub struct Store {
     pub(crate) conn: Connection,
-    /// Optional git repository for resolving git-ref list item blobs on read.
+    /// Optional git repository for reading and writing git-ref string blobs.
     pub(crate) repo: Option<gix::Repository>,
 }
 
@@ -186,36 +185,7 @@ fn load_list_entries_by_metadata_id(
     Ok(entries)
 }
 
-fn load_list_entries_by_metadata_id_tx(
-    conn: &Connection,
-    metadata_id: i64,
-) -> Result<Vec<ListEntry>> {
-    let mut stmt = conn.prepare(
-        "SELECT value, timestamp, is_git_ref
-         FROM list_values
-         WHERE metadata_id = ?1
-         ORDER BY timestamp",
-    )?;
-    let rows = stmt.query_map(params![metadata_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, bool>(2)?,
-        ))
-    })?;
-
-    // No repo available inside a transaction context; git-ref items remain as OID strings.
-    // This path is only used for merge/pop operations that compare values — callers that
-    // need resolved content should use the non-tx variant with a repo.
-    let mut entries = Vec::new();
-    for row in rows {
-        let (value, timestamp, _is_git_ref) = row?;
-        entries.push(ListEntry { value, timestamp });
-    }
-    Ok(entries)
-}
-
-fn load_list_rows_by_metadata_id_tx(conn: &Connection, metadata_id: i64) -> Result<Vec<ListRow>> {
+fn load_list_rows_by_metadata_id(conn: &Connection, metadata_id: i64) -> Result<Vec<ListRow>> {
     let mut stmt = conn.prepare(
         "SELECT rowid, value, timestamp
          FROM list_values
@@ -288,21 +258,6 @@ fn normalize_set_values(raw: &str) -> Result<Vec<String>> {
     Ok(set.into_iter().collect())
 }
 
-/// Store `value` as a git blob if it exceeds GIT_REF_THRESHOLD, otherwise return as-is.
-/// Returns (stored_value, is_git_ref).
-fn blob_if_large(repo: Option<&gix::Repository>, value: &str) -> Result<(String, bool)> {
-    if value.len() > GIT_REF_THRESHOLD {
-        if let Some(repo) = repo {
-            let oid = repo
-                .write_blob(value.as_bytes())
-                .map_err(|e| Error::Other(format!("{e}")))?
-                .detach();
-            return Ok((oid.to_string(), true));
-        }
-    }
-    Ok((value.to_string(), false))
-}
-
 /// Resolve a stored value: if `is_git_ref` is true, read the blob content from the repo.
 fn resolve_blob(repo: Option<&gix::Repository>, value: &str, is_git_ref: bool) -> Result<String> {
     if !is_git_ref {
@@ -336,6 +291,9 @@ fn escape_like_pattern(input: &str) -> String {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    use crate::tree::model::{Key, TreeValue};
     use crate::types::{Target, TargetType, ValueType};
 
     fn commit_target(sha: &str) -> Target {
@@ -675,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_push_logs_only_pushed_entry() {
+    fn test_list_push_logs_compact_collection_value() {
         let db = Store::open_in_memory().unwrap();
         let target = commit_target("abc123");
         db.list_push(&target, "tags", "first", "a@b.com", 1000)
@@ -694,19 +652,327 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        let list = crate::list_value::list_values_from_json(&logged_value).unwrap();
 
-        assert_eq!(list, vec!["second"]);
+        assert_eq!(logged_value, COLLECTION_LOG_VALUE);
     }
 
     #[test]
-    fn test_set_list_stores_rows_in_list_values_table() {
+    fn test_apply_edits() {
         let db = Store::open_in_memory().unwrap();
         let target = commit_target("abc123");
         db.set(
             &target,
+            "events",
+            "\"legacy\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.set_add(&target, "event-hashes", "hash-0", "a@b.com", 1000)
+            .unwrap();
+        let entries = vec![
+            ListEntry {
+                value: "first".to_string(),
+                timestamp: 1000,
+            },
+            ListEntry {
+                value: "second".to_string(),
+                timestamp: 1001,
+            },
+        ];
+        let members = vec!["hash-1".to_string(), "hash-2".to_string()];
+
+        db.apply_edits(
+            &target,
+            [
+                crate::MetaEdit::list_append("events", &entries),
+                crate::MetaEdit::set_add("event-hashes", &members),
+            ],
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+
+        let events = db.get(&target, "events").unwrap().unwrap();
+        let hashes = db.get(&target, "event-hashes").unwrap().unwrap();
+
+        assert_eq!(
+            crate::list_value::list_values_from_json(&events.value).unwrap(),
+            vec!["legacy", "first", "second"]
+        );
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(&hashes.value).unwrap(),
+            vec!["hash-0", "hash-1", "hash-2"]
+        );
+
+        let logged_hashes: String = db
+            .conn
+            .query_row(
+                "SELECT value FROM metadata_log
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                   AND key = 'event-hashes' AND operation = 'set_add'
+                 ORDER BY timestamp DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(logged_hashes, COLLECTION_LOG_VALUE);
+    }
+
+    #[test]
+    fn test_apply_edits_rolls_back_on_error() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.set(
+            &target,
+            "event-hashes",
+            "\"not-a-set\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        let entries = vec![ListEntry {
+            value: "first".to_string(),
+            timestamp: 1000,
+        }];
+        let members = vec!["hash-1".to_string()];
+
+        assert!(db
+            .apply_edits(
+                &target,
+                [
+                    crate::MetaEdit::list_append("events", &entries),
+                    crate::MetaEdit::set_add("event-hashes", &members),
+                ],
+                "a@b.com",
+                2000,
+            )
+            .is_err());
+
+        assert!(db.get(&target, "events").unwrap().is_none());
+        let event_log_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM metadata_log
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                   AND key = 'events'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_log_count, 0);
+    }
+
+    #[test]
+    fn test_apply_edits_keeps_large_list_entries_materialized() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = gix::init(dir.path()).unwrap();
+        let db = Store::open_with_repo(&dir.path().join("git-meta.sqlite"), repo).unwrap();
+        let target = commit_target("abc123");
+        let large_value = "x".repeat(2048);
+        let entries = vec![ListEntry {
+            value: large_value.clone(),
+            timestamp: 1000,
+        }];
+
+        db.apply_edits(
+            &target,
+            [crate::MetaEdit::list_append("events", &entries)],
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+
+        let metadata_id: i64 = db
+            .conn
+            .query_row(
+                "SELECT rowid FROM metadata WHERE target_type = 'commit' AND target_value = 'abc123' AND key = 'events'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let (stored_value, is_git_ref): (String, bool) = db
+            .conn
+            .query_row(
+                "SELECT value, is_git_ref FROM list_values
+                 WHERE metadata_id = ?1
+                 ORDER BY rowid
+                 LIMIT 1",
+                params![metadata_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored_value, large_value);
+        assert!(!is_git_ref);
+    }
+
+    #[test]
+    fn test_list_push_converts_git_ref_string_to_materialized_list() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = gix::init(dir.path()).unwrap();
+        let blob_oid = repo
+            .write_blob("large string".as_bytes())
+            .unwrap()
+            .to_string();
+        let db = Store::open_with_repo(&dir.path().join("git-meta.sqlite"), repo).unwrap();
+        let target = commit_target("abc123");
+
+        db.set_with_git_ref(
+            &target,
+            "events",
+            &blob_oid,
+            &ValueType::String,
+            "a@b.com",
+            1000,
+            true,
+        )
+        .unwrap();
+        db.list_push(&target, "events", "next", "a@b.com", 2000)
+            .unwrap();
+
+        let entry = db.get(&target, "events").unwrap().unwrap();
+        let list = crate::list_value::list_values_from_json(&entry.value).unwrap();
+        assert_eq!(list, vec!["large string", "next"]);
+        assert!(!entry.is_git_ref);
+        let git_ref_rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COALESCE(SUM(is_git_ref), 0) FROM list_values",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(git_ref_rows, 0);
+    }
+
+    #[test]
+    fn test_apply_tree_does_not_rewrite_same_large_git_ref_string() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = gix::init(dir.path()).unwrap();
+        let db = Store::open_with_repo(&dir.path().join("git-meta.sqlite"), repo).unwrap();
+        let key = Key {
+            target_type: TargetType::Commit,
+            target_value: "abc123".to_string(),
+            key: "body".to_string(),
+        };
+        let large_value = "x".repeat(2048);
+        let values = BTreeMap::from([(key, TreeValue::String(large_value))]);
+
+        db.apply_tree(
+            &values,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.apply_tree(
+            &values,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+
+        let log_rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM metadata_log
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                   AND key = 'body' AND operation = 'set'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(log_rows, 1);
+    }
+
+    #[test]
+    fn test_apply_tree_rematerializes_git_ref_list_entries() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = gix::init(dir.path()).unwrap();
+        let blob_oid = repo
+            .write_blob("large entry".as_bytes())
+            .unwrap()
+            .to_string();
+        let db = Store::open_with_repo(&dir.path().join("git-meta.sqlite"), repo).unwrap();
+        let target = commit_target("abc123");
+        db.set(
+            &target,
+            "events",
+            &crate::list_value::encode_entries(&[ListEntry {
+                value: "large entry".to_string(),
+                timestamp: 1000,
+            }])
+            .unwrap(),
+            &ValueType::List,
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.conn
+            .execute(
+                "UPDATE list_values SET value = ?1, is_git_ref = 1",
+                params![blob_oid],
+            )
+            .unwrap();
+
+        let values = BTreeMap::from([(
+            Key {
+                target_type: TargetType::Commit,
+                target_value: "abc123".to_string(),
+                key: "events".to_string(),
+            },
+            TreeValue::List(vec![("1000-entry".to_string(), "large entry".to_string())]),
+        )]);
+        db.apply_tree(
+            &values,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+
+        let git_ref_rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COALESCE(SUM(is_git_ref), 0) FROM list_values",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(git_ref_rows, 0);
+    }
+
+    #[test]
+    fn test_set_list_stores_rows_in_list_values_table() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = gix::init(dir.path()).unwrap();
+        let db = Store::open_with_repo(&dir.path().join("git-meta.sqlite"), repo).unwrap();
+        let target = commit_target("abc123");
+        let large_value = "x".repeat(2048);
+        let list_value = crate::list_value::encode_entries(&[
+            ListEntry {
+                value: large_value.clone(),
+                timestamp: 1000,
+            },
+            ListEntry {
+                value: "b".to_string(),
+                timestamp: 1001,
+            },
+        ])
+        .unwrap();
+        db.set(
+            &target,
             "tags",
-            r#"[{"value":"a","timestamp":1000},{"value":"b","timestamp":1001}]"#,
+            &list_value,
             &ValueType::List,
             "a@b.com",
             2000,
@@ -730,11 +996,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(list_rows, 2);
+        let git_ref_rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COALESCE(SUM(is_git_ref), 0) FROM list_values WHERE metadata_id = ?1",
+                params![metadata_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(git_ref_rows, 0);
 
         let entry = db.get(&target, "tags").unwrap().unwrap();
         assert_eq!(entry.value_type, ValueType::List);
         let list = crate::list_value::list_values_from_json(&entry.value).unwrap();
-        assert_eq!(list, vec!["a", "b"]);
+        assert_eq!(list, vec![large_value, "b".to_string()]);
+
+        let logged_value: String = db
+            .conn
+            .query_row(
+                "SELECT value FROM metadata_log
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                   AND key = 'tags' AND operation = 'set'
+                 ORDER BY timestamp DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(logged_value, COLLECTION_LOG_VALUE);
     }
 
     #[test]

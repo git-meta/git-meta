@@ -181,6 +181,22 @@ impl<'a> SessionTargetHandle<'a> {
         )
     }
 
+    /// Apply list/set edits in one transaction.
+    ///
+    /// Empty edit batches are no-ops. If any edit fails, none of the batch is
+    /// committed. The session email and timestamp are used for every edit.
+    pub fn apply_edits<'b>(
+        &self,
+        edits: impl IntoIterator<Item = crate::MetaEdit<'b>>,
+    ) -> Result<()> {
+        self.session.store.apply_edits(
+            &self.target,
+            edits,
+            self.session.email(),
+            self.session.now(),
+        )
+    }
+
     /// Pop a value from a list.
     ///
     /// Uses the session's email and timestamp automatically.

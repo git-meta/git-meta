@@ -485,14 +485,7 @@ impl WatchState {
                         if !prompts.is_empty() {
                             let prompt_count = prompts.len();
                             for prompt in prompts {
-                                db.list_push_with_repo(
-                                    Some(session.repo()),
-                                    &cid_target,
-                                    "agent:prompts",
-                                    &prompt,
-                                    email,
-                                    ts,
-                                )?;
+                                db.list_push(&cid_target, "agent:prompts", &prompt, email, ts)?;
                             }
                             eprintln!(
                                 "  {CYAN}[meta]{RESET} change-id:{short_cid}... agent:prompts += {prompt_count} prompt(s)"
@@ -581,8 +574,7 @@ impl WatchState {
         let email = session.email();
 
         let branch_target = Target::from_parts(TargetType::Branch, Some(branch_id.clone()));
-        db.list_push_with_repo(
-            Some(session.repo()),
+        db.list_push(
             &branch_target,
             "agent:transcripts",
             &transcript_content,

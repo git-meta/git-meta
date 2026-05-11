@@ -79,6 +79,6 @@ INSERT OR IGNORE INTO sync_state (id, last_materialized) VALUES (1, NULL);
 CREATE INDEX IF NOT EXISTS idx_metadata_target ON metadata(target_type, target_value, key);
 CREATE INDEX IF NOT EXISTS idx_tombstones_target ON tombstones(tombstone_type, target_type, target_value, key);
 CREATE INDEX IF NOT EXISTS idx_metadata_log_lookup ON metadata_log(target_type, target_value, key);
-CREATE INDEX IF NOT EXISTS idx_list_values_metadata ON list_values(metadata_id);
+CREATE INDEX IF NOT EXISTS idx_list_values_metadata_timestamp ON list_values(metadata_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_set_values_metadata ON set_values(metadata_id);
 ";

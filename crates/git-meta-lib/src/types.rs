@@ -278,7 +278,7 @@ pub enum MetaValue {
     /// A single string value.
     String(String),
     /// An ordered list of timestamped entries.
-    List(Vec<crate::list_value::ListEntry>),
+    List(Vec<crate::ListEntry>),
     /// An unordered set of unique string values.
     Set(std::collections::BTreeSet<String>),
 }
@@ -317,8 +317,8 @@ impl From<String> for MetaValue {
     }
 }
 
-impl From<Vec<crate::list_value::ListEntry>> for MetaValue {
-    fn from(entries: Vec<crate::list_value::ListEntry>) -> Self {
+impl From<Vec<crate::ListEntry>> for MetaValue {
+    fn from(entries: Vec<crate::ListEntry>) -> Self {
         MetaValue::List(entries)
     }
 }
@@ -326,6 +326,44 @@ impl From<Vec<crate::list_value::ListEntry>> for MetaValue {
 impl From<std::collections::BTreeSet<String>> for MetaValue {
     fn from(members: std::collections::BTreeSet<String>) -> Self {
         MetaValue::Set(members)
+    }
+}
+
+/// A metadata edit that can be applied atomically with other edits.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum MetaEdit<'a> {
+    /// Append entries to a list value.
+    ListAppend {
+        /// The metadata key to append to.
+        key: &'a str,
+        /// Entries to append.
+        entries: &'a [crate::ListEntry],
+    },
+    /// Add members to a set value.
+    SetAdd {
+        /// The metadata key to add members to.
+        key: &'a str,
+        /// Members to add.
+        members: &'a [String],
+    },
+}
+
+impl<'a> MetaEdit<'a> {
+    /// Append entries to a list value.
+    ///
+    /// Entry timestamps preserve caller ordering. If an entry timestamp would
+    /// collide with or sort before an existing list item, GitMeta shifts it
+    /// forward to keep the appended entries at the end of the list.
+    #[must_use]
+    pub fn list_append(key: &'a str, entries: &'a [crate::ListEntry]) -> Self {
+        Self::ListAppend { key, entries }
+    }
+
+    /// Add members to a set value.
+    #[must_use]
+    pub fn set_add(key: &'a str, members: &'a [String]) -> Self {
+        Self::SetAdd { key, members }
     }
 }
 
