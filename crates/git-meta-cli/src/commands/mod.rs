@@ -1,4 +1,5 @@
 pub(crate) mod blame;
+pub(crate) mod clear;
 pub(crate) mod config;
 pub(crate) mod get;
 mod hydrate;
