@@ -184,16 +184,22 @@ impl Store {
                 TreeValue::String(s) => {
                     if s.len() > GIT_REF_THRESHOLD {
                         if let Some(repo) = &self.repo {
-                            let blob_oid = repo
-                                .write_blob(s.as_bytes())
-                                .map_err(|e| {
-                                    crate::error::Error::Other(format!("failed to write blob: {e}"))
-                                })?
-                                .to_string();
                             let existing = self.get(&target, &k.key)?;
-                            if existing.as_ref().map(|e| e.value.as_str()) != Some(&blob_oid) {
+                            let unchanged = existing.as_ref().is_some_and(|entry| {
+                                entry.value_type == ValueType::String
+                                    && entry.is_git_ref
+                                    && entry.value == s.as_str()
+                            });
+                            if !unchanged {
+                                let blob_oid = repo
+                                    .write_blob(s.as_bytes())
+                                    .map_err(|e| {
+                                        crate::error::Error::Other(format!(
+                                            "failed to write blob: {e}"
+                                        ))
+                                    })?
+                                    .to_string();
                                 self.set_with_git_ref(
-                                    None,
                                     &target,
                                     &k.key,
                                     &blob_oid,
@@ -237,7 +243,9 @@ impl Store {
                     }
                     let json_val = encode_entries(&items)?;
                     let existing = self.get(&target, &k.key)?;
-                    if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val) {
+                    if existing.as_ref().map(|e| e.value.as_str()) != Some(&json_val)
+                        || self.list_has_git_ref_entries(k)?
+                    {
                         self.set(&target, &k.key, &json_val, &ValueType::List, email, now)?;
                     }
                 }
@@ -276,5 +284,22 @@ impl Store {
         }
 
         Ok(())
+    }
+
+    fn list_has_git_ref_entries(&self, key: &Key) -> Result<bool> {
+        let exists = self.conn.query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM metadata
+                JOIN list_values ON list_values.metadata_id = metadata.rowid
+                WHERE metadata.target_type = ?1
+                  AND metadata.target_value = ?2
+                  AND metadata.key = ?3
+                  AND list_values.is_git_ref = 1
+            )",
+            params![key.target_type.as_str(), &key.target_value, &key.key],
+            |row| row.get(0),
+        )?;
+        Ok(exists)
     }
 }

@@ -6,6 +6,20 @@ use super::Store;
 use crate::types::{Target, TargetType};
 
 impl Store {
+    pub(crate) fn delete_metadata_tombstone(
+        &self,
+        target_type: &str,
+        target_value: &str,
+        key: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM tombstones
+             WHERE tombstone_type = 'metadata' AND target_type = ?1 AND target_value = ?2 AND key = ?3",
+            params![target_type, target_value, key],
+        )?;
+        Ok(())
+    }
+
     /// Apply a tombstone from exchange data:
     /// remove current value (if any), record tombstone, and log the operation.
     ///

@@ -1018,7 +1018,6 @@ fn apply_gh_import(
         let value = serde_json::to_string(comment)?;
         writes += push_import_list(
             db,
-            repo,
             dry_run,
             &branch_target,
             "review:comment",
@@ -1158,7 +1157,6 @@ fn set_import_string(
     if use_git_ref {
         let blob_oid: gix::ObjectId = repo.write_blob(encoded.as_bytes())?.into();
         db.set_with_git_ref(
-            None,
             target,
             key,
             &blob_oid.to_string(),
@@ -1192,7 +1190,6 @@ fn set_import_member(
 
 fn push_import_list(
     db: &Store,
-    repo: &gix::Repository,
     dry_run: bool,
     target: &Target,
     key: &str,
@@ -1204,7 +1201,7 @@ fn push_import_list(
         eprintln!("    [dry-run] {target} {key} << {}", truncate(value, 80));
         return Ok(1);
     }
-    db.list_push_with_repo(Some(repo), target, key, value, email, timestamp)?;
+    db.list_push(target, key, value, email, timestamp)?;
     Ok(1)
 }
 
@@ -2078,7 +2075,6 @@ fn set_value(
         if use_git_ref {
             let blob_oid: gix::ObjectId = repo.write_blob(value.as_bytes())?.into();
             db.set_with_git_ref(
-                None,
                 &target,
                 key,
                 &blob_oid.to_string(),
@@ -2292,7 +2288,6 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                     (json_string(&parsed.blame), false)
                 };
                 db.set_with_git_ref(
-                    None,
                     &commit_target,
                     "agent.blame",
                     &blame_val,

@@ -3,15 +3,15 @@ use rusqlite::{params, OptionalExtension};
 use crate::error::{Error, Result};
 
 use super::{
-    blob_if_large, encode_list_entries_by_metadata_id, encode_set_values_by_metadata_id,
-    escape_like_pattern, load_set_values_by_metadata_id_tx, normalize_set_values, resolve_blob,
-    Store,
+    encode_list_entries_by_metadata_id, encode_set_values_by_metadata_id, escape_like_pattern,
+    load_set_values_by_metadata_id_tx, normalize_set_values, resolve_blob, Store,
+    COLLECTION_LOG_VALUE,
 };
 use crate::list_value::parse_entries;
 use crate::types::{validate_key, Target, ValueType};
 
 impl Store {
-    /// Set a value (upsert). JSON-encodes the value for storage.
+    /// Set a serialized metadata value.
     ///
     /// # Parameters
     ///
@@ -31,21 +31,19 @@ impl Store {
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
-        self.set_with_git_ref(
-            None, target, key, value, value_type, email, timestamp, false,
-        )
+        self.set_with_git_ref(target, key, value, value_type, email, timestamp, false)
     }
 
-    /// Set a value (upsert) with optional git ref flag.
-    /// When is_git_ref is true, value contains a git blob SHA instead of the actual content.
-    /// For list values, repo is used to store large items as git blob refs.
+    /// Set a serialized metadata value with an optional git-ref string value.
+    ///
+    /// When `is_git_ref` is true for a string value, `value` contains a git
+    /// blob object id instead of the actual content.
     ///
     /// # Parameters
     ///
-    /// - `repo`: optional git repository for storing large list items as blob refs
     /// - `target`: the metadata target (commit, branch, path, etc.)
     /// - `key`: the metadata key name
-    /// - `value`: the JSON-encoded value (or git blob SHA when `is_git_ref` is true)
+    /// - `value`: the serialized value, or a git blob object id for git-ref strings
     /// - `value_type`: the type of value (string, list, set)
     /// - `email`: the email of the user performing the operation
     /// - `timestamp`: the operation timestamp (milliseconds since epoch)
@@ -53,7 +51,6 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn set_with_git_ref(
         &self,
-        repo: Option<&gix::Repository>,
         target: &Target,
         key: &str,
         value: &str,
@@ -151,16 +148,10 @@ impl Store {
                 )?;
 
                 for entry in parse_entries(value)? {
-                    let (stored_value, item_is_git_ref) = blob_if_large(repo, &entry.value)?;
                     self.conn.execute(
                         "INSERT INTO list_values (metadata_id, value, timestamp, is_git_ref)
                          VALUES (?1, ?2, ?3, ?4)",
-                        params![
-                            metadata_id,
-                            stored_value,
-                            entry.timestamp,
-                            item_is_git_ref as i64
-                        ],
+                        params![metadata_id, entry.value, entry.timestamp, 0],
                     )?;
                 }
             }
@@ -230,10 +221,23 @@ impl Store {
             }
         }
 
+        let log_value = match value_type {
+            ValueType::String => value,
+            ValueType::List | ValueType::Set => COLLECTION_LOG_VALUE,
+        };
+
         self.conn.execute(
             "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
              VALUES (?1, ?2, ?3, ?4, ?5, 'set', ?6, ?7)",
-            params![target_type_str, target_value, key, value, value_type_str, email, timestamp],
+            params![
+                target_type_str,
+                target_value,
+                key,
+                log_value,
+                value_type_str,
+                email,
+                timestamp
+            ],
         )?;
 
         self.conn.execute(

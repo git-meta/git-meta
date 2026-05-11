@@ -2,7 +2,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::{Error, Result};
 
-use super::{encode_set_values_by_metadata_id, types::Operation, Store};
+use super::{types::Operation, Store, COLLECTION_LOG_VALUE};
 use crate::types::{validate_key, Target};
 
 impl Store {
@@ -73,8 +73,6 @@ impl Store {
                     params![target_type_str, target_value, key, member_id, value, timestamp, email],
                 )?;
 
-                let new_value = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-
                 self.conn.execute(
                     "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
                      VALUES (?1, ?2, ?3, ?4, 'set', ?5, ?6, ?7)",
@@ -82,7 +80,7 @@ impl Store {
                         target_type_str,
                         target_value,
                         key,
-                        &new_value,
+                        COLLECTION_LOG_VALUE,
                         Operation::SetRemove.as_str(),
                         email,
                         timestamp
@@ -121,10 +119,76 @@ impl Store {
         email: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let sp = self.savepoint()?;
+        self.add_set_members(target, key, &[value.to_string()], email, timestamp)?;
+        sp.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn add_set_members(
+        &self,
+        target: &Target,
+        key: &str,
+        members: &[String],
+        email: &str,
+        timestamp: i64,
+    ) -> Result<()> {
         validate_key(key)?;
+        if members.is_empty() {
+            return Ok(());
+        }
+
         let target_type_str = target.target_type().as_str();
         let target_value = target.value().unwrap_or("");
-        let sp = self.savepoint()?;
+        let metadata_id = self.ensure_set(target_type_str, target_value, key, timestamp)?;
+        for member in members {
+            let member_id = crate::types::set_member_id(member);
+            self.conn.execute(
+                "INSERT INTO set_values (metadata_id, member_id, value, timestamp)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(metadata_id, member_id) DO UPDATE
+                 SET value = excluded.value, timestamp = excluded.timestamp",
+                params![metadata_id, member_id, member, timestamp],
+            )?;
+
+            self.conn.execute(
+                "DELETE FROM tombstones WHERE tombstone_type = 'set_member' AND target_type = ?1 AND target_value = ?2 AND key = ?3 AND entry_id = ?4",
+                params![target_type_str, target_value, key, member_id],
+            )?;
+        }
+
+        self.conn.execute(
+            "UPDATE metadata
+             SET value = '[]', value_type = 'set', last_timestamp = ?1
+             WHERE rowid = ?2",
+            params![timestamp, metadata_id],
+        )?;
+
+        self.conn.execute(
+            "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
+             VALUES (?1, ?2, ?3, ?4, 'set', ?5, ?6, ?7)",
+            params![
+                target_type_str,
+                target_value,
+                key,
+                COLLECTION_LOG_VALUE,
+                Operation::SetAdd.as_str(),
+                email,
+                timestamp
+            ],
+        )?;
+
+        self.delete_metadata_tombstone(target_type_str, target_value, key)?;
+        Ok(())
+    }
+
+    fn ensure_set(
+        &self,
+        target_type_str: &str,
+        target_value: &str,
+        key: &str,
+        timestamp: i64,
+    ) -> Result<i64> {
         let existing = {
             let mut stmt = self.conn.prepare(
                 "SELECT rowid, value_type FROM metadata
@@ -137,70 +201,20 @@ impl Store {
             .optional()?
         };
 
-        let metadata_id = match existing {
-            Some((metadata_id, current_type)) => {
-                if current_type != "set" {
-                    return Err(Error::TypeMismatch {
-                        key: key.to_string(),
-                        expected: "set".into(),
-                    });
-                }
-
-                self.conn.execute(
-                    "UPDATE metadata
-                     SET value = '[]', value_type = 'set', last_timestamp = ?1
-                     WHERE rowid = ?2",
-                    params![timestamp, metadata_id],
-                )?;
-                metadata_id
-            }
+        match existing {
+            Some((metadata_id, current_type)) if current_type == "set" => Ok(metadata_id),
+            Some(_) => Err(Error::TypeMismatch {
+                key: key.to_string(),
+                expected: "set".into(),
+            }),
             None => {
                 self.conn.execute(
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp)
                      VALUES (?1, ?2, ?3, '[]', 'set', ?4)",
                     params![target_type_str, target_value, key, timestamp],
                 )?;
-                self.conn.last_insert_rowid()
+                Ok(self.conn.last_insert_rowid())
             }
-        };
-
-        let member_id = crate::types::set_member_id(value);
-        self.conn.execute(
-            "INSERT INTO set_values (metadata_id, member_id, value, timestamp)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(metadata_id, member_id) DO UPDATE
-             SET value = excluded.value, timestamp = excluded.timestamp",
-            params![metadata_id, member_id, value, timestamp],
-        )?;
-
-        self.conn.execute(
-            "DELETE FROM tombstones WHERE tombstone_type = 'set_member' AND target_type = ?1 AND target_value = ?2 AND key = ?3 AND entry_id = ?4",
-            params![target_type_str, target_value, key, member_id],
-        )?;
-
-        let new_value = encode_set_values_by_metadata_id(&self.conn, metadata_id)?;
-
-        self.conn.execute(
-            "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
-             VALUES (?1, ?2, ?3, ?4, 'set', ?5, ?6, ?7)",
-            params![
-                target_type_str,
-                target_value,
-                key,
-                &new_value,
-                Operation::SetAdd.as_str(),
-                email,
-                timestamp
-            ],
-        )?;
-
-        self.conn.execute(
-            "DELETE FROM tombstones
-             WHERE tombstone_type = 'metadata' AND target_type = ?1 AND target_value = ?2 AND key = ?3",
-            params![target_type_str, target_value, key],
-        )?;
-
-        sp.commit()?;
-        Ok(())
+        }
     }
 }

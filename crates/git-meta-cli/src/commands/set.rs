@@ -69,7 +69,6 @@ pub fn run(
         let ts = time::OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000;
         let blob_oid: gix::ObjectId = repo.write_blob(raw_value.as_bytes())?.into();
         ctx.session.store().set_with_git_ref(
-            None,
             &target,
             key,
             &blob_oid.to_string(),
