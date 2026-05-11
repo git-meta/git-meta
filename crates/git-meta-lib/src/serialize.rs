@@ -21,11 +21,13 @@ use crate::error::{Error, Result};
 use crate::list_value::{encode_entries, make_entry_name, parse_entries};
 use crate::prune::{self, PruneRules};
 use crate::session::Session;
-use crate::tree::filter::{classify_key, parse_filter_rules, FilterRule, MAIN_DEST};
+use crate::tree::filter::{
+    classify_key, parse_filter_rules, FilterRule, MAIN_DEST, META_LOCAL_PREFIX,
+};
 use crate::tree::format::{build_dir, build_tree_from_paths, insert_path, TreeDir};
 use crate::tree::model::Tombstone;
 use crate::tree_paths;
-use crate::types::{Target, TargetType, ValueType};
+use crate::types::{MetadataScope, Target, TargetType, ValueType};
 
 /// Maximum number of individual change lines included in a commit message.
 const MAX_COMMIT_CHANGES: usize = 1000;
@@ -543,6 +545,105 @@ pub fn run_with_progress(
         refs_written,
         pruned: auto_pruned,
     })
+}
+
+/// Serialize one scoped subset of metadata into its local ref.
+pub fn run_scope(session: &Session, scope: &MetadataScope, now: i64) -> Result<SerializeOutput> {
+    let repo = &session.repo;
+    let ref_name = scope.local_ref(session.namespace());
+
+    let metadata = session
+        .store
+        .get_all_metadata()?
+        .into_iter()
+        .filter(|entry| scope_matches_key(scope, &entry.key))
+        .collect::<Vec<_>>();
+    let tombstones = session
+        .store
+        .get_all_tombstones()?
+        .into_iter()
+        .filter(|entry| scope_matches_key(scope, &entry.key))
+        .collect::<Vec<_>>();
+    let set_tombstones = session
+        .store
+        .get_all_set_tombstones()?
+        .into_iter()
+        .filter(|entry| scope_matches_key(scope, &entry.key))
+        .collect::<Vec<_>>();
+    let list_tombstones = session
+        .store
+        .get_all_list_tombstones()?
+        .into_iter()
+        .filter(|entry| scope_matches_key(scope, &entry.key))
+        .collect::<Vec<_>>();
+    let changes = metadata.iter().map(metadata_add_change).collect::<Vec<_>>();
+    let record_count =
+        metadata.len() + tombstones.len() + set_tombstones.len() + list_tombstones.len();
+
+    if metadata.is_empty()
+        && tombstones.is_empty()
+        && set_tombstones.is_empty()
+        && list_tombstones.is_empty()
+    {
+        return Ok(SerializeOutput::default());
+    }
+
+    let tree_oid = build_tree(
+        repo,
+        &metadata,
+        &tombstones,
+        &set_tombstones,
+        &list_tombstones,
+        None,
+        None,
+    )?;
+    let parent_tree_oid = ref_tree_oid(repo, &ref_name)?;
+    let parent_oid = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.into_fully_peeled_id().ok())
+        .map(gix::Id::detach);
+
+    if parent_tree_oid == Some(tree_oid) {
+        return Ok(SerializeOutput::default());
+    }
+
+    let sig = gix::actor::Signature {
+        name: session.name().into(),
+        email: session.email().into(),
+        time: gix::date::Time::new(now / 1000, 0),
+    };
+    let commit = gix::objs::Commit {
+        message: build_commit_message(&changes).into(),
+        tree: tree_oid,
+        author: sig.clone(),
+        committer: sig,
+        encoding: None,
+        parents: parent_oid.into_iter().collect::<Vec<_>>().into(),
+        extra_headers: Default::default(),
+    };
+
+    let commit_oid = repo
+        .write_object(&commit)
+        .map_err(|e| Error::Other(format!("{e}")))?
+        .detach();
+    repo.reference(
+        ref_name.as_str(),
+        commit_oid,
+        PreviousValue::Any,
+        "git-meta: serialize scoped metadata",
+    )
+    .map_err(|e| Error::Other(format!("{e}")))?;
+
+    Ok(SerializeOutput {
+        changes: record_count,
+        refs_written: vec![ref_name],
+        pruned: 0,
+    })
+}
+
+fn scope_matches_key(scope: &MetadataScope, key: &str) -> bool {
+    !key.starts_with(META_LOCAL_PREFIX) && scope.matches_key(key)
 }
 
 fn metadata_add_change(entry: &SerializableEntry) -> (char, String, String) {

@@ -282,21 +282,31 @@ pub fn two_way_merge_no_common_ancestor(
             MergeState::Absent
         };
 
-        if local_state != MergeState::Absent
-            && remote_state != MergeState::Absent
-            && local_state != remote_state
-        {
-            conflicts.push(ConflictDecision {
-                key: key.clone(),
-                reason: ConflictReason::NoCommonAncestorLocalWins,
-                resolution: ConflictResolution::Local,
-            });
-        }
+        let selected = match (local_state, remote_state) {
+            (MergeState::Value(local), MergeState::Value(remote)) if local != remote => {
+                let (value, resolution) = resolve_conflict(&local, &remote, 0, 0);
+                conflicts.push(ConflictDecision {
+                    key: key.clone(),
+                    reason: ConflictReason::NoCommonAncestorLocalWins,
+                    resolution,
+                });
+                MergeState::Value(value)
+            }
+            (local, remote) => {
+                if local != MergeState::Absent && remote != MergeState::Absent && local != remote {
+                    conflicts.push(ConflictDecision {
+                        key: key.clone(),
+                        reason: ConflictReason::NoCommonAncestorLocalWins,
+                        resolution: ConflictResolution::Local,
+                    });
+                }
 
-        let selected = if local_state != MergeState::Absent {
-            local_state
-        } else {
-            remote_state
+                if local != MergeState::Absent {
+                    local
+                } else {
+                    remote
+                }
+            }
         };
 
         match selected {
@@ -521,6 +531,15 @@ mod tests {
         TreeValue::String(value.to_string())
     }
 
+    fn set_value(values: &[&str]) -> TreeValue {
+        TreeValue::Set(
+            values
+                .iter()
+                .map(|value| (crate::types::set_member_id(value), (*value).to_string()))
+                .collect(),
+        )
+    }
+
     #[test]
     fn test_three_way_merge_reports_concurrent_add_conflict() {
         let mut local = BTreeMap::new();
@@ -623,5 +642,27 @@ mod tests {
             ConflictReason::NoCommonAncestorLocalWins
         );
         assert_eq!(conflicts[0].resolution, ConflictResolution::Local);
+    }
+
+    #[test]
+    fn test_two_way_merge_no_common_ancestor_unions_sets() {
+        let mut local_values = BTreeMap::new();
+        local_values.insert(key("owners"), set_value(&["local"]));
+
+        let mut remote_values = BTreeMap::new();
+        remote_values.insert(key("owners"), set_value(&["remote"]));
+
+        let (merged_values, _, conflicts) = two_way_merge_no_common_ancestor(
+            &local_values,
+            &BTreeMap::new(),
+            &remote_values,
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(
+            merged_values.get(&key("owners")),
+            Some(&set_value(&["local", "remote"]))
+        );
+        assert_eq!(conflicts[0].resolution, ConflictResolution::Union);
     }
 }

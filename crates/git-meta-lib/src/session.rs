@@ -258,6 +258,17 @@ impl Session {
         crate::serialize::run_with_progress(self, self.now(), true, progress)
     }
 
+    /// Serialize one metadata scope to its local scoped ref.
+    ///
+    /// This writes only keys matched by the scope and does not advance the
+    /// default all-metadata materialization marker.
+    pub fn serialize_scope(
+        &self,
+        scope: &crate::types::MetadataScope,
+    ) -> crate::error::Result<crate::serialize::SerializeOutput> {
+        crate::serialize::run_scope(self, scope, self.now())
+    }
+
     /// Materialize remote metadata into the local store.
     ///
     /// For each matching remote ref, determines the merge strategy and
@@ -272,6 +283,41 @@ impl Session {
         remote: Option<&str>,
     ) -> crate::error::Result<crate::materialize::MaterializeOutput> {
         crate::materialize::run(self, remote, self.now())
+    }
+
+    /// Materialize one scoped tracking ref into the local store.
+    ///
+    /// This reconciles the scope's tracking ref with its local ref. It does not
+    /// advance the default all-metadata materialization marker.
+    pub fn materialize_scope(
+        &self,
+        scope: &crate::types::MetadataScope,
+    ) -> crate::error::Result<crate::materialize::MaterializeOutput> {
+        crate::materialize::run_scope(self, scope, self.now())
+    }
+
+    /// Fetch one scoped metadata ref from an existing Git remote.
+    ///
+    /// Returns `fetched = false` when the remote exists but does not have the
+    /// scoped metadata ref yet.
+    pub fn fetch_scope(
+        &self,
+        scope: &crate::types::MetadataScope,
+        remote: &str,
+    ) -> crate::error::Result<bool> {
+        crate::pull::fetch_scope(self, scope, remote)
+    }
+
+    /// Push one scoped metadata ref to an existing Git remote.
+    ///
+    /// This is a single push attempt. On non-fast-forward failure, callers can
+    /// fetch, materialize, serialize, and retry with their own policy.
+    pub fn push_scope_once(
+        &self,
+        scope: &crate::types::MetadataScope,
+        remote: &str,
+    ) -> crate::error::Result<crate::push::PushOutput> {
+        crate::push::push_scope_once(self, scope, remote)
     }
 
     /// Pull metadata from remote: fetch, materialize, and index history.

@@ -267,6 +267,132 @@ impl ValueType {
     }
 }
 
+/// A named subset of metadata that can be serialized through its own refs.
+///
+/// A scope owns a ref suffix and key matchers. For a namespace `meta`
+/// and scope name `reviews`, GitMeta uses `refs/meta/local/reviews` locally,
+/// `refs/meta/reviews` remotely, and `refs/meta/remotes/reviews` as the fetched
+/// tracking ref.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataScope {
+    name: String,
+    key_matches: Vec<MetadataKeyMatch>,
+}
+
+impl MetadataScope {
+    /// Create a metadata scope with a ref-safe name and at least one key matcher.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the name is not a single safe ref segment, if no key
+    /// matchers are provided, or if any matcher is empty.
+    pub fn new(
+        name: impl Into<String>,
+        key_matches: impl IntoIterator<Item = MetadataKeyMatch>,
+    ) -> Result<Self> {
+        let name = name.into();
+        validate_metadata_scope_name(&name)?;
+
+        let key_matches = key_matches.into_iter().collect::<Vec<_>>();
+        if key_matches.is_empty() {
+            return Err(Error::InvalidValue(
+                "metadata scope must include at least one key matcher".into(),
+            ));
+        }
+        if key_matches.iter().any(MetadataKeyMatch::is_empty) {
+            return Err(Error::InvalidValue(
+                "metadata scope key matchers must not be empty".into(),
+            ));
+        }
+
+        Ok(Self { name, key_matches })
+    }
+
+    /// Whether the metadata key belongs to this scope.
+    #[must_use]
+    pub fn matches_key(&self, key: &str) -> bool {
+        self.key_matches.iter().any(|matcher| matcher.matches(key))
+    }
+
+    /// The local ref used when serializing this scope.
+    #[must_use]
+    pub fn local_ref(&self, namespace: &str) -> String {
+        format!("refs/{namespace}/local/{}", self.name)
+    }
+
+    /// The remote ref associated with this scope.
+    #[must_use]
+    pub fn remote_ref(&self, namespace: &str) -> String {
+        format!("refs/{namespace}/{}", self.name)
+    }
+
+    /// The local tracking ref associated with this scope.
+    #[must_use]
+    pub fn tracking_ref(&self, namespace: &str) -> String {
+        format!("refs/{namespace}/remotes/{}", self.name)
+    }
+}
+
+/// A key matcher for [`MetadataScope`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetadataKeyMatch {
+    /// Match one exact metadata key.
+    Exact(String),
+    /// Match metadata keys with this prefix.
+    Prefix(String),
+}
+
+impl MetadataKeyMatch {
+    /// Match one exact metadata key.
+    #[must_use]
+    pub fn exact(key: impl Into<String>) -> Self {
+        Self::Exact(key.into())
+    }
+
+    /// Match all metadata keys with the given prefix.
+    #[must_use]
+    pub fn prefix(prefix: impl Into<String>) -> Self {
+        Self::Prefix(prefix.into())
+    }
+
+    fn matches(&self, key: &str) -> bool {
+        match self {
+            MetadataKeyMatch::Exact(exact) => key == exact,
+            MetadataKeyMatch::Prefix(prefix) => key.starts_with(prefix),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            MetadataKeyMatch::Exact(key) | MetadataKeyMatch::Prefix(key) => key.is_empty(),
+        }
+    }
+}
+
+fn validate_metadata_scope_name(name: &str) -> Result<()> {
+    let invalid = name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.starts_with('.')
+        || name.ends_with('.')
+        || name.ends_with(".lock")
+        || name == "main"
+        || name.contains('/')
+        || name.contains("..")
+        || name.contains("@{")
+        || name
+            .chars()
+            .any(|c| c.is_ascii_control() || c.is_ascii_whitespace() || "~^:?*[\\".contains(c));
+
+    if invalid {
+        return Err(Error::InvalidValue(format!(
+            "invalid metadata scope name: {name}"
+        )));
+    }
+
+    Ok(())
+}
+
 /// A metadata value with its type.
 ///
 /// Combines value content with type information so they cannot get out of sync.
@@ -545,6 +671,38 @@ mod tests {
         assert_eq!("list".parse::<ValueType>().unwrap(), ValueType::List);
         assert_eq!("set".parse::<ValueType>().unwrap(), ValueType::Set);
         assert!("hash".parse::<ValueType>().is_err());
+    }
+
+    #[test]
+    fn metadata_scope_matches_exact_and_prefix_keys() {
+        let scope = MetadataScope::new(
+            "agentlog",
+            [
+                MetadataKeyMatch::exact("gitbutler:agent-sessions"),
+                MetadataKeyMatch::prefix("gitbutler:agent-session:"),
+            ],
+        )
+        .unwrap();
+
+        assert!(scope.matches_key("gitbutler:agent-sessions"));
+        assert!(scope.matches_key("gitbutler:agent-session:abc:schema"));
+        assert!(!scope.matches_key("gitbutler:other"));
+    }
+
+    #[test]
+    fn metadata_scope_rejects_empty_key_matchers() {
+        let exact = MetadataScope::new("agentlog", [MetadataKeyMatch::exact("")]);
+        let prefix = MetadataScope::new("agentlog", [MetadataKeyMatch::prefix("")]);
+
+        assert!(exact.is_err());
+        assert!(prefix.is_err());
+    }
+
+    #[test]
+    fn metadata_scope_rejects_unsafe_ref_names() {
+        for name in ["main", "review.", "foo@{bar", "agent/log", ".agentlog"] {
+            assert!(MetadataScope::new(name, [MetadataKeyMatch::exact("key")]).is_err());
+        }
     }
 
     #[test]

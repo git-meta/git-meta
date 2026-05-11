@@ -86,6 +86,10 @@ pub enum Error {
     #[error("'{0}' is not a metadata remote")]
     RemoteNotFound(String),
 
+    /// The specified Git remote is not configured.
+    #[error("git remote '{0}' is not configured")]
+    GitRemoteNotFound(String),
+
     /// A filter rule string could not be parsed.
     #[error("invalid filter rule: {0}")]
     InvalidFilterRule(String),

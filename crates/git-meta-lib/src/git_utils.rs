@@ -91,6 +91,14 @@ pub fn list_meta_remotes(repo: &gix::Repository) -> Result<Vec<(String, String)>
     Ok(remotes)
 }
 
+/// Validate that a normal Git remote exists.
+pub(crate) fn ensure_git_remote(repo: &gix::Repository, remote: &str) -> Result<()> {
+    if remote.is_empty() || repo.find_remote(remote).is_err() {
+        return Err(Error::GitRemoteNotFound(remote.to_string()));
+    }
+    Ok(())
+}
+
 /// Hydrate tip tree blobs for a blobless-fetched ref.
 ///
 /// This fetches all blob objects referenced by the tip tree so gix can read them.

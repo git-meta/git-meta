@@ -11,6 +11,7 @@
 use crate::error::Result;
 use crate::git_utils;
 use crate::session::Session;
+use crate::types::MetadataScope;
 
 /// Result of a pull operation.
 ///
@@ -129,6 +130,30 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
         indexed_keys,
         materialized: true,
     })
+}
+
+/// Fetch one scoped metadata ref from an existing Git remote.
+///
+/// Returns `fetched = false` when the remote exists but does not have the
+/// scoped metadata ref yet.
+pub fn fetch_scope(session: &Session, scope: &MetadataScope, remote: &str) -> Result<bool> {
+    let repo = &session.repo;
+    git_utils::ensure_git_remote(repo, remote)?;
+
+    let remote_ref = scope.remote_ref(session.namespace());
+    let tracking_ref = scope.tracking_ref(session.namespace());
+    let fetch_refspec = format!("{remote_ref}:{tracking_ref}");
+
+    match git_utils::run_git(repo, &["fetch", remote, &fetch_refspec]) {
+        Ok(_) => Ok(true),
+        Err(err) if is_missing_remote_ref(&err.to_string(), &remote_ref) => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
+fn is_missing_remote_ref(message: &str, remote_ref: &str) -> bool {
+    (message.contains("couldn't find remote ref") || message.contains("could not find remote ref"))
+        && message.contains(remote_ref)
 }
 
 /// Count commits reachable from `new` but not from `old`.

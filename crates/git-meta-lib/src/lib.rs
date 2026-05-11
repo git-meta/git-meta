@@ -138,7 +138,9 @@ pub use error::{Error, Result};
 pub use list_value::ListEntry;
 pub use session::Session;
 pub use session_handle::SessionTargetHandle;
-pub use types::{MetaEdit, MetaValue, Target, TargetType, ValueType};
+pub use types::{
+    MetaEdit, MetaValue, MetadataKeyMatch, MetadataScope, Target, TargetType, ValueType,
+};
 
 // Workflow output types
 pub use materialize::{MaterializeOutput, MaterializeRefResult, MaterializeStrategy};

@@ -21,6 +21,7 @@ use crate::tree::merge::{
     two_way_merge_no_common_ancestor, ConflictDecision,
 };
 use crate::tree::model::{Key, ParsedTree, Tombstone, TreeValue};
+use crate::types::MetadataScope;
 
 /// How a remote ref was materialized.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -136,8 +137,14 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
         };
 
         if can_fast_forward {
-            let changes =
-                materialize_fast_forward(session, &local_commit_oid, &remote_entries, email, now)?;
+            let changes = materialize_fast_forward(
+                session,
+                &local_commit_oid,
+                &remote_entries,
+                None,
+                email,
+                now,
+            )?;
 
             // Fast-forward the ref
             repo.reference(
@@ -166,6 +173,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
                 remote_oid,
                 &remote_entries,
                 &remote_commit_obj,
+                None,
                 email,
                 now,
                 &local_ref_name,
@@ -185,6 +193,146 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
     Ok(MaterializeOutput { results })
 }
 
+/// Materialize one scoped tracking ref into local SQLite.
+pub fn run_scope(session: &Session, scope: &MetadataScope, now: i64) -> Result<MaterializeOutput> {
+    let repo = &session.repo;
+    let local_ref_name = scope.local_ref(session.namespace());
+    let tracking_ref = scope.tracking_ref(session.namespace());
+    let email = session.email();
+
+    let Some(remote_oid) = repo
+        .find_reference(&tracking_ref)
+        .ok()
+        .and_then(|r| r.into_fully_peeled_id().ok())
+        .map(gix::Id::detach)
+    else {
+        return Ok(MaterializeOutput {
+            results: Vec::new(),
+        });
+    };
+
+    let remote_commit_obj = remote_oid
+        .attach(repo)
+        .object()
+        .map_err(|e| Error::Other(format!("{e}")))?
+        .into_commit();
+    let remote_tree_id = remote_commit_obj
+        .tree_id()
+        .map_err(|e| Error::Other(format!("{e}")))?
+        .detach();
+    let remote_entries = filter_tree(parse_tree(repo, remote_tree_id, "")?, scope);
+
+    let local_commit_oid = repo
+        .find_reference(&local_ref_name)
+        .ok()
+        .and_then(|r| r.into_fully_peeled_id().ok())
+        .map(gix::Id::detach);
+
+    let can_fast_forward = match &local_commit_oid {
+        None => true,
+        Some(local_oid) => {
+            if *local_oid == remote_oid {
+                return Ok(MaterializeOutput {
+                    results: vec![MaterializeRefResult {
+                        ref_name: tracking_ref,
+                        strategy: MaterializeStrategy::UpToDate,
+                        changes: 0,
+                        conflicts: Vec::new(),
+                    }],
+                });
+            }
+            repo.merge_base(*local_oid, remote_oid)
+                .is_ok_and(|base_oid| base_oid == *local_oid)
+        }
+    };
+
+    let result = if can_fast_forward {
+        let changes = materialize_fast_forward(
+            session,
+            &local_commit_oid,
+            &remote_entries,
+            Some(scope),
+            email,
+            now,
+        )?;
+        repo.reference(
+            local_ref_name.as_str(),
+            remote_oid,
+            PreviousValue::Any,
+            "fast-forward scoped materialize",
+        )
+        .map_err(|e| Error::Other(format!("{e}")))?;
+        MaterializeRefResult {
+            ref_name: tracking_ref,
+            strategy: MaterializeStrategy::FastForward,
+            changes,
+            conflicts: Vec::new(),
+        }
+    } else {
+        let local_oid = local_commit_oid.as_ref().ok_or_else(|| {
+            Error::Other("expected local commit for scoped merge but found None".into())
+        })?;
+        let (changes, conflicts, strategy) = materialize_merge(
+            session,
+            local_oid,
+            &remote_oid,
+            &remote_entries,
+            &remote_commit_obj,
+            Some(scope),
+            email,
+            now,
+            &local_ref_name,
+        )?;
+        MaterializeRefResult {
+            ref_name: tracking_ref,
+            strategy,
+            changes,
+            conflicts,
+        }
+    };
+
+    Ok(MaterializeOutput {
+        results: vec![result],
+    })
+}
+
+fn filter_tree(tree: ParsedTree, scope: &MetadataScope) -> ParsedTree {
+    ParsedTree {
+        values: tree
+            .values
+            .into_iter()
+            .filter(|(key, _)| scope.matches_key(&key.key))
+            .collect(),
+        tombstones: tree
+            .tombstones
+            .into_iter()
+            .filter(|(key, _)| scope.matches_key(&key.key))
+            .collect(),
+        set_tombstones: tree
+            .set_tombstones
+            .into_iter()
+            .filter(|((key, _), _)| scope.matches_key(&key.key))
+            .collect(),
+        list_tombstones: tree
+            .list_tombstones
+            .into_iter()
+            .filter(|((key, _), _)| scope.matches_key(&key.key))
+            .collect(),
+    }
+}
+
+fn parse_tree_for_scope(
+    repo: &gix::Repository,
+    tree_id: gix::ObjectId,
+    scope: Option<&MetadataScope>,
+) -> Result<ParsedTree> {
+    let tree = parse_tree(repo, tree_id, "")?;
+    Ok(match scope {
+        Some(scope) => filter_tree(tree, scope),
+        None => tree,
+    })
+}
+
 /// Apply a fast-forward materialization: parse the remote tree and apply
 /// it directly to the database, handling legacy deletes.
 ///
@@ -193,6 +341,7 @@ fn materialize_fast_forward(
     session: &Session,
     local_commit_oid: &Option<gix::ObjectId>,
     remote_entries: &ParsedTree,
+    scope: Option<&MetadataScope>,
     email: &str,
     now: i64,
 ) -> Result<usize> {
@@ -208,7 +357,7 @@ fn materialize_fast_forward(
             .tree_id()
             .map_err(|e| Error::Other(format!("{e}")))?
             .detach();
-        parse_tree(repo, lt, "")?
+        parse_tree_for_scope(repo, lt, scope)?
     } else {
         ParsedTree::default()
     };
@@ -243,6 +392,7 @@ fn materialize_merge(
     remote_oid: &gix::ObjectId,
     remote_entries: &ParsedTree,
     remote_commit_obj: &gix::Commit<'_>,
+    scope: Option<&MetadataScope>,
     email: &str,
     now: i64,
     local_ref_name: &str,
@@ -258,7 +408,7 @@ fn materialize_merge(
         .tree_id()
         .map_err(|e| Error::Other(format!("{e}")))?
         .detach();
-    let local_entries = parse_tree(repo, local_tree_id, "")?;
+    let local_entries = parse_tree_for_scope(repo, local_tree_id, scope)?;
 
     // Get commit timestamps for conflict resolution
     let local_timestamp = extract_author_timestamp(&local_commit_obj)?;
@@ -280,6 +430,7 @@ fn materialize_merge(
             base_oid,
             &local_entries,
             remote_entries,
+            scope,
             local_timestamp,
             remote_timestamp,
         )?
@@ -362,6 +513,7 @@ fn run_three_way_merge(
     base_oid: gix::Id<'_>,
     local_entries: &ParsedTree,
     remote_entries: &ParsedTree,
+    scope: Option<&MetadataScope>,
     local_timestamp: i64,
     remote_timestamp: i64,
 ) -> Result<(
@@ -381,7 +533,7 @@ fn run_three_way_merge(
         .tree_id()
         .map_err(|e| Error::Other(format!("{e}")))?
         .detach();
-    let base_entries = parse_tree(repo, base_tree_id, "")?;
+    let base_entries = parse_tree_for_scope(repo, base_tree_id, scope)?;
 
     let legacy_base_values = Some(base_entries.values.clone());
 

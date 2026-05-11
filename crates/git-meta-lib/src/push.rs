@@ -14,6 +14,7 @@ use gix::refs::transaction::PreviousValue;
 use crate::error::{Error, Result};
 use crate::git_utils;
 use crate::session::Session;
+use crate::types::MetadataScope;
 
 /// Result of a single push attempt.
 ///
@@ -216,11 +217,89 @@ pub fn push_once_with_progress(
     }
 }
 
+/// Push one scoped metadata ref to an existing Git remote.
+///
+/// This does not serialize or materialize metadata. It only pushes the scope's
+/// local ref to its matching remote ref and updates the local tracking ref after
+/// a successful push.
+pub fn push_scope_once(
+    session: &Session,
+    scope: &MetadataScope,
+    remote: &str,
+) -> Result<PushOutput> {
+    let repo = &session.repo;
+    git_utils::ensure_git_remote(repo, remote)?;
+
+    let namespace = session.namespace();
+    let local_ref = scope.local_ref(namespace);
+    let remote_ref = scope.remote_ref(namespace);
+    let tracking_ref = scope.tracking_ref(namespace);
+
+    let Some(local_oid) = peeled_ref_oid(repo, &local_ref) else {
+        return Ok(PushOutput {
+            success: true,
+            non_fast_forward: false,
+            up_to_date: true,
+            remote_name: remote.to_string(),
+            remote_ref,
+            commit_oid: String::new(),
+        });
+    };
+
+    if peeled_ref_oid(repo, &tracking_ref).is_some_and(|tracking_oid| tracking_oid == local_oid) {
+        return Ok(PushOutput {
+            success: true,
+            non_fast_forward: false,
+            up_to_date: true,
+            remote_name: remote.to_string(),
+            remote_ref,
+            commit_oid: local_oid.to_string(),
+        });
+    }
+
+    let refspec = format!("{local_ref}:{remote_ref}");
+    match git_utils::run_git(repo, &["push", remote, &refspec]) {
+        Ok(_) => {
+            repo.reference(
+                tracking_ref.as_str(),
+                local_oid,
+                PreviousValue::Any,
+                "git-meta: update scoped tracking ref after push",
+            )
+            .map_err(|e| Error::Other(format!("{e}")))?;
+            Ok(PushOutput {
+                success: true,
+                non_fast_forward: false,
+                up_to_date: false,
+                remote_name: remote.to_string(),
+                remote_ref,
+                commit_oid: local_oid.to_string(),
+            })
+        }
+        Err(err) if is_non_fast_forward_push(&err.to_string()) => Ok(PushOutput {
+            success: false,
+            non_fast_forward: true,
+            up_to_date: false,
+            remote_name: remote.to_string(),
+            remote_ref,
+            commit_oid: local_oid.to_string(),
+        }),
+        Err(err) => Err(err),
+    }
+}
+
 fn peeled_ref_oid(repo: &gix::Repository, ref_name: &str) -> Option<gix::ObjectId> {
     repo.find_reference(ref_name)
         .ok()
         .and_then(|r| r.into_fully_peeled_id().ok())
         .map(gix::Id::detach)
+}
+
+fn is_non_fast_forward_push(message: &str) -> bool {
+    message.contains("non-fast-forward")
+        || message.contains("fetch first")
+        || message.contains("stale info")
+        || (message.contains("cannot lock ref") && message.contains("but expected"))
 }
 
 fn should_serialize_before_push(
