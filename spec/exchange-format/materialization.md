@@ -65,8 +65,20 @@ On push, if it is again not a fast-forward, do this sequence repeatedly against 
 If local and remote metadata histories have no common ancestor, materialize uses a two-way merge instead of a three-way merge.
 
 1. union non-conflicting keys from both sides
-2. for overlapping keys or value-vs-tombstone conflicts, remote wins
+2. for overlapping keys or value-vs-tombstone conflicts, resolve according to
+   the value-type merge and removal rules (for example, lists and sets can
+   union while scalar conflicts choose one side)
 3. retain non-overlapping keys from both sides
+
+## Scoped materialization
+
+Some implementations materialize a single metadata ref that intentionally
+contains only a subset of keys. In that case, the same materialization rules
+apply, but only to keys and tombstones that belong to that scope.
+
+Keys outside the scoped ref are not considered deleted just because they are
+absent. Deletion is still represented only by explicit tombstones in the scoped
+tree.
 
 ## Removal handling
 

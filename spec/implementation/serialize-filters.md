@@ -19,6 +19,10 @@ Examples:
 
 The `meta:local:` prefix is a hard rule enforced by the serializer. No filter configuration is needed to make it work. Keys in this namespace are silently skipped during serialize and are never written into any git tree.
 
+This rule also applies to explicit scoped serialization. A caller may ask to
+serialize only a named subset of keys, but `meta:local:*` keys must still be
+excluded from every serialized ref.
+
 ### Filter rules
 
 Users can define filter rules that control serialization behavior. Filter rules are stored as set members on the **project** target under either `meta:filter` or `meta:local:filter`. The `meta:filter` rules are shared (corporate rules), the local ones are not (personal rules).
@@ -79,6 +83,19 @@ Multiple route rules can target different destinations. Keys from all rules shar
 #### Multiple Routes
 
 The `<destination>` can be a comma delimited list of destinations and the matching key values will be written to all of them.
+
+### Explicit scoped serialization
+
+Implementations may also expose lower-level scoped serialization for callers
+that already know the key subset they want to exchange. A scope has a ref-safe
+name and one or more key matchers, and writes the matching keys to
+`refs/meta/local/<scope-name>` using the same exchange tree format as any other
+metadata ref.
+
+For example, a host tool might serialize only `gitbutler:agent-sessions` and
+`gitbutler:agent-session:*` keys to `refs/meta/local/agentlog` so agent
+transcript metadata can be synced without also publishing unrelated review or
+ownership metadata.
 
 ### Rule evaluation
 

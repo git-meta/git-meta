@@ -149,6 +149,12 @@ In that case, the host system may:
 - fetch and materialize multiple remote metadata heads on pull
 - present the resulting local view as a union, subject to implementation policy
 
+For example, a GitButler integration may sync only `gitbutler:agent-sessions`
+and `gitbutler:agent-session:*` through an `agentlog` metadata ref. That lets a
+dedicated `agentlog sync` command exchange large transcript metadata without
+also publishing unrelated review, ownership, or personal metadata in the same
+operation.
+
 This is implementation-specific orchestration and does not change the core exchange format.
 
 ## Failure handling
