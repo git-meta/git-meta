@@ -69,7 +69,7 @@ impl Store {
             .optional()?
         };
 
-        let (metadata_id, mut entries) = match existing {
+        let (metadata_id, entries) = match existing {
             Some((metadata_id, current_val, current_type)) => {
                 if current_type == "list" {
                     let entries = load_list_entries_by_metadata_id_tx(&self.conn, metadata_id)?;
@@ -123,9 +123,7 @@ impl Store {
                 item_is_git_ref as i64
             ],
         )?;
-        entries.push(new_entry);
-
-        let new_value = encode_entries(&entries)?;
+        let pushed_value = encode_entries(&[new_entry])?;
 
         self.conn.execute(
             "UPDATE metadata
@@ -137,7 +135,7 @@ impl Store {
         self.conn.execute(
             "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
              VALUES (?1, ?2, ?3, ?4, 'list', 'push', ?5, ?6)",
-            params![target_type_str, target_value, key, &new_value, email, timestamp],
+            params![target_type_str, target_value, key, &pushed_value, email, timestamp],
         )?;
 
         self.conn.execute(

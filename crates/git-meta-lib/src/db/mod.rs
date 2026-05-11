@@ -675,6 +675,31 @@ mod tests {
     }
 
     #[test]
+    fn test_list_push_logs_only_pushed_entry() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.list_push(&target, "tags", "first", "a@b.com", 1000)
+            .unwrap();
+        db.list_push(&target, "tags", "second", "a@b.com", 2000)
+            .unwrap();
+
+        let logged_value: String = db
+            .conn
+            .query_row(
+                "SELECT value FROM metadata_log
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                   AND key = 'tags' AND operation = 'push'
+                 ORDER BY timestamp DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let list = crate::list_value::list_values_from_json(&logged_value).unwrap();
+
+        assert_eq!(list, vec!["second"]);
+    }
+
+    #[test]
     fn test_set_list_stores_rows_in_list_values_table() {
         let db = Store::open_in_memory().unwrap();
         let target = commit_target("abc123");
