@@ -57,6 +57,7 @@ fn configure_connection(conn: &Connection) -> Result<()> {
 }
 
 /// SQLite-backed metadata database with optional git repository for git-ref blobs.
+#[derive(Debug)]
 pub struct Store {
     pub(crate) conn: Connection,
     /// Optional git repository for reading and writing git-ref string blobs.

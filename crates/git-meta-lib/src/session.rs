@@ -29,6 +29,7 @@ use time::OffsetDateTime;
 /// println!("namespace: {}", session.namespace());
 /// # Ok::<(), git_meta_lib::Error>(())
 /// ```
+#[derive(Debug)]
 pub struct Session {
     pub(crate) repo: gix::Repository,
     pub(crate) store: crate::db::Store,

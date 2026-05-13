@@ -19,7 +19,7 @@ use crate::types::{
 ///
 /// Used as an intermediate structure when building Git trees from
 /// flat path-to-content mappings.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct TreeDir {
     /// Blob entries: file name to content.
     pub files: BTreeMap<String, Vec<u8>>,
