@@ -1,5 +1,6 @@
-/// High-level sync operations: promisor entry insertion, commit change parsing,
-/// and tree key extraction for blobless clone support.
+//! High-level sync operations: promisor entry insertion, commit change parsing,
+//! and tree key extraction for blobless clone support.
+
 use gix::bstr::ByteSlice;
 use gix::prelude::ObjectIdExt;
 
@@ -32,6 +33,7 @@ pub struct CommitChange {
 /// prefix so historical metadata histories remain readable.
 ///
 /// Each entry describes an operation (add/modify/delete), the target, and key.
+#[must_use]
 pub fn parse_commit_changes(message: &str) -> Option<Vec<CommitChange>> {
     if !is_serialize_commit_message(message) {
         return None;
@@ -151,34 +153,31 @@ pub fn insert_promisor_entries(
         let commit = commit_obj.into_commit();
         let message = commit.message_raw_sloppy().to_str_lossy().to_string();
 
-        match parse_commit_changes(&message) {
-            Some(changes) => {
-                for change in &changes {
-                    if change.op == 'D' {
-                        continue;
-                    }
-                    let target_type = change.target_type.parse::<TargetType>()?;
-                    let target = if target_type == TargetType::Project {
-                        Target::project()
-                    } else {
-                        Target::from_parts(target_type, Some(change.target_value.clone()))
-                    };
-                    if store.insert_promised(&target, &change.key, &ValueType::String)? {
-                        count += 1;
-                    }
+        if let Some(changes) = parse_commit_changes(&message) {
+            for change in &changes {
+                if change.op == 'D' {
+                    continue;
+                }
+                let target_type = change.target_type.parse::<TargetType>()?;
+                let target = if target_type == TargetType::Project {
+                    Target::project()
+                } else {
+                    Target::from_parts(target_type, Some(change.target_value.clone()))
+                };
+                if store.insert_promised(&target, &change.key, &ValueType::String)? {
+                    count += 1;
                 }
             }
-            None => {
-                let decoded = commit.decode().map_err(|e| Error::Other(format!("{e}")))?;
-                if decoded.parents().count() == 0 || commit_changes_omitted(&message) {
-                    // Root commits and omitted-change commits need tree walking
-                    // because they do not carry an inline per-key change list.
-                    let tree_id = commit
-                        .tree_id()
-                        .map_err(|e| Error::Other(format!("{e}")))?
-                        .detach();
-                    count += insert_promised_tree_keys(repo, store, tree_id)?;
-                }
+        } else {
+            let decoded = commit.decode().map_err(|e| Error::Other(format!("{e}")))?;
+            if decoded.parents().count() == 0 || commit_changes_omitted(&message) {
+                // Root commits and omitted-change commits need tree walking
+                // because they do not carry an inline per-key change list.
+                let tree_id = commit
+                    .tree_id()
+                    .map_err(|e| Error::Other(format!("{e}")))?
+                    .detach();
+                count += insert_promised_tree_keys(repo, store, tree_id)?;
             }
         }
     }
@@ -221,7 +220,7 @@ pub fn extract_keys_from_tree(
     let mut keys = Vec::new();
     let mut paths = Vec::new();
 
-    collect_blob_paths(repo, tree_id, String::new(), &mut paths)?;
+    collect_blob_paths(repo, tree_id, "", &mut paths)?;
 
     for path in &paths {
         if let Some(parsed) = parse_tree_path(path) {
@@ -238,7 +237,7 @@ pub fn extract_keys_from_tree(
 fn collect_blob_paths(
     repo: &gix::Repository,
     tree_id: gix::ObjectId,
-    prefix: String,
+    prefix: &str,
     paths: &mut Vec<String>,
 ) -> Result<()> {
     let tree = tree_id
@@ -257,7 +256,7 @@ fn collect_blob_paths(
         if entry.mode().is_blob() {
             paths.push(full_path);
         } else if entry.mode().is_tree() {
-            collect_blob_paths(repo, entry.object_id(), format!("{full_path}/"), paths)?;
+            collect_blob_paths(repo, entry.object_id(), &format!("{full_path}/"), paths)?;
         }
     }
     Ok(())

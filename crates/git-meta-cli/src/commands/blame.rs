@@ -26,7 +26,7 @@ use git_meta_lib::MetaValue;
 ///
 /// Returns an error if `git blame` fails, porcelain output cannot be parsed, or
 /// metadata lookup/output serialization fails.
-pub fn run(path: &str, rev: Option<&str>, porcelain: bool, json: bool) -> Result<()> {
+pub(crate) fn run(path: &str, rev: Option<&str>, porcelain: bool, json: bool) -> Result<()> {
     if porcelain && json {
         bail!("cannot use --json and --porcelain together");
     }

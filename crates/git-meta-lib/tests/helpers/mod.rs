@@ -4,7 +4,7 @@ use git_meta_lib::Session;
 
 /// Create an isolated git repository with an initial commit, returning
 /// the temp directory (owns the lifetime) and the gix repository handle.
-pub fn setup_repo() -> (tempfile::TempDir, gix::Repository) {
+pub(crate) fn setup_repo() -> (tempfile::TempDir, gix::Repository) {
     let dir = tempfile::TempDir::new().unwrap();
     let _init = gix::init(dir.path()).unwrap();
 
@@ -76,17 +76,18 @@ pub fn setup_repo() -> (tempfile::TempDir, gix::Repository) {
 }
 
 /// Open a session from a repo with a fixed timestamp for determinism.
-pub fn open_session(repo: gix::Repository) -> Session {
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn open_session(repo: gix::Repository) -> Session {
     Session::open(repo.path()).unwrap().with_timestamp(1000)
 }
 
 /// Return the full 40-char commit SHA from the repo's HEAD.
-pub fn head_sha(repo: &gix::Repository) -> String {
+pub(crate) fn head_sha(repo: &gix::Repository) -> String {
     repo.head_id().unwrap().to_string()
 }
 
 /// Recursively copy all files from one directory to another.
-pub fn copy_dir_contents(src: &std::path::Path, dst: &std::path::Path) {
+pub(crate) fn copy_dir_contents(src: &std::path::Path, dst: &std::path::Path) {
     if !src.exists() {
         return;
     }
@@ -105,7 +106,7 @@ pub fn copy_dir_contents(src: &std::path::Path, dst: &std::path::Path) {
 
 /// Copy objects from a source repo into a destination repo and
 /// create a remote tracking ref (`refs/meta/origin`) pointing to `oid`.
-pub fn inject_remote_ref(
+pub(crate) fn inject_remote_ref(
     src_objects_dir: &std::path::Path,
     dst_dir: &std::path::Path,
     oid: gix::ObjectId,
@@ -131,7 +132,7 @@ pub fn inject_remote_ref(
 
 /// Open a second session on an existing repo directory with a
 /// given timestamp. Useful after mutating refs externally.
-pub fn reopen_session(dir: &std::path::Path, timestamp: i64) -> Session {
+pub(crate) fn reopen_session(dir: &std::path::Path, timestamp: i64) -> Session {
     let repo = gix::open_opts(
         dir,
         gix::open::Options::isolated()
@@ -151,7 +152,7 @@ pub fn reopen_session(dir: &std::path::Path, timestamp: i64) -> Session {
 /// 1. Creates repo A with `base_fn` applied to the base state, then serializes
 /// 2. Fast-forwards repo C from A's base (materialize with no local state)
 /// 3. Returns the dirs and the base OID
-pub fn setup_three_way_base(
+pub(crate) fn setup_three_way_base(
     base_fn: impl FnOnce(&Session),
 ) -> (tempfile::TempDir, tempfile::TempDir, gix::ObjectId) {
     // Step 1: Create repo A and set up the base state

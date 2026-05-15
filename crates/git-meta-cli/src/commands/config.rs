@@ -5,7 +5,7 @@ use git_meta_lib::types::{validate_key, MetaValue, Target};
 
 const CONFIG_PREFIX: &str = "meta:";
 
-pub fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str>) -> Result<()> {
+pub(crate) fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str>) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let handle = ctx.session.target(&project_target());
 

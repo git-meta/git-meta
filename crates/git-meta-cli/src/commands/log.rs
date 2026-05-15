@@ -25,7 +25,7 @@ const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 const BLUE: &str = "\x1b[34m";
 
-pub fn run(
+pub(crate) fn run(
     start_ref: Option<&str>, // commit-ish to start from (default HEAD)
     count: usize,            // max commits to show
     metadata_only: bool,     // skip commits with no metadata

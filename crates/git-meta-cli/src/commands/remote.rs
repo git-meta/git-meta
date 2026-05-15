@@ -230,7 +230,12 @@ git meta push
     )
 }
 
-pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bool) -> Result<()> {
+pub(crate) fn run_add(
+    url: &str,
+    name: &str,
+    namespace_override: Option<&str>,
+    init: bool,
+) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let ns = namespace_override
@@ -432,7 +437,7 @@ pub fn run_add(url: &str, name: &str, namespace_override: Option<&str>, init: bo
     Ok(())
 }
 
-pub fn run_remove(name: &str) -> Result<()> {
+pub(crate) fn run_remove(name: &str) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let ns = ctx.session.namespace();
@@ -504,7 +509,7 @@ pub fn run_remove(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run_list() -> Result<()> {
+pub(crate) fn run_list() -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let remotes = git_meta_lib::git_utils::list_meta_remotes(ctx.session.repo())?;
 

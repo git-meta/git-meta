@@ -304,7 +304,6 @@ pub fn parse_tree(
                 },
                 TreeValue::String(content_str),
             );
-            continue;
         }
     }
 

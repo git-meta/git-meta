@@ -31,7 +31,12 @@ enum PlannedDbChange {
     },
 }
 
-pub fn run(remote: Option<&str>, dry_run: bool, force_full: bool, verbose: bool) -> Result<()> {
+pub(crate) fn run(
+    remote: Option<&str>,
+    dry_run: bool,
+    force_full: bool,
+    verbose: bool,
+) -> Result<()> {
     let ctx = CommandContext::open(None)?;
 
     if dry_run && force_full {
@@ -64,10 +69,7 @@ pub fn run(remote: Option<&str>, dry_run: bool, force_full: bool, verbose: bool)
                 );
                 println!("materialized {}", result.ref_name);
             }
-            MaterializeStrategy::ThreeWayMerge => {
-                println!("materialized {}", result.ref_name);
-            }
-            _ => {
+            MaterializeStrategy::ThreeWayMerge | _ => {
                 println!("materialized {}", result.ref_name);
             }
         }
@@ -179,36 +181,35 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
                     println!("dry-run: {ref_name} already up to date");
                     continue;
                 }
-                match repo.merge_base(*local_oid, *remote_oid) {
-                    Ok(base_oid) => {
-                        let is_ff = base_oid == *local_oid;
-                        if verbose {
-                            eprintln!(
-                                "[verbose] merge base: {} (local={}, remote={})",
-                                &base_oid.to_string()[..8],
-                                &local_oid.to_string()[..8],
-                                &remote_oid.to_string()[..8]
-                            );
-                            if is_ff {
-                                eprintln!("[verbose] local is ancestor of remote -> fast-forward");
-                            } else {
-                                eprintln!("[verbose] diverged histories -> merge required");
-                            }
+                if let Ok(base_oid) = repo.merge_base(*local_oid, *remote_oid) {
+                    let is_ff = base_oid == *local_oid;
+                    if verbose {
+                        eprintln!(
+                            "[verbose] merge base: {} (local={}, remote={})",
+                            &base_oid.to_string()[..8],
+                            &local_oid.to_string()[..8],
+                            &remote_oid.to_string()[..8]
+                        );
+                        if is_ff {
+                            eprintln!("[verbose] local is ancestor of remote -> fast-forward");
+                        } else {
+                            eprintln!("[verbose] diverged histories -> merge required");
                         }
-                        is_ff
                     }
-                    Err(_) => {
-                        if verbose {
-                            eprintln!("[verbose] no merge base found -> merge required (no common ancestor)");
-                        }
-                        false
+                    is_ff
+                } else {
+                    if verbose {
+                        eprintln!(
+                            "[verbose] no merge base found -> merge required (no common ancestor)"
+                        );
                     }
+                    false
                 }
             }
         };
 
         if can_fast_forward {
-            dry_run_fast_forward(ctx, ref_name, &local_commit_oid, &remote_entries, verbose)?;
+            dry_run_fast_forward(ctx, ref_name, local_commit_oid, &remote_entries, verbose)?;
         } else {
             let local_oid = local_commit_oid
                 .as_ref()
@@ -231,7 +232,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
 fn dry_run_fast_forward(
     ctx: &CommandContext,
     ref_name: &str,
-    local_commit_oid: &Option<gix::ObjectId>,
+    local_commit_oid: Option<gix::ObjectId>,
     remote_entries: &ParsedTree,
     verbose: bool,
 ) -> Result<()> {

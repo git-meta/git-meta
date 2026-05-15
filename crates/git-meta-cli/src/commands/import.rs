@@ -16,8 +16,8 @@ use git_meta_lib::MetaValue;
 const GH_PR_PAGE_SIZE: usize = 100;
 
 /// Supported import source formats.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ImportFormat {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ImportFormat {
     /// Import the entire git history.
     Entire,
     /// Import from git-ai format.
@@ -26,7 +26,7 @@ pub enum ImportFormat {
 
 impl ImportFormat {
     /// Parse an import format string.
-    pub fn from_str(s: &str) -> anyhow::Result<Self> {
+    pub(crate) fn from_str(s: &str) -> anyhow::Result<Self> {
         match s {
             "entire" => Ok(ImportFormat::Entire),
             "git-ai" => Ok(ImportFormat::GitAi),
@@ -35,7 +35,7 @@ impl ImportFormat {
     }
 }
 
-pub fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<()> {
+pub(crate) fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<()> {
     let since_epoch = parse_since_epoch(since)?;
 
     match format {
@@ -60,7 +60,8 @@ pub fn run(format: ImportFormat, dry_run: bool, since: Option<&str>) -> Result<(
 ///
 /// Returns an error if `gh` is missing or unauthenticated, GitHub output cannot
 /// be parsed, or the metadata store fails to write an imported value.
-pub fn run_gh(
+#[allow(clippy::fn_params_excessive_bools)]
+pub(crate) fn run_gh(
     dry_run: bool,
     limit: Option<usize>,
     since: Option<&str>,
@@ -74,12 +75,11 @@ pub fn run_gh(
     ensure_gh_auth()?;
 
     let ctx = CommandContext::open(None)?;
-    let repo_name = match repo {
-        Some(repo) => repo.to_string(),
-        None => {
-            eprintln!("resolving GitHub repository...");
-            resolve_gh_repo()?
-        }
+    let repo_name = if let Some(repo) = repo {
+        repo.to_string()
+    } else {
+        eprintln!("resolving GitHub repository...");
+        resolve_gh_repo()?
     };
     eprintln!("importing GitHub pull requests from {repo_name}");
     let prs = fetch_merged_prs(&repo_name, limit, include_comments)?;
@@ -2223,19 +2223,17 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
             total += 1;
 
             // Read the note blob.
-            let blob = match note_entry.object_id().attach(repo).object() {
-                Ok(o) => o.into_blob(),
-                Err(_) => {
-                    errors += 1;
-                    continue;
-                }
+            let blob = if let Ok(o) = note_entry.object_id().attach(repo).object() {
+                o.into_blob()
+            } else {
+                errors += 1;
+                continue;
             };
-            let note_text = match std::str::from_utf8(&blob.data) {
-                Ok(s) => s.to_string(),
-                Err(_) => {
-                    errors += 1;
-                    continue;
-                }
+            let note_text = if let Ok(s) = std::str::from_utf8(&blob.data) {
+                s.to_string()
+            } else {
+                errors += 1;
+                continue;
             };
 
             // Parse the note.

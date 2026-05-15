@@ -13,13 +13,13 @@ use clap::{ArgAction, Args, Parser, Subcommand};
     about = "Structured metadata for Git data",
     disable_help_subcommand = true
 )]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 }
 
 #[derive(Subcommand)]
-pub enum Commands {
+pub(crate) enum Commands {
     /// Set a string metadata value
     #[command(display_order = 10)]
     Set {
@@ -368,14 +368,14 @@ pub enum Commands {
 }
 
 #[derive(Args)]
-pub struct RemoteArgs {
+pub(crate) struct RemoteArgs {
     #[command(subcommand)]
     pub action: RemoteAction,
 }
 
 /// Arguments for importing metadata from external tools and services.
 #[derive(Args)]
-pub struct ImportArgs {
+pub(crate) struct ImportArgs {
     /// Import source to use.
     #[command(subcommand)]
     pub action: Option<ImportAction>,
@@ -395,14 +395,14 @@ pub struct ImportArgs {
 
 /// Supported import sources.
 #[derive(Subcommand)]
-pub enum ImportAction {
+pub(crate) enum ImportAction {
     /// Import merged pull request metadata from GitHub using gh
     Gh(GhImportArgs),
 }
 
 /// Arguments for `git meta import gh`.
 #[derive(Args)]
-pub struct GhImportArgs {
+pub(crate) struct GhImportArgs {
     /// Show what would be imported without writing
     #[arg(long = "dry-run")]
     pub dry_run: bool,
@@ -433,7 +433,7 @@ pub struct GhImportArgs {
 }
 
 #[derive(Subcommand)]
-pub enum RemoteAction {
+pub(crate) enum RemoteAction {
     /// Add a metadata remote source
     Add {
         /// Remote URL (e.g. git@github.com:user/repo.git)
@@ -621,7 +621,7 @@ impl Palette {
 /// in pipes, logs, and dumb terminals the output is plain ASCII.
 ///
 /// [`Command`]: clap::Command
-pub fn print_help() {
+pub(crate) fn print_help() {
     use clap::CommandFactory;
     let cmd = Cli::command();
     let p = Palette::detect();

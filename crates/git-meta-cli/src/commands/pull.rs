@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::context::CommandContext;
 
-pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
+pub(crate) fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
 
     if verbose {

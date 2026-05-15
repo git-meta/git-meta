@@ -61,7 +61,7 @@ fn isolate_cmd(cmd: &mut Command) {
 /// Build an isolated `git-meta` [`Command`] pointed at `dir`.
 ///
 /// The command has full environment isolation applied so tests are reproducible.
-pub fn git_meta(dir: &Path) -> Command {
+pub(crate) fn git_meta(dir: &Path) -> Command {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("git-meta");
     cmd.current_dir(dir);
     isolate_cmd(&mut cmd);
@@ -71,7 +71,7 @@ pub fn git_meta(dir: &Path) -> Command {
 ///
 /// Returns `(TempDir, initial_commit_sha)`. The `TempDir` owns the working
 /// directory; dropping it cleans up.
-pub fn writable_fixture(name: &str) -> (TempDir, String) {
+pub(crate) fn writable_fixture(name: &str) -> (TempDir, String) {
     let tmp = gix_testtools::scripted_fixture_writable(name)
         .unwrap_or_else(|e| panic!("fixture '{name}' failed: {e}"));
     let sha = head_sha(tmp.path());
@@ -83,7 +83,7 @@ pub fn writable_fixture(name: &str) -> (TempDir, String) {
 ///
 /// Returns the `TempDir` that owns the fixture directory. The directory
 /// may contain a bare repo (no HEAD to extract).
-pub fn writable_fixture_with_args(
+pub(crate) fn writable_fixture_with_args(
     name: &str,
     args: impl IntoIterator<Item = impl Into<String>>,
 ) -> TempDir {
@@ -103,13 +103,13 @@ fn head_sha(path: &std::path::Path) -> String {
         .to_string()
 }
 /// Build a `commit:<sha>` target string.
-pub fn commit_target(sha: &str) -> String {
+pub(crate) fn commit_target(sha: &str) -> String {
     format!("commit:{sha}")
 }
 
 /// Compute the two-character fanout prefix for a value (first two hex chars of
 /// its SHA-1 hash). Used to verify serialized tree paths.
-pub fn target_fanout(value: &str) -> String {
+pub(crate) fn target_fanout(value: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(value.as_bytes());
     let hash = format!("{:x}", hasher.finalize());
@@ -120,7 +120,7 @@ pub fn target_fanout(value: &str) -> String {
 /// Returns `(TempDir, initial_commit_sha)`. Use this when a test needs a repo
 /// that doesn't match any fixture (e.g. custom user email, specific file
 /// content, or multi-repo scenarios).
-pub fn setup_repo() -> (TempDir, String) {
+pub(crate) fn setup_repo() -> (TempDir, String) {
     let dir = TempDir::new().expect("should be able to create temp dir");
     let _init = gix::init(dir.path()).expect("should be able to init repo");
 
@@ -174,7 +174,7 @@ pub fn setup_repo() -> (TempDir, String) {
 /// structure: `project/testing/__value = "hello"`.
 ///
 /// Used as a remote for push/pull tests.
-pub fn setup_bare_with_meta(ns: &str) -> TempDir {
+pub(crate) fn setup_bare_with_meta(ns: &str) -> TempDir {
     let bare_dir = TempDir::new().expect("should be able to create temp dir");
     let _init = gix::init_bare(bare_dir.path()).expect("should be able to init bare repo");
     let bare = gix::open_opts(bare_dir.path(), test_open_opts()).expect("should reopen bare repo");
@@ -233,7 +233,7 @@ pub fn setup_bare_with_meta(ns: &str) -> TempDir {
 /// The repo has 2 commits on `refs/meta/main`:
 ///   - Commit 1 (older): `project/old_key/__value = "old_value"`
 ///   - Commit 2 (tip):   `project/testing/__value = "hello"` (old_key removed)
-pub fn setup_bare_with_history() -> TempDir {
+pub(crate) fn setup_bare_with_history() -> TempDir {
     let bare_dir = TempDir::new().expect("should be able to create temp dir");
     let _init = gix::init_bare(bare_dir.path()).expect("should be able to init bare repo");
     let bare = gix::open_opts(bare_dir.path(), test_open_opts()).expect("should reopen bare repo");
@@ -317,7 +317,7 @@ pub fn setup_bare_with_history() -> TempDir {
 ///
 /// The omitted-change commit keeps its keys discoverable only through its tree
 /// paths, which exercises promisor indexing for large serialize commits.
-pub fn setup_bare_with_omitted_history() -> TempDir {
+pub(crate) fn setup_bare_with_omitted_history() -> TempDir {
     let bare_dir = TempDir::new().expect("should be able to create temp dir");
     let _init = gix::init_bare(bare_dir.path()).expect("should be able to init bare repo");
     let bare = gix::open_opts(bare_dir.path(), test_open_opts()).expect("should reopen bare repo");
@@ -429,7 +429,7 @@ pub fn setup_bare_with_omitted_history() -> TempDir {
 ///
 /// Like [`setup_bare_with_history`] but the tip commit retains `old_key` in
 /// its tree alongside `testing`. The tip commit message only mentions `testing`.
-pub fn setup_bare_with_history_retained() -> TempDir {
+pub(crate) fn setup_bare_with_history_retained() -> TempDir {
     let bare_dir = TempDir::new().expect("should be able to create temp dir");
     let _init = gix::init_bare(bare_dir.path()).expect("should be able to init bare repo");
     let bare = gix::open_opts(bare_dir.path(), test_open_opts()).expect("should reopen bare repo");
@@ -518,7 +518,7 @@ pub fn setup_bare_with_history_retained() -> TempDir {
 /// Copy all git objects from `src` repo into a bare repo at `bare_dir`.
 ///
 /// Simulates a push by copying loose objects and pack files.
-pub fn copy_meta_objects(src: &gix::Repository, bare_dir: &TempDir) {
+pub(crate) fn copy_meta_objects(src: &gix::Repository, bare_dir: &TempDir) {
     let src_objects = src.path().join("objects");
     let dst_objects = bare_dir.path().join("objects");
     copy_dir_contents(&src_objects, &dst_objects);
@@ -527,7 +527,7 @@ pub fn copy_meta_objects(src: &gix::Repository, bare_dir: &TempDir) {
 /// Copy all git objects from a bare repo at `bare_dir` into `dst` repo.
 ///
 /// Simulates a fetch by copying loose objects and pack files.
-pub fn copy_meta_objects_from(bare_dir: &TempDir, dst: &gix::Repository) {
+pub(crate) fn copy_meta_objects_from(bare_dir: &TempDir, dst: &gix::Repository) {
     let src_objects = bare_dir.path().join("objects");
     let dst_objects = dst.path().join("objects");
     copy_dir_contents(&src_objects, &dst_objects);
@@ -566,7 +566,7 @@ fn git_config(repo_path: &Path, key: &str, value: &str) {
 ///
 /// Uses isolated config (no system/global) with stable author/committer identity,
 /// so reference operations work even in CI where no global git config exists.
-pub fn open_repo(path: &Path) -> gix::Repository {
+pub(crate) fn open_repo(path: &Path) -> gix::Repository {
     gix::open_opts(path, test_open_opts()).expect("should be able to open repo")
 }
 
@@ -580,7 +580,7 @@ pub(crate) fn test_open_opts() -> gix::open::Options {
 }
 
 /// Resolve a reference to a commit OID (fully peeled).
-pub fn ref_to_commit_oid(repo: &gix::Repository, ref_name: &str) -> gix::ObjectId {
+pub(crate) fn ref_to_commit_oid(repo: &gix::Repository, ref_name: &str) -> gix::ObjectId {
     repo.find_reference(ref_name)
         .unwrap()
         .into_fully_peeled_id()

@@ -5,7 +5,7 @@ use crate::context::CommandContext;
 
 /// Push a README commit to refs/heads/main on the meta remote.
 /// This only succeeds if the branch doesn't already exist (no force push).
-pub fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
+pub(crate) fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
 
@@ -165,7 +165,7 @@ See `git meta --help` for the full command reference.
 
 const MAX_RETRIES: u32 = 5;
 
-pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
+pub(crate) fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let resolved_remote = ctx.session.resolve_remote(remote)?;
 

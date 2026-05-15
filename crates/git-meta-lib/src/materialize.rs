@@ -137,7 +137,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
 
         if can_fast_forward {
             let changes =
-                materialize_fast_forward(session, &local_commit_oid, &remote_entries, email, now)?;
+                materialize_fast_forward(session, local_commit_oid, &remote_entries, email, now)?;
 
             // Fast-forward the ref
             repo.reference(
@@ -191,7 +191,7 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
 /// Returns the number of values in the remote tree (the change count).
 fn materialize_fast_forward(
     session: &Session,
-    local_commit_oid: &Option<gix::ObjectId>,
+    local_commit_oid: Option<gix::ObjectId>,
     remote_entries: &ParsedTree,
     email: &str,
     now: i64,

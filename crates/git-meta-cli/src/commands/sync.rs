@@ -9,7 +9,7 @@ const MAX_RETRIES: u32 = 5;
 /// If `remote` is provided, only that metadata remote is synchronized. If it
 /// is omitted, every configured metadata remote is pulled first, then every
 /// configured metadata remote is pushed.
-pub fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
+pub(crate) fn run(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let remotes = remotes_to_sync(&ctx, remote)?;
 

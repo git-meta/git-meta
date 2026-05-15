@@ -1,4 +1,4 @@
-#![allow(clippy::type_complexity, clippy::too_many_arguments)]
+#![allow(clippy::type_complexity, clippy::too_many_arguments, missing_docs)]
 
 mod cli;
 mod commands;

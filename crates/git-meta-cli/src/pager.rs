@@ -38,7 +38,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 /// On `Drop`, the pipe to the pager is closed (signalling EOF) and the
 /// child process is reaped. Calling code does not need to invoke any
 /// explicit shutdown method.
-pub struct Pager {
+pub(crate) struct Pager {
     inner: Inner,
 }
 
@@ -70,7 +70,7 @@ impl Pager {
     /// or spawning the pager fails for any reason, this returns a
     /// `Pager` that writes directly to stdout — the caller never has
     /// to branch on whether paging is active.
-    pub fn start(repo: Option<&gix::Repository>) -> Self {
+    pub(crate) fn start(repo: Option<&gix::Repository>) -> Self {
         let pager = resolve_pager(
             io::stdout().is_terminal(),
             |key| std::env::var(key),
@@ -185,7 +185,7 @@ impl Write for Pager {
                 ..
             } => stdin.write(buf),
             // Pager already detached or marked broken — silently drop.
-            _ => return Ok(buf.len()),
+            Inner::Pager { .. } => return Ok(buf.len()),
         };
         match result {
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {
@@ -206,7 +206,7 @@ impl Write for Pager {
                 broken: false,
                 ..
             } => stdin.flush(),
-            _ => return Ok(()),
+            Inner::Pager { .. } => return Ok(()),
         };
         match result {
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {

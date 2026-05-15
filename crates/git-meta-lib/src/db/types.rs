@@ -36,6 +36,7 @@ impl fmt::Display for Operation {
 
 impl Operation {
     /// Returns the wire-format string for this operation.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             Operation::Set => "set",

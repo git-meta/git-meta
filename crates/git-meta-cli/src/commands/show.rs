@@ -18,7 +18,7 @@ const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 const BLUE: &str = "\x1b[34m";
 
-pub fn run(commit_ref: &str) -> Result<()> {
+pub(crate) fn run(commit_ref: &str) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
 
@@ -125,10 +125,7 @@ pub fn run(commit_ref: &str) -> Result<()> {
     let commit_entries = ctx
         .session
         .store()
-        .get_all(
-            &Target::from_parts(TargetType::Commit, Some(sha.clone())),
-            None,
-        )
+        .get_all(&Target::from_parts(TargetType::Commit, Some(sha)), None)
         .unwrap_or_default();
     for entry in &commit_entries {
         let display = format_meta_value(&entry.value, &entry.value_type);

@@ -9,10 +9,15 @@ use crate::error::{Error, Result};
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TargetType {
+    /// Metadata attached to a Git commit object.
     Commit,
+    /// Metadata attached to a stable change identifier, such as a Jujutsu change ID.
     ChangeId,
+    /// Metadata attached to a branch name.
     Branch,
+    /// Metadata attached to a repository path.
     Path,
+    /// Metadata attached to the whole project rather than a specific object.
     Project,
 }
 
@@ -39,6 +44,7 @@ impl FromStr for TargetType {
 
 impl TargetType {
     /// Returns the wire-format string for this target type.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             TargetType::Commit => "commit",
@@ -50,6 +56,7 @@ impl TargetType {
     }
 
     /// Returns the English plural form of this target type for display.
+    #[must_use]
     pub fn pluralize(&self) -> &str {
         match self {
             TargetType::Commit => "commits",
@@ -63,6 +70,7 @@ impl TargetType {
 
 /// A resolved metadata target consisting of a type and an optional value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[must_use]
 pub struct Target {
     target_type: TargetType,
     value: Option<String>,
@@ -89,7 +97,6 @@ impl Target {
     /// # Parameters
     /// - `target_type`: the kind of target
     /// - `value`: the target value, or `None` for project targets
-    #[must_use]
     pub fn from_parts(target_type: TargetType, value: Option<String>) -> Self {
         Target { target_type, value }
     }
@@ -106,7 +113,6 @@ impl Target {
     }
 
     /// Create a project-scoped target (no value needed).
-    #[must_use]
     pub fn project() -> Self {
         Target {
             target_type: TargetType::Project,
@@ -118,7 +124,6 @@ impl Target {
     ///
     /// # Parameters
     /// - `path`: the file or directory path this metadata attaches to.
-    #[must_use]
     pub fn path(path: &str) -> Self {
         Target {
             target_type: TargetType::Path,
@@ -130,7 +135,6 @@ impl Target {
     ///
     /// # Parameters
     /// - `name`: the branch name this metadata attaches to.
-    #[must_use]
     pub fn branch(name: &str) -> Self {
         Target {
             target_type: TargetType::Branch,
@@ -142,7 +146,6 @@ impl Target {
     ///
     /// # Parameters
     /// - `id`: the change identifier this metadata attaches to.
-    #[must_use]
     pub fn change_id(id: &str) -> Self {
         Target {
             target_type: TargetType::ChangeId,
@@ -232,8 +235,11 @@ impl Target {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ValueType {
+    /// A single string value; new writes replace the previous value.
     String,
+    /// An ordered collection of timestamped entries; new writes append entries.
     List,
+    /// An unordered collection of unique strings.
     Set,
 }
 
@@ -258,6 +264,7 @@ impl FromStr for ValueType {
 
 impl ValueType {
     /// Returns the wire-format string for this value type.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             ValueType::String => "string",
@@ -332,6 +339,7 @@ impl From<std::collections::BTreeSet<String>> for MetaValue {
 /// A metadata edit that can be applied atomically with other edits.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
+#[must_use]
 pub enum MetaEdit<'a> {
     /// Append entries to a list value.
     ListAppend {
@@ -355,13 +363,11 @@ impl<'a> MetaEdit<'a> {
     /// Entry timestamps preserve caller ordering. If an entry timestamp would
     /// collide with or sort before an existing list item, GitMeta shifts it
     /// forward to keep the appended entries at the end of the list.
-    #[must_use]
     pub fn list_append(key: &'a str, entries: &'a [crate::ListEntry]) -> Self {
         Self::ListAppend { key, entries }
     }
 
     /// Add members to a set value.
-    #[must_use]
     pub fn set_add(key: &'a str, members: &'a [String]) -> Self {
         Self::SetAdd { key, members }
     }

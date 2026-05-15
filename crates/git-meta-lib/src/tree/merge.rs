@@ -27,6 +27,7 @@ pub enum ConflictReason {
 
 impl ConflictReason {
     /// Returns a human-readable identifier for the conflict reason.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             ConflictReason::BothChanged => "both-changed",
@@ -52,6 +53,7 @@ pub enum ConflictResolution {
 
 impl ConflictResolution {
     /// Returns a human-readable identifier for the resolution strategy.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             ConflictResolution::Local => "local",
@@ -111,6 +113,7 @@ enum MergeState {
 /// # Errors
 ///
 /// Currently infallible but returns `Result` for future extensibility.
+#[allow(clippy::match_same_arms)]
 pub fn three_way_merge(
     base: &BTreeMap<Key, TreeValue>,
     local: &BTreeMap<Key, TreeValue>,
@@ -241,6 +244,7 @@ pub fn three_way_merge(
 /// # Returns
 ///
 /// A tuple of `(merged_values, merged_tombstones, conflict_decisions)`.
+#[must_use]
 pub fn two_way_merge_no_common_ancestor(
     local_values: &BTreeMap<Key, TreeValue>,
     local_tombstones: &BTreeMap<Key, Tombstone>,
@@ -328,6 +332,7 @@ pub fn two_way_merge_no_common_ancestor(
 /// # Returns
 ///
 /// The merged tombstone map.
+#[must_use]
 pub fn merge_tombstones(
     base: &BTreeMap<Key, Tombstone>,
     local: &BTreeMap<Key, Tombstone>,
@@ -371,11 +376,10 @@ pub fn merge_tombstones(
                     None
                 }
             }
-            (Some(_), None, None) => None,
             (None, Some(l), None) => Some(l.clone()),
             (None, None, Some(r)) => Some(r.clone()),
             (None, Some(l), Some(r)) => Some(select_preferred_tombstone(l, r)),
-            (None, None, None) => None,
+            (Some(_) | None, None, None) => None,
         };
 
         if let Some(tombstone) = selected {
@@ -407,6 +411,7 @@ fn select_preferred_tombstone(local: &Tombstone, _remote: &Tombstone) -> Tombsto
 /// # Returns
 ///
 /// The merged set-member tombstone map.
+#[must_use]
 pub fn merge_set_member_tombstones(
     local: &BTreeMap<(Key, String), String>,
     remote: &BTreeMap<(Key, String), String>,
@@ -439,6 +444,7 @@ pub fn merge_set_member_tombstones(
 /// # Returns
 ///
 /// The merged list-entry tombstone map.
+#[must_use]
 pub fn merge_list_tombstones(
     local: &BTreeMap<(Key, String), Tombstone>,
     remote: &BTreeMap<(Key, String), Tombstone>,
@@ -466,6 +472,7 @@ pub fn merge_list_tombstones(
 
 /// Resolve a conflict where both sides changed the same key.
 /// Lists union; all other direct conflicts prefer the local/ours side.
+#[allow(clippy::match_same_arms)]
 fn resolve_conflict(
     local: &TreeValue,
     remote: &TreeValue,

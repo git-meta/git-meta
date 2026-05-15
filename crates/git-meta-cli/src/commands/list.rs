@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::context::CommandContext;
 use git_meta_lib::types::Target;
 
-pub fn run_push(target_str: &str, key: &str, value: &str) -> Result<()> {
+pub(crate) fn run_push(target_str: &str, key: &str, value: &str) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let target = ctx.session.resolve_target(&Target::parse(target_str)?)?;
 
@@ -12,7 +12,7 @@ pub fn run_push(target_str: &str, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
+pub(crate) fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let target = ctx.session.resolve_target(&Target::parse(target_str)?)?;
 
@@ -42,7 +42,7 @@ pub fn run_rm(target_str: &str, key: &str, index: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-pub fn run_pop(target_str: &str, key: &str, value: &str) -> Result<()> {
+pub(crate) fn run_pop(target_str: &str, key: &str, value: &str) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let target = ctx.session.resolve_target(&Target::parse(target_str)?)?;
 

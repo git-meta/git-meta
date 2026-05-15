@@ -5,7 +5,7 @@ use gix::prelude::ObjectIdExt;
 use crate::context::CommandContext;
 use git_meta_lib::types::{TargetType, ValueType};
 
-pub fn run() -> Result<()> {
+pub(crate) fn run() -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let ns = ctx.session.namespace();

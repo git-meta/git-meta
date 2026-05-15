@@ -1,3 +1,5 @@
+//! SQLite storage internals used by the CLI and session implementation.
+
 mod lists;
 mod metadata;
 mod promised;
@@ -78,6 +80,15 @@ impl Store {
         Ok(db)
     }
 
+    /// Open a store at `path` with an associated Git repository.
+    ///
+    /// The repository is used for metadata values that reference Git blobs and
+    /// for operations that need to read or write the git-meta exchange refs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQLite database cannot be opened, connection
+    /// pragmas fail, or schema migrations cannot be applied.
     pub fn open_with_repo(path: &Path, repo: gix::Repository) -> Result<Self> {
         let conn = Connection::open(path)?;
         configure_connection(&conn)?;
@@ -90,6 +101,12 @@ impl Store {
     }
 
     #[cfg(test)]
+    /// Open an in-memory store for tests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the in-memory SQLite connection cannot be created,
+    /// configured, or migrated.
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         configure_connection(&conn)?;

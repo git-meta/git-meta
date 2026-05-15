@@ -1,3 +1,5 @@
+//! Git tree builders and readers for the git-meta exchange format.
+
 /// Key filtering and routing rules.
 pub mod filter;
 /// Git tree building and parsing.
