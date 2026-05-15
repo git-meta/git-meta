@@ -1,2 +1,3 @@
 target/*
 transcripts/*
+.claude/settings.local.json
