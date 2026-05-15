@@ -23,7 +23,7 @@ const CYAN: &str = "\x1b[36m";
 const RED: &str = "\x1b[31m";
 const RESET: &str = "\x1b[0m";
 
-pub fn run(agent: &str, debounce_secs: u64) -> Result<()> {
+pub(crate) fn run(agent: &str, debounce_secs: u64) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let workdir = repo
@@ -54,7 +54,7 @@ pub fn run(agent: &str, debounce_secs: u64) -> Result<()> {
 
     // Set up file watcher
     let (tx, rx) = mpsc::channel();
-    let tx2 = tx.clone();
+    let tx2 = tx;
     let mut watcher = RecommendedWatcher::new(
         move |res| {
             let _ = tx2.send(res);
@@ -262,6 +262,7 @@ impl WatchState {
             "assistant" => {
                 if let Some(content) = parsed["message"]["content"].as_array() {
                     for block in content {
+                        #[allow(clippy::match_same_arms)]
                         match block["type"].as_str() {
                             Some("text") => {
                                 if let Some(text) = block["text"].as_str() {
@@ -552,12 +553,11 @@ impl WatchState {
             _ => return Ok(()),
         };
 
-        let branch_name = match &self.last_committed_branch {
-            Some(b) => b.clone(),
-            None => {
-                eprintln!("  {YELLOW}[warn]{RESET} No branch found to attach transcript to");
-                return Ok(());
-            }
+        let branch_name = if let Some(b) = &self.last_committed_branch {
+            b.clone()
+        } else {
+            eprintln!("  {YELLOW}[warn]{RESET} No branch found to attach transcript to");
+            return Ok(());
         };
 
         let transcript_content = lines.join("\n");

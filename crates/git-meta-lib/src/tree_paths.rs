@@ -78,6 +78,7 @@ fn build_key_tree_path(target: &Target, key: &str) -> Result<String> {
 ///
 /// # Parameters
 /// - `target`: the metadata target
+#[must_use]
 pub fn tree_base_path(target: &Target) -> String {
     match target.target_type() {
         TargetType::Project => "project".to_string(),

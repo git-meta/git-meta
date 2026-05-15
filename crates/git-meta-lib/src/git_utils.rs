@@ -1,3 +1,5 @@
+//! Git repository helpers for resolving objects and manipulating metadata refs.
+
 use std::path::PathBuf;
 use std::process::Command;
 

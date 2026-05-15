@@ -19,7 +19,7 @@ const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 
-pub fn run(
+pub(crate) fn run(
     target_type: Option<&str>,
     term: Option<&str>,
     timeline: bool,
@@ -353,7 +353,7 @@ fn fuzzy_matches(term: &str, haystack: &str) -> bool {
         loop {
             match hay_chars.next() {
                 Some(hc) if hc == tc => break,
-                Some(_) => continue,
+                Some(_) => {}
                 None => return false,
             }
         }

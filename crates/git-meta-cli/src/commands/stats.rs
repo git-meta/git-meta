@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::context::CommandContext;
 
-pub fn run() -> Result<()> {
+pub(crate) fn run() -> Result<()> {
     let ctx = CommandContext::open(None)?;
 
     let rows = ctx.session.store().stats_by_target_type_and_key()?;

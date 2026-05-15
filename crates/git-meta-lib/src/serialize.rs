@@ -1001,6 +1001,7 @@ pub fn prune_tree(
         .detach())
 }
 
+#[derive(Copy, Clone)]
 struct AutoPruneInputs<'a> {
     metadata_entries: &'a [SerializableEntry],
     tombstone_entries: &'a [TombstoneRecord],

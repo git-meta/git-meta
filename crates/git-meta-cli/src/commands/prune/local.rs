@@ -4,7 +4,7 @@ use crate::context::CommandContext;
 use git_meta_lib::prune::{parse_since_to_cutoff_ms, read_prune_rules};
 use git_meta_lib::types::Target;
 
-pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
+pub(crate) fn run(dry_run: bool, skip_date: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
 
     let cutoff_ms = if skip_date {
@@ -19,24 +19,21 @@ pub fn run(dry_run: bool, skip_date: bool) -> Result<()> {
             Some(ref r) => r.since.clone(),
             None => {
                 // Check if at least meta:prune:since is set (triggers may be absent)
-                match ctx
+                if let Some(entry) = ctx
                     .session
                     .store()
                     .get(&Target::project(), "meta:prune:since")?
                 {
-                    Some(entry) => {
-                        let s: String = serde_json::from_str(&entry.value)?;
-                        s
-                    }
-                    None => {
-                        eprintln!("No prune rules configured.");
-                        eprintln!();
-                        eprintln!("Run `git meta config:prune` to set up auto-prune rules, or set them manually:");
-                        eprintln!("  git meta config meta:prune:since 6m");
-                        eprintln!("  git meta config meta:prune:max-keys 10000");
-                        eprintln!("  git meta config meta:prune:max-size 10m");
-                        return Ok(());
-                    }
+                    let s: String = serde_json::from_str(&entry.value)?;
+                    s
+                } else {
+                    eprintln!("No prune rules configured.");
+                    eprintln!();
+                    eprintln!("Run `git meta config:prune` to set up auto-prune rules, or set them manually:");
+                    eprintln!("  git meta config meta:prune:since 6m");
+                    eprintln!("  git meta config meta:prune:max-keys 10000");
+                    eprintln!("  git meta config meta:prune:max-size 10m");
+                    return Ok(());
                 }
             }
         };

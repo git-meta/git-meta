@@ -133,7 +133,7 @@ fn parse_pattern(s: &str) -> Vec<PatternSegment> {
 fn pattern_matches(pattern: &[PatternSegment], key_segments: &[&str]) -> bool {
     match (pattern.first(), key_segments.first()) {
         (None, None) => true,
-        (None, Some(_)) => false,
+        (None, Some(_)) | (Some(_), None) => false,
         (Some(PatternSegment::GlobStar), _) => {
             if pattern.len() == 1 {
                 // trailing ** matches everything remaining
@@ -147,7 +147,6 @@ fn pattern_matches(pattern: &[PatternSegment], key_segments: &[&str]) -> bool {
             }
             false
         }
-        (Some(_), None) => false,
         (Some(PatternSegment::Star), Some(_)) => pattern_matches(&pattern[1..], &key_segments[1..]),
         (Some(PatternSegment::Literal(lit)), Some(seg)) => {
             lit == seg && pattern_matches(&pattern[1..], &key_segments[1..])
@@ -166,6 +165,7 @@ fn pattern_matches(pattern: &[PatternSegment], key_segments: &[&str]) -> bool {
 ///
 /// - `key`: the metadata key to classify
 /// - `rules`: the filter rules to check against (in precedence order)
+#[must_use]
 pub fn classify_key(key: &str, rules: &[FilterRule]) -> Option<Vec<String>> {
     // Hard rule: meta:local: keys are never serialized
     if key.starts_with(META_LOCAL_PREFIX) {

@@ -3,7 +3,7 @@ use git_meta_lib::serialize::{SerializeMode, SerializeProgress};
 
 use crate::context::CommandContext;
 
-pub fn run(_verbose: bool, force_full: bool) -> Result<()> {
+pub(crate) fn run(_verbose: bool, force_full: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let output = if force_full {
         ctx.session.serialize_full_with_progress(print_progress)?

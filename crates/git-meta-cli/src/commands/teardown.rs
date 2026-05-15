@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::context::CommandContext;
 
-pub fn run() -> Result<()> {
+pub(crate) fn run() -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
     let ns = ctx.session.namespace();

@@ -141,7 +141,7 @@ fn count_keys_recursive(
         if name == "__value" || name == "__list" || name == "__set" {
             *count += 1;
         } else if name == "__tombstones" {
-            continue;
+            // ignored
         } else if entry.mode().is_tree() {
             count_keys_recursive(repo, entry.object_id(), count)?;
         }

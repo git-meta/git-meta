@@ -180,7 +180,7 @@ pub fn push_once_with_progress(
     let push_refspec = format!("{local_ref}:{remote_refspec}");
     progress(PushProgress::Pushing {
         remote_name: remote_name.clone(),
-        local_ref: local_ref.clone(),
+        local_ref,
         remote_ref: remote_refspec.clone(),
     });
     let result = git_utils::run_git(repo, &["push", &remote_name, &push_refspec]);

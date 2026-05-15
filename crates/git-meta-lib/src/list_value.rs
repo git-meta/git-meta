@@ -1,3 +1,5 @@
+//! Encoding and parsing helpers for timestamped list values.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha1::{Digest, Sha1};
@@ -7,7 +9,9 @@ use crate::error::{Error, Result};
 /// A single timestamped entry in a metadata list value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListEntry {
+    /// The string payload stored in this list entry.
     pub value: String,
+    /// The entry timestamp used for deterministic ordering and tree serialization.
     pub timestamp: i64,
 }
 
@@ -75,6 +79,7 @@ pub fn list_values_from_json(raw: &str) -> Result<Vec<String>> {
 }
 
 /// Build a deterministic entry name used for Git tree serialization.
+#[must_use]
 pub fn make_entry_name(entry: &ListEntry) -> String {
     make_entry_name_from_parts(entry.timestamp, &entry.value)
 }
@@ -88,6 +93,7 @@ pub(crate) fn make_entry_name_from_parts(timestamp: i64, value: &str) -> String 
 }
 
 /// Extract the timestamp from a list entry name (format: `<timestamp>-<hash>`).
+#[must_use]
 pub fn parse_timestamp_from_entry_name(name: &str) -> Option<i64> {
     let idx = name.find('-')?;
     name[..idx].parse().ok()

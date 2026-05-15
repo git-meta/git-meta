@@ -41,7 +41,7 @@ struct SetupConfig {
 /// contains no usable URL, or if the underlying `remote add` fails (e.g.
 /// the remote name is already configured or the push to the new remote
 /// fails).
-pub fn run() -> Result<()> {
+pub(crate) fn run() -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let repo = ctx.session.repo();
 

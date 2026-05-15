@@ -50,13 +50,13 @@ fn env_decision() -> Option<bool> {
 
 /// Whether stdout output should include ANSI color escape sequences.
 #[must_use]
-pub fn use_color_stdout() -> bool {
+pub(crate) fn use_color_stdout() -> bool {
     env_decision().unwrap_or_else(|| std::io::stdout().is_terminal())
 }
 
 /// Whether stderr output should include ANSI color escape sequences.
 #[must_use]
-pub fn use_color_stderr() -> bool {
+pub(crate) fn use_color_stderr() -> bool {
     env_decision().unwrap_or_else(|| std::io::stderr().is_terminal())
 }
 
@@ -69,22 +69,21 @@ pub fn use_color_stderr() -> bool {
 /// When color is disabled the wrap functions return their input verbatim
 /// (no allocation surprises beyond the unavoidable owned `String`),
 /// keeping colored and plain output a single code path.
-pub struct Style {
+#[must_use]
+pub(crate) struct Style {
     enabled: bool,
 }
 
 impl Style {
     /// Build a [`Style`] for messages written to stderr.
-    #[must_use]
-    pub fn detect_stderr() -> Self {
+    pub(crate) fn detect_stderr() -> Self {
         Self {
             enabled: use_color_stderr(),
         }
     }
 
     /// Build a [`Style`] for messages written to stdout.
-    #[must_use]
-    pub fn detect_stdout() -> Self {
+    pub(crate) fn detect_stdout() -> Self {
         Self {
             enabled: use_color_stdout(),
         }
@@ -93,16 +92,14 @@ impl Style {
     /// Build a [`Style`] that always emits color, regardless of
     /// environment or TTY state. Intended for tests.
     #[cfg(test)]
-    #[must_use]
-    pub fn always() -> Self {
+    pub(crate) fn always() -> Self {
         Self { enabled: true }
     }
 
     /// Build a [`Style`] that never emits color. Intended for tests and
     /// for places that want explicit plain output.
     #[cfg(test)]
-    #[must_use]
-    pub fn never() -> Self {
+    pub(crate) fn never() -> Self {
         Self { enabled: false }
     }
 
@@ -111,7 +108,7 @@ impl Style {
     /// padding that should account for zero-width SGR sequences).
     #[allow(dead_code)]
     #[must_use]
-    pub fn is_enabled(&self) -> bool {
+    pub(crate) fn is_enabled(&self) -> bool {
         self.enabled
     }
 
@@ -128,7 +125,7 @@ impl Style {
     /// Use for the leading verb of a progress line: `Checking`,
     /// `Fetching`, `Hydrating`, `Initializing`, etc.
     #[must_use]
-    pub fn step(&self, text: &str) -> String {
+    pub(crate) fn step(&self, text: &str) -> String {
         self.wrap("1;36", text)
     }
 
@@ -138,25 +135,25 @@ impl Style {
     /// post-action confirmations (`Added`, `Created`, `Reusing`,
     /// `Indexed`).
     #[must_use]
-    pub fn ok(&self, text: &str) -> String {
+    pub(crate) fn ok(&self, text: &str) -> String {
         self.wrap("1;32", text)
     }
 
     /// Style `text` as a warning label (bold yellow).
     #[must_use]
-    pub fn warn(&self, text: &str) -> String {
+    pub(crate) fn warn(&self, text: &str) -> String {
         self.wrap("1;33", text)
     }
 
     /// Style `text` as an error label (bold red).
     #[must_use]
-    pub fn err(&self, text: &str) -> String {
+    pub(crate) fn err(&self, text: &str) -> String {
         self.wrap("1;31", text)
     }
 
     /// Style `text` as a de-emphasized detail (dim).
     #[must_use]
-    pub fn dim(&self, text: &str) -> String {
+    pub(crate) fn dim(&self, text: &str) -> String {
         self.wrap("2", text)
     }
 
@@ -165,7 +162,7 @@ impl Style {
     /// "highlight" tier) doesn't require a second helper module.
     #[allow(dead_code)]
     #[must_use]
-    pub fn bold(&self, text: &str) -> String {
+    pub(crate) fn bold(&self, text: &str) -> String {
         self.wrap("1", text)
     }
 }

@@ -30,6 +30,7 @@ use time::OffsetDateTime;
 /// # Ok::<(), git_meta_lib::Error>(())
 /// ```
 #[derive(Debug)]
+#[must_use]
 pub struct Session {
     pub(crate) repo: gix::Repository,
     pub(crate) store: crate::db::Store,
@@ -68,7 +69,6 @@ impl Session {
     /// The value is milliseconds since the Unix epoch. When set,
     /// [`now()`](Self::now) returns this value instead of the wall clock.
     /// Useful for deterministic tests and replay scenarios.
-    #[must_use]
     pub fn with_timestamp(mut self, timestamp_ms: i64) -> Self {
         self.timestamp_override = Some(timestamp_ms);
         self

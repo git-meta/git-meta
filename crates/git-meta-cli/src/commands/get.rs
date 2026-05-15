@@ -9,7 +9,7 @@ use git_meta_lib::types::{Target, TargetType, ValueType};
 
 const NODE_VALUE_KEY: &str = "__value";
 
-pub fn run(
+pub(crate) fn run(
     target_str: &str,
     key: Option<&str>,
     json_output: bool,

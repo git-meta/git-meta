@@ -26,7 +26,6 @@ impl Key {
     ///
     /// For [`TargetType::Project`] targets, the returned [`Target`] has no value.
     /// For all other target types, the target value is included.
-    #[must_use]
     pub fn to_target(&self) -> Target {
         if self.target_type == TargetType::Project {
             Target::project()

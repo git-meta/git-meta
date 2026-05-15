@@ -37,7 +37,7 @@ fn print_result(action: &str, key: &str, target: &Target, json: bool) {
 ///
 /// Returns an error if both `value` and `file` are provided, neither is
 /// provided, the file cannot be read, or the underlying store operation fails.
-pub fn run(
+pub(crate) fn run(
     target_str: &str,
     key: &str,
     value: Option<&str>,
@@ -93,7 +93,7 @@ pub fn run(
 ///
 /// Returns an error if the target cannot be opened or the store fails to
 /// record the addition.
-pub fn run_add(
+pub(crate) fn run_add(
     target_str: &str,
     key: &str,
     value: &str,
@@ -114,7 +114,7 @@ pub fn run_add(
 ///
 /// Returns an error if the target cannot be opened or the store fails to
 /// record the removal.
-pub fn run_rm(
+pub(crate) fn run_rm(
     target_str: &str,
     key: &str,
     value: &str,

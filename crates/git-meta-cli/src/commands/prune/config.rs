@@ -5,7 +5,7 @@ use crate::context::CommandContext;
 use git_meta_lib::prune::{parse_size, read_prune_rules};
 use git_meta_lib::types::{MetaValue, Target};
 
-pub fn run() -> Result<()> {
+pub(crate) fn run() -> Result<()> {
     let ctx = CommandContext::open(None)?;
 
     let existing = read_prune_rules(ctx.session.store())?;
