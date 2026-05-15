@@ -15,6 +15,7 @@ use crate::types::Target;
 ///
 /// These rules control when and how automatic pruning of old metadata
 /// entries is triggered during serialization.
+#[derive(Debug)]
 pub struct PruneRules {
     /// The time window for retention (e.g. `"90d"`, `"6m"`, `"1y"`, or `"2025-01-01"`).
     pub since: String,

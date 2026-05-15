@@ -17,6 +17,7 @@ use serde_json::{Map, Value};
 /// handle.set("agent:model", "claude")?;
 /// let val = handle.get_value("agent:model")?;
 /// ```
+#[derive(Debug)]
 pub struct SessionTargetHandle<'a> {
     session: &'a Session,
     target: Target,

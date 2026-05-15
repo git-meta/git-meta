@@ -62,6 +62,8 @@
 //! blob data is fetched on demand when accessed. The [`Session::pull()`] method
 //! automatically indexes historical keys for lazy loading.
 
+#![warn(missing_debug_implementations)]
+
 /// Typed error types for all gmeta operations.
 pub mod error;
 
