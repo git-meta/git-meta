@@ -16,7 +16,7 @@ VAL_TREE1=$(printf '100644 blob %s\t__value\n' "$BLOB1" | git mktree)
 PROJ_TREE1=$(printf '040000 tree %s\told_key\n' "$VAL_TREE1" | git mktree)
 ROOT_TREE1=$(printf '040000 tree %s\tproject\n' "$PROJ_TREE1" | git mktree)
 
-COMMIT1=$(printf 'gmeta: serialize (1 changes)\n\nA\tproject\told_key' \
+COMMIT1=$(printf 'git-meta: serialize (1 changes)\n\nA\tproject\told_key' \
     | git commit-tree "$ROOT_TREE1")
 
 # --- Commit 2 (tip): both old_key and testing ---
@@ -27,7 +27,7 @@ PROJ_TREE2=$(printf '040000 tree %s\told_key\n040000 tree %s\ttesting\n' \
     "$VAL_TREE1" "$VAL_TREE2" | git mktree)
 ROOT_TREE2=$(printf '040000 tree %s\tproject\n' "$PROJ_TREE2" | git mktree)
 
-COMMIT2=$(printf 'gmeta: serialize (1 changes)\n\nA\tproject\ttesting' \
+COMMIT2=$(printf 'git-meta: serialize (1 changes)\n\nA\tproject\ttesting' \
     | git commit-tree "$ROOT_TREE2" -p "$COMMIT1")
 
 git update-ref "refs/meta/main" "$COMMIT2"

@@ -2,11 +2,11 @@ use anyhow::Result;
 
 use git_meta_lib::Session;
 
-/// CLI command context: a gmeta [`Session`] with optional timestamp override.
+/// CLI command context: a git-meta [`Session`] with optional timestamp override.
 ///
 /// Access session methods directly via `ctx.session`.
 pub struct CommandContext {
-    /// The gmeta session (repo + store + config + timestamp).
+    /// The git-meta session (repo + store + config + timestamp).
     pub session: Session,
 }
 

@@ -1,11 +1,11 @@
-//! # gmeta
+//! # git-meta
 //!
 //! A library for storing and exchanging structured metadata in Git repositories.
-//! This is the reference implementation of the [gmeta spec](https://git-meta.com/).
+//! This is the reference implementation of the [git-meta spec](https://git-meta.com/).
 //!
 //! ## Core Concepts
 //!
-//! gmeta attaches key-value metadata to **targets** in a Git project:
+//! git-meta attaches key-value metadata to **targets** in a Git project:
 //!
 //! - **Commits** — attach agent info, review status, provenance to specific commits
 //! - **Paths** — attach code ownership, agent rules to directories or files
@@ -57,14 +57,14 @@
 //!
 //! ## Blobless Clone Support
 //!
-//! For large metadata histories (e.g., AI transcripts), gmeta supports Git's
+//! For large metadata histories (e.g., AI transcripts), git-meta supports Git's
 //! partial/blobless clone feature. Only tree objects are fetched initially;
 //! blob data is fetched on demand when accessed. The [`Session::pull()`] method
 //! automatically indexes historical keys for lazy loading.
 
 #![warn(missing_debug_implementations)]
 
-/// Typed error types for all gmeta operations.
+/// Typed error types for all git-meta operations.
 pub mod error;
 
 /// The library entry point: a session combining a git repo with a metadata store.

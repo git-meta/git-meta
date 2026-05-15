@@ -28,7 +28,7 @@ pub struct CommitChange {
 /// Returns `None` if the message is not a serialize commit or if changes were
 /// omitted (too many to inline).
 ///
-/// Accepts the current `git-meta: serialize` prefix and the legacy `gmeta: serialize`
+/// Accepts the current `git-meta: serialize` prefix and the legacy `git-meta: serialize`
 /// prefix so historical metadata histories remain readable.
 ///
 /// Each entry describes an operation (add/modify/delete), the target, and key.
@@ -97,7 +97,7 @@ pub fn commit_changes_omitted(message: &str) -> bool {
 }
 
 fn is_serialize_commit_message(message: &str) -> bool {
-    message.starts_with("git-meta: serialize") || message.starts_with("gmeta: serialize")
+    message.starts_with("git-meta: serialize") || message.starts_with("git-meta: serialize")
 }
 
 /// Walk non-tip commits and insert promisor entries for keys mentioned
@@ -318,8 +318,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_commit_changes_legacy_gmeta_prefix() {
-        let msg = "gmeta: serialize (1 changes)\n\nA\tproject\told_key";
+    fn test_parse_commit_changes_legacy_git_meta_prefix() {
+        let msg = "git-meta: serialize (1 changes)\n\nA\tproject\told_key";
         let changes = parse_commit_changes(msg).unwrap();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].key, "old_key");

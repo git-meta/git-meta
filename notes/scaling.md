@@ -1,4 +1,4 @@
-# gmeta — Scaling Issues
+# git-meta — Scaling Issues
 
 ## Scaling Analysis
 

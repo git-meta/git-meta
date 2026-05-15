@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use time::OffsetDateTime;
 
-/// A session combining a Git repository with its gmeta metadata store.
+/// A session combining a Git repository with its git-meta metadata store.
 ///
-/// This is the primary entry point for gmeta consumers. It owns the
+/// This is the primary entry point for git-meta consumers. It owns the
 /// `gix::Repository`, the SQLite [`Store`](crate::db::Store), and resolved
 /// configuration values (namespace, user email).
 ///

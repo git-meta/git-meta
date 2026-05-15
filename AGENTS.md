@@ -1,11 +1,11 @@
 ---
-description: "gmeta reference implementation engineering guide for Claude/Codex agents: Rust architecture, testing, documentation"
+description: "git-meta reference implementation engineering guide for Claude/Codex agents: Rust architecture, testing, documentation"
 alwaysApply: true
 ---
 
-# Gmeta Engineering Guide
+# git-meta Engineering Guide
 
-This is a reference implementation of the gmeta spec ([docs](https://git-meta.com/))
+This is a reference implementation of the git-meta spec ([docs](https://git-meta.com/))
 
 ## Rust Style and Idioms
 

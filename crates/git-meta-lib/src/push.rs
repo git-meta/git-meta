@@ -81,7 +81,7 @@ pub enum PushProgress {
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `remote`: optional remote name to push to. If `None`, the first
 ///   configured metadata remote is used.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
@@ -106,7 +106,7 @@ pub fn push_once(session: &Session, remote: Option<&str>, now: i64) -> Result<Pu
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `remote`: optional remote name to push to. If `None`, the first
 ///   configured metadata remote is used.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch.
@@ -251,7 +251,7 @@ fn should_serialize_before_push(
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `remote`: optional remote name. If `None`, the first configured
 ///   metadata remote is used.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
@@ -268,7 +268,7 @@ pub fn resolve_push_conflict(session: &Session, remote: Option<&str>, now: i64) 
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `remote`: optional remote name. If `None`, the first configured
 ///   metadata remote is used.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch.

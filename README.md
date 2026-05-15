@@ -60,7 +60,7 @@ The current solutions (commit headers, CODEOWNERS type files, commit message tra
 - **Fileset pollution** (CODEOWNERS, CLAUDE.md)
 - **Not scalable** (millions of git notes?)
 
-## The gmeta proposal
+## The git-meta proposal
 
 Ok, so that's the landscape. This project is a proposal and reference implementation for a metadata solution for Git projects that attempts to nicely address most/all of this.
 
@@ -323,7 +323,7 @@ However, what if we want a value for some older target/key? Maybe we're doing a 
 
 It is really pretty simple with this scheme to construct a list of every `target, key, value-blob` tuple in even quite extensive histories. We can simply walk the commit history and do a diff of every non-prune commit to construct a list of all the tree entries we've seen introduced or modified at any point.
 
-As a benchmark, I created a test history of metadata in a gmeta format that was 10k metadata commits long, containing metadata for nearly 550k unique commit targets. The tip only contained data for around 4k commit targets and the history was pruned 120 times in it's history.
+As a benchmark, I created a test history of metadata in a git-meta format that was 10k metadata commits long, containing metadata for nearly 550k unique commit targets. The tip only contained data for around 4k commit targets and the history was pruned 120 times in it's history.
 
 I was able to reconstruct the entire list of 550k commit target shas and metadata keys in about 15 seconds.
 
