@@ -20,17 +20,17 @@ use serde_json::{Map, Value};
 #[derive(Debug)]
 pub struct SessionTargetHandle<'a> {
     session: &'a Session,
-    target: Target,
+    target: &'a Target,
 }
 
 impl<'a> SessionTargetHandle<'a> {
-    pub(crate) fn new(session: &'a Session, target: Target) -> Self {
+    pub(crate) fn new(session: &'a Session, target: &'a Target) -> Self {
         Self { session, target }
     }
 
     /// Get a metadata value by key.
     pub fn get_value(&self, key: &str) -> Result<Option<MetaValue>> {
-        self.session.store.get_value(&self.target, key)
+        self.session.store.get_value(self.target, key)
     }
 
     /// Set a metadata value with convenience conversion.
@@ -47,7 +47,7 @@ impl<'a> SessionTargetHandle<'a> {
     pub fn set(&self, key: &str, value: impl Into<MetaValue>) -> Result<()> {
         let meta_value = value.into();
         self.session.store.set_value(
-            &self.target,
+            self.target,
             key,
             &meta_value,
             self.session.email(),
@@ -166,7 +166,7 @@ impl<'a> SessionTargetHandle<'a> {
     pub fn remove(&self, key: &str) -> Result<bool> {
         self.session
             .store
-            .remove(&self.target, key, self.session.email(), self.session.now())
+            .remove(self.target, key, self.session.email(), self.session.now())
     }
 
     /// Push a value onto a list.
@@ -174,7 +174,7 @@ impl<'a> SessionTargetHandle<'a> {
     /// Uses the session's email and timestamp automatically.
     pub fn list_push(&self, key: &str, value: &str) -> Result<()> {
         self.session.store.list_push(
-            &self.target,
+            self.target,
             key,
             value,
             self.session.email(),
@@ -190,12 +190,9 @@ impl<'a> SessionTargetHandle<'a> {
         &self,
         edits: impl IntoIterator<Item = crate::MetaEdit<'b>>,
     ) -> Result<()> {
-        self.session.store.apply_edits(
-            &self.target,
-            edits,
-            self.session.email(),
-            self.session.now(),
-        )
+        self.session
+            .store
+            .apply_edits(self.target, edits, self.session.email(), self.session.now())
     }
 
     /// Pop a value from a list.
@@ -203,7 +200,7 @@ impl<'a> SessionTargetHandle<'a> {
     /// Uses the session's email and timestamp automatically.
     pub fn list_pop(&self, key: &str, value: &str) -> Result<()> {
         self.session.store.list_pop(
-            &self.target,
+            self.target,
             key,
             value,
             self.session.email(),
@@ -216,7 +213,7 @@ impl<'a> SessionTargetHandle<'a> {
     /// Uses the session's email and timestamp automatically.
     pub fn list_remove(&self, key: &str, index: usize) -> Result<()> {
         self.session.store.list_remove(
-            &self.target,
+            self.target,
             key,
             index,
             self.session.email(),
@@ -229,7 +226,7 @@ impl<'a> SessionTargetHandle<'a> {
     /// Uses the session's email and timestamp automatically.
     pub fn set_add(&self, key: &str, value: &str) -> Result<()> {
         self.session.store.set_add(
-            &self.target,
+            self.target,
             key,
             value,
             self.session.email(),
@@ -242,7 +239,7 @@ impl<'a> SessionTargetHandle<'a> {
     /// Uses the session's email and timestamp automatically.
     pub fn set_remove(&self, key: &str, value: &str) -> Result<()> {
         self.session.store.set_remove(
-            &self.target,
+            self.target,
             key,
             value,
             self.session.email(),
@@ -252,7 +249,7 @@ impl<'a> SessionTargetHandle<'a> {
 
     /// The target this handle is scoped to.
     pub fn target(&self) -> &Target {
-        &self.target
+        self.target
     }
 
     /// Get all metadata for this target as typed (key, value) pairs.
@@ -272,7 +269,7 @@ impl<'a> SessionTargetHandle<'a> {
     ///
     /// Returns an error if the database read or deserialization fails.
     pub fn get_all_values(&self, prefix: Option<&str>) -> Result<Vec<(String, MetaValue)>> {
-        let entries = self.session.store.get_all(&self.target, prefix)?;
+        let entries = self.session.store.get_all(self.target, prefix)?;
         let mut result = Vec::with_capacity(entries.len());
         for entry in entries {
             let meta_value = match entry.value_type {
@@ -311,7 +308,7 @@ impl<'a> SessionTargetHandle<'a> {
     /// Returns an error if the key is missing, the value is not a list, or
     /// the database read fails.
     pub fn list_entries(&self, key: &str) -> Result<Vec<crate::list_value::ListEntry>> {
-        self.session.store.list_entries(&self.target, key)
+        self.session.store.list_entries(self.target, key)
     }
 
     /// Get authorship info (last author email and timestamp) for a key on this target.
@@ -329,6 +326,6 @@ impl<'a> SessionTargetHandle<'a> {
     ///
     /// Returns an error if the database read fails.
     pub fn get_authorship(&self, key: &str) -> Result<Option<crate::db::types::Authorship>> {
-        self.session.store.get_authorship(&self.target, key)
+        self.session.store.get_authorship(self.target, key)
     }
 }

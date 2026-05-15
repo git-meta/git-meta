@@ -158,11 +158,11 @@ impl Session {
     /// let handle = session.target(&Target::parse("commit:abc123")?);
     /// handle.set_value("key", &MetaValue::String("value".into()))?;
     /// ```
-    pub fn target(
-        &self,
-        target: &crate::types::Target,
-    ) -> crate::session_handle::SessionTargetHandle<'_> {
-        crate::session_handle::SessionTargetHandle::new(self, target.clone())
+    pub fn target<'a>(
+        &'a self,
+        target: &'a crate::types::Target,
+    ) -> crate::session_handle::SessionTargetHandle<'a> {
+        crate::session_handle::SessionTargetHandle::new(self, target)
     }
 
     /// Resolve a target's partial commit SHA using this session's repository.

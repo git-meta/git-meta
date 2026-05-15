@@ -7,7 +7,8 @@ const CONFIG_PREFIX: &str = "meta:";
 
 pub fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str>) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let handle = ctx.session.target(&project_target());
+    let project_target = project_target();
+    let handle = ctx.session.target(&project_target);
 
     if list {
         return run_list(&handle);
