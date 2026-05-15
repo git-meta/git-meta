@@ -66,7 +66,7 @@ pub struct MaterializeOutput {
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `remote`: optional remote name filter. If `None`, all remotes are materialized.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
 ///   used for database writes and the `last_materialized` marker.

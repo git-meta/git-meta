@@ -227,7 +227,7 @@ pub fn setup_bare_with_meta(ns: &str) -> TempDir {
 
 /// Build a bare repo with multiple git meta serialize commits for promisor tests.
 ///
-/// The commit messages use the legacy `gmeta: serialize` prefix on purpose,
+/// The commit messages use the legacy `git-meta: serialize` prefix on purpose,
 /// to exercise the parser's backward-compatibility path.
 ///
 /// The repo has 2 commits on `refs/meta/main`:
@@ -258,7 +258,7 @@ pub fn setup_bare_with_history() -> TempDir {
         .expect("should insert old_key");
     let root_tree_oid1 = editor1.write().expect("should write tree").detach();
 
-    let commit1_msg = "gmeta: serialize (1 changes)\n\nA\tproject\told_key";
+    let commit1_msg = "git-meta: serialize (1 changes)\n\nA\tproject\told_key";
     let commit1_obj = gix::objs::Commit {
         message: commit1_msg.into(),
         tree: root_tree_oid1,
@@ -288,7 +288,7 @@ pub fn setup_bare_with_history() -> TempDir {
         .expect("should insert testing");
     let root_tree_oid2 = editor2.write().expect("should write tree").detach();
 
-    let commit2_msg = "gmeta: serialize (1 changes)\n\nA\tproject\ttesting";
+    let commit2_msg = "git-meta: serialize (1 changes)\n\nA\tproject\ttesting";
     let commit2_obj = gix::objs::Commit {
         message: commit2_msg.into(),
         tree: root_tree_oid2,
@@ -454,7 +454,7 @@ pub fn setup_bare_with_history_retained() -> TempDir {
         .expect("should insert old_key");
     let root_tree_oid1 = editor1.write().expect("should write tree").detach();
 
-    let commit1_msg = "gmeta: serialize (1 changes)\n\nA\tproject\told_key";
+    let commit1_msg = "git-meta: serialize (1 changes)\n\nA\tproject\told_key";
     let commit1_obj = gix::objs::Commit {
         message: commit1_msg.into(),
         tree: root_tree_oid1,
@@ -491,7 +491,7 @@ pub fn setup_bare_with_history_retained() -> TempDir {
         .expect("should insert testing");
     let root_tree_oid2 = editor2.write().expect("should write tree").detach();
 
-    let commit2_msg = "gmeta: serialize (1 changes)\n\nA\tproject\ttesting";
+    let commit2_msg = "git-meta: serialize (1 changes)\n\nA\tproject\ttesting";
     let commit2_obj = gix::objs::Commit {
         message: commit2_msg.into(),
         tree: root_tree_oid2,

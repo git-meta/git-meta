@@ -1,6 +1,6 @@
-//! Shared types for the gmeta tree format.
+//! Shared types for the git-meta tree format.
 //!
-//! These types represent the in-memory model of a serialized gmeta tree:
+//! These types represent the in-memory model of a serialized git-meta tree:
 //! values, tombstones, and the parsed tree structure itself.
 
 use std::collections::BTreeMap;
@@ -60,7 +60,7 @@ pub struct Tombstone {
     pub email: String,
 }
 
-/// The fully parsed contents of a serialized gmeta Git tree.
+/// The fully parsed contents of a serialized git-meta Git tree.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ParsedTree {
     /// Metadata values keyed by `(target_type, target_value, key)`.

@@ -1,4 +1,4 @@
-//! Merge algorithms for gmeta tree conflict resolution.
+//! Merge algorithms for git-meta tree conflict resolution.
 //!
 //! Provides three-way and two-way merge strategies for combining metadata
 //! trees from different sources, along with tombstone merging logic.

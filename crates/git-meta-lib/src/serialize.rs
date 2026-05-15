@@ -123,7 +123,7 @@ pub enum SerializeProgress {
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
 ///   used for the commit signature and the `last_materialized` marker.
 /// - `force_full`: when true, ignore incremental dirty-target detection and
@@ -145,7 +145,7 @@ pub fn run(session: &Session, now: i64, force_full: bool) -> Result<SerializeOut
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
 ///   used for the commit signature and the `last_materialized` marker.
 /// - `force_full`: when true, ignore incremental dirty-target detection and

@@ -1,4 +1,4 @@
-/// Typed error enum for all gmeta operations.
+/// Typed error enum for all git-meta operations.
 ///
 /// Covers database, git, parsing, and domain-specific errors.
 /// External consumers can match on variants to handle specific failure modes.

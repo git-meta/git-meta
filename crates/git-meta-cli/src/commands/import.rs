@@ -1549,9 +1549,9 @@ fn import_checkpoints_from_commits(
                         ("files-changed", &["filesChanged", "files_changed"]),
                         ("token-usage", &["tokenUsage", "token_usage"]),
                     ];
-                    for (gmeta_key, aliases) in checkpoint_fields {
+                    for (git_meta_key, aliases) in checkpoint_fields {
                         if let Some(val) = aliases.iter().find_map(|a| meta.get(*a)) {
-                            let key = format!("agent:{gmeta_key}");
+                            let key = format!("agent:{git_meta_key}");
                             let json_val = json_encode_value(val)?;
                             count += set_value(
                                 repo,
@@ -1636,9 +1636,9 @@ fn import_session(
             ("sessionId", "session-id"),
             ("session_id", "session-id"),
         ];
-        for (json_key, gmeta_key) in &string_fields {
+        for (json_key, git_meta_key) in &string_fields {
             if let Some(val) = meta.get(json_key) {
-                let key = format!("{key_prefix}:{gmeta_key}");
+                let key = format!("{key_prefix}:{git_meta_key}");
                 let json_val = json_encode_value(val)?;
                 count += set_value(
                     repo,
@@ -1662,9 +1662,9 @@ fn import_session(
             ("tokenUsage", "token-usage"),
             ("token_usage", "token-usage"),
         ];
-        for (json_key, gmeta_key) in &object_fields {
+        for (json_key, git_meta_key) in &object_fields {
             if let Some(val) = meta.get(json_key) {
-                let key = format!("{key_prefix}:{gmeta_key}");
+                let key = format!("{key_prefix}:{git_meta_key}");
                 let json_val = json_encode_value(val)?;
                 count += set_value(
                     repo,

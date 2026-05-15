@@ -37,7 +37,7 @@ pub struct PullOutput {
 ///
 /// # Parameters
 ///
-/// - `session`: the gmeta session providing the repository, store, and config.
+/// - `session`: the git-meta session providing the repository, store, and config.
 /// - `remote`: optional remote name to pull from. If `None`, the first
 ///   configured metadata remote is used.
 /// - `now`: the current timestamp in milliseconds since the Unix epoch,
