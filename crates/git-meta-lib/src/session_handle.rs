@@ -182,10 +182,12 @@ impl<'a> SessionTargetHandle<'a> {
         )
     }
 
-    /// Apply list/set edits in one transaction.
+    /// Apply metadata edits in one transaction.
     ///
     /// Empty edit batches are no-ops. If any edit fails, none of the batch is
-    /// committed. The session email and timestamp are used for every edit.
+    /// committed. The session email and timestamp are used for every edit. List
+    /// entry timestamps are adjusted only for list append edits, and edits that
+    /// touch the same key are applied in caller-provided order.
     pub fn apply_edits<'b>(
         &self,
         edits: impl IntoIterator<Item = crate::MetaEdit<'b>>,

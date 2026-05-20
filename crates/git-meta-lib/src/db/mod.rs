@@ -689,6 +689,7 @@ mod tests {
         .unwrap();
         db.set_add(&target, "event-hashes", "hash-0", "a@b.com", 1000)
             .unwrap();
+        let summary = crate::MetaValue::String("new summary".to_string());
         let entries = vec![
             ListEntry {
                 value: "first".to_string(),
@@ -704,6 +705,7 @@ mod tests {
         db.apply_edits(
             &target,
             [
+                crate::MetaEdit::set_value("summary", &summary),
                 crate::MetaEdit::list_append("events", &entries),
                 crate::MetaEdit::set_add("event-hashes", &members),
             ],
@@ -715,6 +717,7 @@ mod tests {
         let events = db.get(&target, "events").unwrap().unwrap();
         let hashes = db.get(&target, "event-hashes").unwrap().unwrap();
 
+        assert_eq!(db.get_value(&target, "summary").unwrap(), Some(summary));
         assert_eq!(
             crate::list_value::list_values_from_json(&events.value).unwrap(),
             vec!["legacy", "first", "second"]
@@ -751,6 +754,7 @@ mod tests {
             1000,
         )
         .unwrap();
+        let summary = crate::MetaValue::String("should roll back".to_string());
         let entries = vec![ListEntry {
             value: "first".to_string(),
             timestamp: 1000,
@@ -761,6 +765,7 @@ mod tests {
             .apply_edits(
                 &target,
                 [
+                    crate::MetaEdit::set_value("summary", &summary),
                     crate::MetaEdit::list_append("events", &entries),
                     crate::MetaEdit::set_add("event-hashes", &members),
                 ],
@@ -769,18 +774,72 @@ mod tests {
             )
             .is_err());
 
-        assert!(db.get(&target, "events").unwrap().is_none());
-        let event_log_count: i64 = db
+        assert_eq!(db.get_value(&target, "summary").unwrap(), None);
+        assert_eq!(db.get_value(&target, "events").unwrap(), None);
+        assert_eq!(
+            db.get_value(&target, "event-hashes").unwrap(),
+            Some(crate::MetaValue::String("not-a-set".to_string()))
+        );
+
+        let batch_log_count: i64 = db
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM metadata_log
                  WHERE target_type = 'commit' AND target_value = 'abc123'
-                   AND key = 'events'",
+                   AND timestamp = 2000",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(event_log_count, 0);
+        assert_eq!(batch_log_count, 0);
+    }
+
+    #[test]
+    fn test_apply_edits_applies_same_key_edits_in_order() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        let first = crate::MetaValue::String("first".to_string());
+        let final_value = crate::MetaValue::String("final".to_string());
+        let entries = vec![ListEntry {
+            value: "second".to_string(),
+            timestamp: 1000,
+        }];
+
+        db.apply_edits(
+            &target,
+            [
+                crate::MetaEdit::set_value("events", &first),
+                crate::MetaEdit::list_append("events", &entries),
+            ],
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+        db.apply_edits(
+            &target,
+            [
+                crate::MetaEdit::list_append("notes", &entries),
+                crate::MetaEdit::set_value("notes", &final_value),
+            ],
+            "a@b.com",
+            3000,
+        )
+        .unwrap();
+
+        let Some(crate::MetaValue::List(events)) = db.get_value(&target, "events").unwrap() else {
+            panic!("expected events to be a list");
+        };
+        assert_eq!(
+            events
+                .iter()
+                .map(|entry| entry.value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
+        assert_eq!(
+            db.get_value(&target, "notes").unwrap(),
+            Some(crate::MetaValue::String("final".to_string()))
+        );
     }
 
     #[test]

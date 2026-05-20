@@ -31,6 +31,25 @@ fn handle_set_convenience() {
     );
 }
 
+#[test]
+fn handle_apply_edits_accepts_set_value() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+
+    let target = Target::project();
+    let handle = session.target(&target);
+    let summary = MetaValue::String("new summary".to_string());
+
+    handle
+        .apply_edits([MetaEdit::set_value("summary", &summary)])
+        .unwrap();
+
+    assert_eq!(
+        handle.get_value("summary").unwrap(),
+        Some(MetaValue::String("new summary".to_string()))
+    );
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
 struct AgentSource<'a> {
