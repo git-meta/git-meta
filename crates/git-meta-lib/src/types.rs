@@ -355,6 +355,13 @@ pub enum MetaEdit<'a> {
         /// Members to add.
         members: &'a [String],
     },
+    /// Replace a metadata key with a typed value.
+    SetValue {
+        /// The metadata key to replace.
+        key: &'a str,
+        /// Value to store.
+        value: &'a crate::MetaValue,
+    },
 }
 
 impl<'a> MetaEdit<'a> {
@@ -370,6 +377,11 @@ impl<'a> MetaEdit<'a> {
     /// Add members to a set value.
     pub fn set_add(key: &'a str, members: &'a [String]) -> Self {
         Self::SetAdd { key, members }
+    }
+
+    /// Replace a metadata key with a typed value.
+    pub fn set_value(key: &'a str, value: &'a crate::MetaValue) -> Self {
+        Self::SetValue { key, value }
     }
 }
 

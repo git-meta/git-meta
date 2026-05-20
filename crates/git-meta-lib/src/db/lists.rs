@@ -38,11 +38,12 @@ impl Store {
         Ok(())
     }
 
-    /// Apply list/set edits in one transaction.
+    /// Apply metadata edits in one transaction.
     ///
     /// Empty edit batches are no-ops. If any edit fails, none of the batch is
     /// committed. List entry timestamps are adjusted only when needed to keep
-    /// appended entries ordered after existing entries.
+    /// appended entries ordered after existing entries. Edits that touch the
+    /// same key are applied in caller-provided order.
     pub fn apply_edits<'a>(
         &self,
         target: &Target,
@@ -53,9 +54,9 @@ impl Store {
         let edits = edits.into_iter().collect::<Vec<_>>();
         for edit in &edits {
             let key = match edit {
-                crate::MetaEdit::ListAppend { key, .. } | crate::MetaEdit::SetAdd { key, .. } => {
-                    key
-                }
+                crate::MetaEdit::ListAppend { key, .. }
+                | crate::MetaEdit::SetAdd { key, .. }
+                | crate::MetaEdit::SetValue { key, .. } => key,
             };
             validate_key(key)?;
         }
@@ -69,6 +70,9 @@ impl Store {
                 }
                 crate::MetaEdit::SetAdd { key, members } => {
                     self.add_set_members(target, key, members, email, timestamp)?;
+                }
+                crate::MetaEdit::SetValue { key, value } => {
+                    self.set_value(target, key, value, email, timestamp)?;
                 }
             }
         }
