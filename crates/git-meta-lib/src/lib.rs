@@ -24,6 +24,7 @@
 //! // Open a session for the current git repository
 //! let session = Session::discover()?;
 //! // or Session::open(path)?
+//! // or Session::from_repo(repo)?
 //!
 //! // Write metadata
 //! let commit = session.target(&Target::commit("abc123")?);

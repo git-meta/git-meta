@@ -80,3 +80,36 @@ fn session_provides_config_values() {
     assert_eq!(session.name(), "Test User");
     assert_eq!(session.namespace(), "meta");
 }
+
+#[test]
+fn session_open_supports_bare_repositories() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let _repo = gix::init_bare(dir.path()).unwrap();
+
+    let session = Session::open(dir.path()).unwrap();
+    let target = Target::project();
+    session.target(&target).set("key", "value").unwrap();
+
+    assert_eq!(
+        session.target(&target).get_value("key").unwrap(),
+        Some(MetaValue::String("value".to_owned()))
+    );
+    assert!(dir.path().join("git-meta.sqlite").exists());
+}
+
+#[test]
+fn session_from_repo_uses_preopened_repository() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let _repo = gix::init_bare(dir.path()).unwrap();
+    let repo = gix::open_opts(
+        dir.path(),
+        gix::open::Options::isolated()
+            .config_overrides(["user.name=Hosted Reader", "user.email=reader@example.com"]),
+    )
+    .unwrap();
+
+    let session = Session::from_repo(repo).unwrap();
+
+    assert_eq!(session.email(), "reader@example.com");
+    assert_eq!(session.name(), "Hosted Reader");
+}
