@@ -59,7 +59,7 @@
 <p>Could <code>ls-remote</code> the server and look for <code>refs/meta/*</code>, but should generally be <code>refs/meta/main</code>. Setup a fetch spec.</p>
 <pre><code>[remote &quot;meta&quot;]
         url = git@github.com:schacon/entire-meta.git
-        fetch = +refs/meta/main:refs/meta/remote/main
+        fetch = +refs/meta/main:refs/meta/remotes/main
         meta = true
         serialize = main[:refs/meta/main]
         promisor = true
@@ -70,8 +70,11 @@
 <p>After checking the source and setting up the Git remote, we do an initial blobless fetch of the ref.</p>
 <pre><code>git fetch --filter=blob:none meta refs/meta/main:refs/meta/remotes/main</code></pre>
 <p>Next we need to do the equivalent of a <code>git checkout</code> on that head, so Git will do the promisor remote &quot;want&quot; conversation to get everything in the tip tree.</p>
-<p>The best way to do this that I can find is to get all the blobs with <code>ls-tree</code> and pipe the list into <code>fetch</code> (with some complicated options) which seems to do what we want.</p>
-<pre><code>git ls-tree -r --object-only meta/remotes/main | git -c fetch.negotiationAlgorithm=noop fetch origin --no-tags --no-write-fetch-head --recurse-submodules=no --filter=blob:none --stdin</code></pre>
+<p>The best way to do this that I can find is to get all the blobs with <code>ls-tree</code> and pipe the list into <code>fetch</code> (with some complicated options) which seems to do what we want. The OID list must be sent in bounded batches, not as one giant request, because large metadata trees can otherwise exceed smart-HTTP request limits.</p>
+<pre><code>git ls-tree -r --object-only meta/remotes/main &gt; tip-oids
+
+# For each bounded chunk from tip-oids:
+git -c fetch.negotiationAlgorithm=noop fetch meta --no-tags --no-write-fetch-head --recurse-submodules=no --filter=blob:none --stdin &lt; tip-oids.batch</code></pre>
 <p>Now we have the tip tree data and can do some fast metadata lookups for recent stuff. If we need to get other blobs, we can do the same basic trick - figure out the list of blobs you need from the commit tree history, run them through <code>fetch</code> to get a packfile of them.</p>
 <p>It doesn&#x27;t have to be a top level tree, we could look up any set of blob values we want and send them to <code>fetch</code> this way. Imagine wanting all the metadata for a range of commits - we walk the history past prune metadata commits to the last times we&#x27;ve seen any of these SHAs and walk the subtress to see what all blobs are referenced in any of them and then _just_ ask for those dozens of content blobs.</p>
 <h2 id="pushing-and-pulling">Pushing and Pulling</h2>
@@ -103,7 +106,7 @@ count: 5432</code></pre>
 <h2 id="removing-a-remote-meta-source">Removing a remote meta source</h2>
 <p>A user may want to get rid of a meta source they are no longer using.</p>
 <p><code>git meta remote remove [name]</code></p>
-<p>It should remove the <code>.git/config</code> entry for that remote, any <code>refs/meta/local/<em></code> and any <code>refs/meta/remote/</em></code> pointers.</p>
+<p>It should remove the <code>.git/config</code> entry for that remote, any <code>refs/meta/local/<em></code> and any <code>refs/meta/remotes/</em></code> pointers.</p>
         </article>
       </main>
       <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#adding-a-remote-meta-source">Adding a remote meta source</a></li><li class="toc-h2"><a href="#pushing-and-pulling">Pushing and Pulling</a><ul class="toc-sub"><li class="toc-h3"><a href="#pushing">Pushing</a></li><li class="toc-h3"><a href="#pulling">Pulling</a></li><li class="toc-h3"><a href="#serializing-for-push">Serializing for Push</a></li><li class="toc-h3"><a href="#serialize-commit-messages">Serialize Commit Messages</a></li></ul></li><li class="toc-h2"><a href="#removing-a-remote-meta-source">Removing a remote meta source</a></li></ul></aside>

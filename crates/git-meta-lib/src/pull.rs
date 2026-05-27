@@ -76,10 +76,20 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
         .ok()
         .and_then(|r| r.into_fully_peeled_id().ok());
 
-    // Check if we need to materialize even if no new commits were fetched
-    // (e.g. remote add fetched but never materialized)
-    let needs_materialize = session.store.get_last_materialized()?.is_none()
-        || repo.find_reference(&session.local_ref()).is_err();
+    // Check if we need to materialize even if no new commits were fetched.
+    // A previous pull may have advanced the tracking ref before failing during
+    // hydration or materialization, so also verify the local ref contains the
+    // fetched remote tip before treating this pull as a no-op.
+    let local_ref = session.local_ref();
+    let last_materialized_missing = session.store.get_last_materialized()?.is_none();
+    let local_ref_missing = repo.find_reference(&local_ref).is_err();
+    let needs_materialize = last_materialized_missing
+        || local_ref_missing
+        || !local_ref_contains_tip(
+            repo,
+            &local_ref,
+            new_tip.as_ref().map(|tip| (*tip).detach()),
+        );
 
     // Count new commits
     let new_commits = match (old_tip.as_ref(), new_tip.as_ref()) {
@@ -113,7 +123,11 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     // in the history even though we haven't fetched their blob data yet.
     // On first materialize, walk the entire history (pass None as old_tip).
     let indexed_keys = if let Some(new) = new_tip {
-        let walk_from = if needs_materialize {
+        let tracking_ref_unchanged = old_tip.as_ref() == Some(&new);
+        let ref_state_needs_repair = tracking_ref_unchanged && needs_materialize;
+        let full_history_index =
+            last_materialized_missing || local_ref_missing || ref_state_needs_repair;
+        let walk_from = if full_history_index {
             None
         } else {
             old_tip.map(gix::Id::detach)
@@ -131,6 +145,29 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<PullOutp
     })
 }
 
+fn local_ref_contains_tip(
+    repo: &gix::Repository,
+    local_ref: &str,
+    remote_tip: Option<gix::ObjectId>,
+) -> bool {
+    let Some(remote_tip) = remote_tip else {
+        return true;
+    };
+    let Some(local_tip) = repo
+        .find_reference(local_ref)
+        .ok()
+        .and_then(|r| r.into_fully_peeled_id().ok())
+        .map(gix::Id::detach)
+    else {
+        return false;
+    };
+
+    local_tip == remote_tip
+        || repo
+            .merge_base(local_tip, remote_tip)
+            .is_ok_and(|base| base == remote_tip)
+}
+
 /// Count commits reachable from `new` but not from `old`.
 fn count_commits_between(repo: &gix::Repository, old: gix::ObjectId, new: gix::ObjectId) -> usize {
     let walk = repo.rev_walk(Some(new)).with_boundary(Some(old));
@@ -141,5 +178,85 @@ fn count_commits_between(repo: &gix::Repository, old: gix::ObjectId, new: gix::O
             .count()
             .saturating_sub(1),
         Err(_) => 0,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use gix::refs::transaction::PreviousValue;
+
+    use super::*;
+
+    #[test]
+    fn local_ref_contains_tip_when_local_descends_from_remote() {
+        let (_dir, repo) = setup_repo();
+        let remote_tip = write_commit(&repo, Vec::new());
+        let local_tip = write_commit(&repo, vec![remote_tip]);
+        repo.reference(
+            "refs/meta/local/main",
+            local_tip,
+            PreviousValue::Any,
+            "local metadata",
+        )
+        .unwrap();
+
+        assert!(local_ref_contains_tip(
+            &repo,
+            "refs/meta/local/main",
+            Some(remote_tip)
+        ));
+    }
+
+    #[test]
+    fn local_ref_does_not_contain_newer_remote_tip() {
+        let (_dir, repo) = setup_repo();
+        let local_tip = write_commit(&repo, Vec::new());
+        let remote_tip = write_commit(&repo, vec![local_tip]);
+        repo.reference(
+            "refs/meta/local/main",
+            local_tip,
+            PreviousValue::Any,
+            "local metadata",
+        )
+        .unwrap();
+
+        assert!(!local_ref_contains_tip(
+            &repo,
+            "refs/meta/local/main",
+            Some(remote_tip)
+        ));
+    }
+
+    fn setup_repo() -> (tempfile::TempDir, gix::Repository) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let _repo = gix::init(dir.path()).unwrap();
+        let repo = gix::open_opts(
+            dir.path(),
+            gix::open::Options::isolated()
+                .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
+        )
+        .unwrap();
+
+        (dir, repo)
+    }
+
+    fn write_commit(repo: &gix::Repository, parents: Vec<gix::ObjectId>) -> gix::ObjectId {
+        let tree_oid = repo.empty_tree().edit().unwrap().write().unwrap().detach();
+        let sig = gix::actor::Signature {
+            name: "Test User".into(),
+            email: "test@example.com".into(),
+            time: gix::date::Time::new(946684800, 0),
+        };
+        let commit = gix::objs::Commit {
+            message: "metadata".into(),
+            tree: tree_oid,
+            author: sig.clone(),
+            committer: sig,
+            encoding: None,
+            parents: parents.into(),
+            extra_headers: Default::default(),
+        };
+        repo.write_object(&commit).unwrap().detach()
     }
 }

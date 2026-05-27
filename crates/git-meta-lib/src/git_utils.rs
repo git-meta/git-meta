@@ -1,9 +1,15 @@
 //! Git repository helpers for resolving objects and manipulating metadata refs.
 
-use std::path::PathBuf;
+use std::fmt::Display;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{Error, Result};
+
+// 4000 SHA-1 OIDs plus newlines is roughly 164 KiB, safely below the
+// smart-HTTP request size that made GitHub reject one-shot tip hydration.
+const FETCH_OID_BATCH_SIZE: usize = 4000;
 
 /// Check if a tree entry name looks like a list entry (timestamp-hash format).
 pub(crate) fn is_list_entry_name(name: &str) -> bool {
@@ -135,45 +141,10 @@ pub fn hydrate_tip_blobs_counted(
 
     match blob_list {
         Ok(blobs) if !blobs.trim().is_empty() => {
-            let count = blobs.lines().count();
-            let workdir = repo_dir(repo)?;
+            let oids: Vec<&str> = blobs.lines().filter(|line| !line.is_empty()).collect();
+            let count = oids.len();
 
-            let mut child = Command::new("git")
-                .args([
-                    "-c",
-                    "fetch.negotiationAlgorithm=noop",
-                    "fetch",
-                    remote_name,
-                    "--no-tags",
-                    "--no-write-fetch-head",
-                    "--recurse-submodules=no",
-                    "--filter=blob:none",
-                    "--stdin",
-                ])
-                .current_dir(workdir)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .map_err(|e| Error::GitCommand(format!("{e}")))?;
-
-            if let Some(mut stdin) = child.stdin.take() {
-                use std::io::Write;
-                stdin
-                    .write_all(blobs.as_bytes())
-                    .map_err(|e| Error::GitCommand(format!("{e}")))?;
-            }
-
-            let output = child
-                .wait_with_output()
-                .map_err(|e| Error::GitCommand(format!("{e}")))?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(Error::GitCommand(format!(
-                    "blob hydration failed: {}",
-                    stderr.trim()
-                )));
-            }
+            fetch_oid_batches(repo, remote_name, &oids, "blob hydration")?;
 
             Ok(count)
         }
@@ -263,10 +234,36 @@ pub fn fetch_blob_oids(
         return Ok(());
     }
 
+    fetch_oid_batches(repo, remote_name, oids, "blob fetch")
+}
+
+fn fetch_oid_batches<T: Display>(
+    repo: &gix::Repository,
+    remote_name: &str,
+    oids: &[T],
+    operation: &str,
+) -> Result<()> {
     let workdir = repo_dir(repo)?;
 
-    let oid_list: String = oids.iter().map(|o| format!("{o}\n")).collect();
+    // GitHub rejects very large smart-HTTP request bodies. Keep each
+    // `fetch --stdin` want-list bounded while preserving sequential fetches.
+    for batch in oid_batches(oids) {
+        fetch_oid_batch(workdir, remote_name, batch, operation)?;
+    }
 
+    Ok(())
+}
+
+fn oid_batches<T>(oids: &[T]) -> impl Iterator<Item = &[T]> {
+    oids.chunks(FETCH_OID_BATCH_SIZE)
+}
+
+fn fetch_oid_batch<T: Display>(
+    workdir: &Path,
+    remote_name: &str,
+    batch: &[T],
+    operation: &str,
+) -> Result<()> {
     let mut child = Command::new("git")
         .args([
             "-c",
@@ -282,22 +279,39 @@ pub fn fetch_blob_oids(
         .current_dir(workdir)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| Error::GitCommand(format!("{e}")))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        use std::io::Write;
-        stdin
-            .write_all(oid_list.as_bytes())
-            .map_err(|e| Error::GitCommand(format!("{e}")))?;
-    }
+    let Some(mut stdin) = child.stdin.take() else {
+        return Err(Error::GitCommand(format!(
+            "{operation} failed: git fetch stdin was unavailable"
+        )));
+    };
+    let write_result = write_oid_batch(&mut stdin, batch);
+    drop(stdin);
 
     let output = child
         .wait_with_output()
         .map_err(|e| Error::GitCommand(format!("{e}")))?;
     if !output.status.success() {
-        return Err(Error::GitCommand("blob fetch failed".into()));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let write_error = write_result
+            .err()
+            .map_or_else(String::new, |e| format!(" (stdin write failed: {e})"));
+        return Err(Error::GitCommand(format!(
+            "{operation} failed{write_error}: {}",
+            stderr.trim()
+        )));
+    }
+
+    write_result.map_err(|e| Error::GitCommand(format!("{operation} failed: {e}")))?;
+    Ok(())
+}
+
+fn write_oid_batch<T: Display>(writer: &mut impl Write, batch: &[T]) -> io::Result<()> {
+    for oid in batch {
+        writeln!(writer, "{oid}")?;
     }
 
     Ok(())
@@ -455,5 +469,24 @@ mod tests {
         assert!(!is_list_entry_name("123-toolong"));
         assert!(!is_list_entry_name("123-abc")); // 3 chars, not 5
         assert!(!is_list_entry_name("-23c0f")); // empty timestamp
+    }
+
+    #[test]
+    fn oid_batches_splits_large_oid_lists() {
+        assert_eq!(FETCH_OID_BATCH_SIZE, 4000);
+
+        let oids = vec!["oid"; 4001];
+        let sizes: Vec<usize> = oid_batches(&oids).map(<[_]>::len).collect();
+
+        assert_eq!(sizes, vec![4000, 1]);
+    }
+
+    #[test]
+    fn write_oid_batch_terminates_each_oid() {
+        let mut payload = Vec::new();
+
+        write_oid_batch(&mut payload, &["abc", "def"]).unwrap();
+
+        assert_eq!(payload, b"abc\ndef\n");
     }
 }
