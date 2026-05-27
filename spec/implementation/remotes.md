@@ -15,7 +15,7 @@ Could `ls-remote` the server and look for `refs/meta/*`, but should generally be
 ```
 [remote "meta"]
         url = git@github.com:schacon/entire-meta.git
-        fetch = +refs/meta/main:refs/meta/remote/main
+        fetch = +refs/meta/main:refs/meta/remotes/main
         meta = true
         serialize = main[:refs/meta/main]
         promisor = true
@@ -36,10 +36,13 @@ git fetch --filter=blob:none meta refs/meta/main:refs/meta/remotes/main
 
 Next we need to do the equivalent of a `git checkout` on that head, so Git will do the promisor remote "want" conversation to get everything in the tip tree.
 
-The best way to do this that I can find is to get all the blobs with `ls-tree` and pipe the list into `fetch` (with some complicated options) which seems to do what we want.
+The best way to do this that I can find is to get all the blobs with `ls-tree` and pipe the list into `fetch` (with some complicated options) which seems to do what we want. The OID list must be sent in bounded batches, not as one giant request, because large metadata trees can otherwise exceed smart-HTTP request limits.
 
 ```
-git ls-tree -r --object-only meta/remotes/main | git -c fetch.negotiationAlgorithm=noop fetch origin --no-tags --no-write-fetch-head --recurse-submodules=no --filter=blob:none --stdin
+git ls-tree -r --object-only meta/remotes/main > tip-oids
+
+# For each bounded chunk from tip-oids:
+git -c fetch.negotiationAlgorithm=noop fetch meta --no-tags --no-write-fetch-head --recurse-submodules=no --filter=blob:none --stdin < tip-oids.batch
 ```
 
 Now we have the tip tree data and can do some fast metadata lookups for recent stuff. If we need to get other blobs, we can do the same basic trick - figure out the list of blobs you need from the commit tree history, run them through `fetch` to get a packfile of them.
@@ -101,4 +104,4 @@ A user may want to get rid of a meta source they are no longer using.
 
 `git meta remote remove [name]`
 
-It should remove the `.git/config` entry for that remote, any `refs/meta/local/*` and any `refs/meta/remote/*` pointers.
+It should remove the `.git/config` entry for that remote, any `refs/meta/local/*` and any `refs/meta/remotes/*` pointers.
