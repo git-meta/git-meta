@@ -741,7 +741,7 @@ fn record_serialize(
     metrics.metadata_commits += output.refs_written.len();
     *event_index += 1;
 
-    if metrics.events_written % checkpoint_every == 0 {
+    if metrics.events_written.is_multiple_of(checkpoint_every) {
         metrics.checkpoints.push(Checkpoint {
             events: metrics.events_written,
             metadata_commits: metrics.metadata_commits,
