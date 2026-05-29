@@ -201,6 +201,95 @@ fn rm_removes_value() {
 }
 
 #[test]
+fn clear_removes_key_namespace_across_targets() {
+    let (dir, sha) = setup_repo();
+    let commit = commit_target(&sha);
+    let branch = "branch:sc-branch-1-deadbeef";
+
+    for (target, key, value) in [
+        (commit.as_str(), "agent:model", "claude-4.6"),
+        (commit.as_str(), "agent:provider", "anthropic"),
+        (commit.as_str(), "other:key", "kept"),
+        (branch, "agent:model", "claude-4.6"),
+    ] {
+        harness::git_meta(dir.path())
+            .args(["set", target, key, value])
+            .assert()
+            .success();
+    }
+
+    harness::git_meta(dir.path())
+        .args(["clear", "agent"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cleared 3 entries"));
+
+    harness::git_meta(dir.path())
+        .args(["get", &commit, "agent"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+    harness::git_meta(dir.path())
+        .args(["get", branch, "agent"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+    harness::git_meta(dir.path())
+        .args(["get", &commit, "other"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kept"));
+}
+
+#[test]
+fn clear_removes_values_from_next_serialized_tree() {
+    let (dir, sha) = setup_repo();
+    let target = commit_target(&sha);
+
+    harness::git_meta(dir.path())
+        .args(["set", &target, "agent:model", "claude-4.6"])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["set", &target, "review:status", "approved"])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["clear", "agent"])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success();
+
+    let repo = open_repo(dir.path());
+    let commit_oid = ref_to_commit_oid(&repo, "refs/meta/local/main");
+    let commit_obj = commit_oid.attach(&repo).object().unwrap().into_commit();
+    let tree = commit_obj.tree().unwrap();
+    let mut entries = Vec::new();
+    walk_tree(&repo, tree.id, "", &mut entries);
+
+    assert!(
+        !entries
+            .iter()
+            .any(|(path, _)| path.ends_with("/agent/model/__value")),
+        "agent:model value should be absent from serialized tree"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|(path, value)| path.ends_with("/review/status/__value") && value == "approved"),
+        "unmatched review:status value should remain serialized"
+    );
+}
+
+#[test]
 fn upsert_overwrites() {
     let (dir, sha) = setup_repo();
     let target = commit_target(&sha);

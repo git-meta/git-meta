@@ -165,6 +165,18 @@ impl Session {
         crate::session_handle::SessionTargetHandle::new(self, target.clone())
     }
 
+    /// Remove all local metadata keys matching a key or key namespace.
+    ///
+    /// `key_prefix` matches either an exact key or keys below it in the
+    /// colon-separated namespace. For example, `agent` clears both `agent` and
+    /// `agent:model` across every target.
+    ///
+    /// Returns the number of metadata entries removed.
+    pub fn clear_key_prefix(&self, key_prefix: &str) -> crate::error::Result<usize> {
+        self.store
+            .clear_key_prefix(key_prefix, self.email(), self.now())
+    }
+
     /// Resolve a target's partial commit SHA using this session's repository.
     ///
     /// Returns a new target with the full SHA if the target was a partial commit,
