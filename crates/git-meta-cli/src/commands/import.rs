@@ -1143,7 +1143,7 @@ fn set_import_string(
     timestamp: i64,
 ) -> Result<u64> {
     let encoded = json_string(value);
-    let use_git_ref = encoded.len() > GIT_REF_THRESHOLD;
+    let use_git_ref = encoded.len() > db.object_max_size()?;
     if dry_run {
         eprintln!(
             "    [dry-run] {} {} = {}{}",
@@ -2036,7 +2036,8 @@ fn import_trails(
 }
 
 /// Store a value in the database (or just count it for dry run).
-/// Large string values (> GIT_REF_THRESHOLD bytes) are stored as git blob refs.
+/// Large string values (exceeding the configured object-size threshold, see
+/// `Store::object_max_size`) are stored as git blob refs.
 fn set_value(
     repo: &gix::Repository,
     db: Option<&Store>,
@@ -2049,7 +2050,11 @@ fn set_value(
     email: &str,
     timestamp: i64,
 ) -> Result<u64> {
-    let use_git_ref = *value_type == ValueType::String && value.len() > GIT_REF_THRESHOLD;
+    let object_max_size = match db {
+        Some(db) => db.object_max_size()?,
+        None => GIT_REF_THRESHOLD,
+    };
+    let use_git_ref = *value_type == ValueType::String && value.len() > object_max_size;
 
     if dry_run {
         eprintln!(
@@ -2279,7 +2284,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                     Some(commit_sha.clone()),
                 );
                 // agent.blame -- store as git blob ref if large
-                let (blame_val, is_ref) = if parsed.blame.len() > GIT_REF_THRESHOLD {
+                let (blame_val, is_ref) = if parsed.blame.len() > db.object_max_size()? {
                     let oid: gix::ObjectId = repo.write_blob(parsed.blame.as_bytes())?.into();
                     (oid.to_string(), true)
                 } else {

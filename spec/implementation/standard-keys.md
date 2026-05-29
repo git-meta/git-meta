@@ -282,6 +282,19 @@ meaning: minimum subtree size threshold passed through to the prune operation; t
 format: integer with optional human-friendly suffix (`512k`, `10m`)
 ```
 
+```key meta:sqlite:object-max-size
+type: string
+meaning: shared maximum string value size to store inline in the local SQLite database before offloading the value to a Git blob and storing the blob object ID
+format: integer byte count with optional human-friendly suffix (`512k`, `10m`, `1g`)
+default: `1024`
+```
+
+```key meta:local:sqlite:object-max-size
+type: string
+meaning: personal/local override for `meta:sqlite:object-max-size`; this key is never serialized
+format: integer byte count with optional human-friendly suffix (`512k`, `10m`, `1g`)
+```
+
 ```key meta:filter
 type: set
 meaning: shared serialization filter rules that exclude keys from serialization or route them to alternative refs

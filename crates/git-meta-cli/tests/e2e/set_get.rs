@@ -403,6 +403,82 @@ fn project_target() {
 }
 
 #[test]
+fn large_inline_value_stored_as_git_ref() {
+    let (dir, _sha) = setup_repo();
+    let big = "x".repeat(2048);
+
+    harness::git_meta(dir.path())
+        .args(["set", "project", "big:payload", &big])
+        .assert()
+        .success();
+
+    // Value still round-trips through the git blob.
+    harness::git_meta(dir.path())
+        .args(["get", "project", "big:payload"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(&big));
+
+    // And it was offloaded to a git ref rather than stored inline.
+    harness::git_meta(dir.path())
+        .args(["stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 values as git refs"));
+}
+
+#[test]
+fn object_max_size_config_keeps_large_value_inline() {
+    let (dir, _sha) = setup_repo();
+    let big = "x".repeat(2048);
+
+    // Raise the inline threshold above the value size.
+    harness::git_meta(dir.path())
+        .args(["config", "meta:sqlite:object-max-size", "1m"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["set", "project", "big:payload", &big])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 values as git refs"));
+}
+
+#[test]
+fn local_object_max_size_config_overrides_shared() {
+    let (dir, _sha) = setup_repo();
+    let big = "x".repeat(2048);
+
+    // Shared config raises the threshold, but the local override lowers it
+    // again so the value is offloaded to a git ref.
+    harness::git_meta(dir.path())
+        .args(["config", "meta:sqlite:object-max-size", "1m"])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["config", "meta:local:sqlite:object-max-size", "512"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["set", "project", "big:payload", &big])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 values as git refs"));
+}
+
+#[test]
 fn invalid_target_type() {
     let (dir, _sha) = setup_repo();
 

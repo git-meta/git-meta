@@ -3,7 +3,7 @@ use std::fs;
 use anyhow::{bail, Context, Result};
 
 use crate::context::CommandContext;
-use git_meta_lib::types::{MetaValue, Target, ValueType, GIT_REF_THRESHOLD};
+use git_meta_lib::types::{MetaValue, Target, ValueType};
 
 /// Print a one-line confirmation for a single-value mutation.
 fn print_result(action: &str, key: &str, target: &Target, json: bool) {
@@ -29,9 +29,12 @@ fn print_result(action: &str, key: &str, target: &Target, json: bool) {
 /// `git-meta set` only writes string values. Lists and sets have their own
 /// dedicated verbs (`list:push`, `list:pop`, `set:add`, `set:rm`).
 ///
-/// Either `value` or `file` must be provided. When `file` is set and the
-/// resulting payload exceeds [`GIT_REF_THRESHOLD`] bytes, the value is stored
-/// as a Git blob and only its OID is recorded in the database.
+/// Either `value` or `file` must be provided. When the resulting payload
+/// exceeds the configured object-size threshold (see
+/// `Store::object_max_size`, default 1 KiB, overridable via
+/// `meta:sqlite:object-max-size` / `meta:local:sqlite:object-max-size`), the
+/// value is stored as a Git blob and only its OID is recorded in the database.
+/// This applies to both inline values and `-F/--file` payloads.
 ///
 /// # Errors
 ///
@@ -48,7 +51,6 @@ pub(crate) fn run(
     let ctx = CommandContext::open(timestamp)?;
     let target = ctx.session.resolve_target(&Target::parse(target_str)?)?;
 
-    let from_file = file.is_some();
     let raw_value = match (value, file) {
         (Some(_), Some(_)) => bail!("cannot specify both a value and -F/--file"),
         (None, None) => bail!("must specify either a value or -F/--file"),
@@ -58,8 +60,9 @@ pub(crate) fn run(
         }
     };
 
-    // For large file imports (>1KB via -F), store as a git blob reference
-    let use_git_ref = from_file && raw_value.len() > GIT_REF_THRESHOLD;
+    // Values larger than the configured object-size threshold are stored as a
+    // git blob reference, whether they came inline or from -F/--file.
+    let use_git_ref = raw_value.len() > ctx.session.store().object_max_size()?;
 
     if use_git_ref {
         // Git-ref path: store large file as a blob, then record the OID.
