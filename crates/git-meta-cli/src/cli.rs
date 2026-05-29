@@ -73,8 +73,15 @@ pub(crate) enum Commands {
         key: String,
     },
 
+    /// Remove all local metadata keys matching a key or namespace
+    #[command(display_order = 13)]
+    Clear {
+        /// Key or key namespace to clear (e.g. agent or agent:model)
+        pattern: String,
+    },
+
     /// Push a value onto a list
-    #[command(name = "list:push", display_order = 13)]
+    #[command(name = "list:push", display_order = 14)]
     ListPush {
         /// Target in type:value format
         target: String,
@@ -87,7 +94,7 @@ pub(crate) enum Commands {
     },
 
     /// Pop a value from a list
-    #[command(name = "list:pop", display_order = 14)]
+    #[command(name = "list:pop", display_order = 15)]
     ListPop {
         /// Target in type:value format
         target: String,
@@ -100,7 +107,7 @@ pub(crate) enum Commands {
     },
 
     /// Show list entries with IDs, or remove one by index
-    #[command(name = "list:rm", display_order = 15)]
+    #[command(name = "list:rm", display_order = 16)]
     ListRm {
         /// Target in type:value format
         target: String,
@@ -113,7 +120,7 @@ pub(crate) enum Commands {
     },
 
     /// Add a member to a set
-    #[command(name = "set:add", display_order = 16)]
+    #[command(name = "set:add", display_order = 17)]
     SetAdd {
         /// Output as JSON
         #[arg(long)]
@@ -134,7 +141,7 @@ pub(crate) enum Commands {
     },
 
     /// Remove a member from a set
-    #[command(name = "set:rm", display_order = 17)]
+    #[command(name = "set:rm", display_order = 18)]
     SetRm {
         /// Output as JSON
         #[arg(long)]
@@ -307,18 +314,6 @@ pub(crate) enum Commands {
     /// Walk remote history and index keys as promisor entries
     #[command(display_order = 38, hide = true)]
     Promisor,
-
-    /// Watch agent transcripts and auto-attach to commits
-    #[command(display_order = 33, hide = true)]
-    Watch {
-        /// Agent to watch (default: claude)
-        #[arg(long, default_value = "claude")]
-        agent: String,
-
-        /// Seconds of inactivity before considering agent stopped
-        #[arg(long, default_value = "30")]
-        debounce: u64,
-    },
 
     /// Get or set project configuration (meta:* keys)
     #[command(display_order = 40)]
@@ -509,7 +504,7 @@ const HELP_GROUPS: &[HelpGroup] = &[
         sections: &[
             HelpSection {
                 label: Some("(strings)"),
-                commands: &["set", "get", "rm"],
+                commands: &["set", "get", "rm", "clear"],
             },
             HelpSection {
                 label: Some("(lists)"),
@@ -533,9 +528,16 @@ const HELP_GROUPS: &[HelpGroup] = &[
             },
             HelpSection {
                 label: None,
-                commands: &["show", "inspect", "log", "blame", "stats"],
+                commands: &["inspect", "log", "stats"],
             },
         ],
+    },
+    HelpGroup {
+        heading: "example helpers",
+        sections: &[HelpSection {
+            label: None,
+            commands: &["show", "blame", "import"],
+        }],
     },
     HelpGroup {
         heading: "low-level git ref operations (plumbing)",

@@ -378,6 +378,18 @@ fn pull_merges_with_local_data() {
 }
 
 #[test]
+fn sync_without_remote_suggests_setup() {
+    let (dir, _sha) = setup_repo();
+
+    harness::git_meta(dir.path())
+        .args(["sync"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no metadata remotes configured"))
+        .stderr(predicate::str::contains("git meta setup"));
+}
+
+#[test]
 fn sync_pulls_then_pushes() {
     let (dir, sha) = setup_repo();
     let bare_dir = setup_bare_with_meta("meta");
