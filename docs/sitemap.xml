@@ -2,7 +2,15 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://git-meta.com/</loc>
-    <lastmod>2026-04-22</lastmod>
+    <lastmod>2026-05-29</lastmod>
+  </url>
+  <url>
+    <loc>https://git-meta.com/blog/</loc>
+    <lastmod>2026-05-29</lastmod>
+  </url>
+  <url>
+    <loc>https://git-meta.com/blog/introducing-git-meta/</loc>
+    <lastmod>2026-05-29</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/</loc>
@@ -42,7 +50,7 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/cli.html</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-07</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/output.html</loc>
@@ -58,11 +66,11 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/standard-keys.html</loc>
-    <lastmod>2026-04-22</lastmod>
+    <lastmod>2026-05-29</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/remotes.html</loc>
-    <lastmod>2026-04-19</lastmod>
+    <lastmod>2026-05-29</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/auto-sync.html</loc>

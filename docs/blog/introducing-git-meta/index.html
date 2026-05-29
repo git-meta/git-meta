@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (() => {
+        const stored = localStorage.getItem("git-meta-theme");
+        document.documentElement.dataset.theme = stored || "system";
+      })();
+    </script>
+    <title>introducing git-meta · git-meta</title>
+    <meta name="description" content="A short introduction to git-meta, an open specification for structured metadata in Git." />
+    <link rel="icon" type="image/png" href="../../assets/git-meta-icon.png" />
+    <link rel="canonical" href="https://git-meta.com/blog/introducing-git-meta/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="../../index.html" aria-label="git-meta home">
+          <img class="brand-mark" src="../../assets/git-meta-icon.png" width="32" height="32" alt="" />
+          <span class="brand-name">git-meta</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="../../blog/">Blog</a>
+          <a href="../../spec/" class="nav-muted">Spec &rarr;</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap blog-page blog-post-page">
+      <div class="blog-post-main">
+        <p class="blog-kicker"><a href="../">blog</a> / 2026-05-29 / schacon</p>
+        <article class="blog-article">
+          <h1>introducing git-meta</h1>
+          <div class="blog-content">
+            <p>The <code>git-meta</code> project is basically another stab at <code>git notes</code> - a way to attach arbitrary metadata to things in Git without needing to rewrite information.</p>
+<p>If you&#x27;re familiar with <code>git notes</code>, you know that it allows you to attach a single blob of data to a single Git object (normally a commit) and use Git push/fetch commands to move them around. They are somewhat rarely used because of a number of shortcomings such as:</p>
+<ul><li>complexity around merging from two contributors</li><li>the limitation of one value per commit</li><li>the inability to attach data to other things like paths or the project as a whole</li><li>scalability issues</li><li>and more!</li></ul>
+<p>The <code>git-meta</code> project was started to address this. With <code>git-meta</code>, you can:</p>
+<ul><li>attach values to various types of targets in the project (branches, paths, commits, change-ids)</li><li>have namespaced key/value pairs (ie <code>agent:model</code> on a commit)</li><li>have rich value types (strings, sets or lists)</li><li>merge multi-user metadata easily</li><li>use multiple sharing targets</li><li>scale to many millions of keys easily</li><li>and more!</li></ul>
+<p>We created this specification, a Rust library, and a reference CLI implementation to allow everyone to easily attach and manage arbitrary metadata to various parts of their existing Git codebases with minimal difficulty.</p>
+<h2 id="simple-example">Simple example</h2>
+<p>Here&#x27;s how it works. You can install it with Cargo:</p>
+<pre><code>cargo install git-meta-cli</code></pre>
+<p>Then you have the <code>git-meta</code> CLI tool that can manage everything. Attach a new arbitrary value on a commit with the <code>git meta set</code> command:</p>
+<pre><code>❯ git meta set commit:314e7f0fa7 agent:model &quot;claude-opus-4-8[1m]&quot;</code></pre>
+<p>That will look up the commit, expand it to the full SHA and place a value under the key <code>agent:model</code> attached to that commit. You could also set <code>agent:provider</code> or any other key/value combination.</p>
+<p>Then you can get the value back out with <code>git meta get</code>:</p>
+<pre><code>❯ git meta get commit:314e7f0fa7 agent:model
+agent:model  claude-opus-4-6[1m]</code></pre>
+<p>You probably get the idea. You can also <a href="https://github.com/git-meta/git-meta#value-types">assign sets or lists of values</a> to a key if that makes more sense for the data type.</p>
+<h2 id="sharing">Sharing</h2>
+<p>You can easily setup a meta remote (someplace to push the data to) with <code>git meta setup</code> which will default to the same repository as your code, but under a hidden <code>refs/meta/main</code> reference. So it can, for example, be on GitHub with your code but just not visible.</p>
+<p>Then just type <code>git meta sync</code> to push new values you&#x27;ve created and pull down new values from other users on your team.</p>
+<h2 id="try-it-out">Try it out</h2>
+<p>The project is still early, but the core direction is in place: make Git metadata portable, local-first, and tool-friendly. Try it out and give us feedback!</p>
+          </div>
+        </article>
+      </div>
+      <aside class="blog-toc" aria-label="On this page"><div class="blog-toc-title">On this page</div><ol><li class="blog-toc-h2"><a href="#simple-example">Simple example</a></li><li class="blog-toc-h2"><a href="#sharing">Sharing</a></li><li class="blog-toc-h2"><a href="#try-it-out">Try it out</a></li></ol></aside>
+    </main>
+  </body>
+</html>

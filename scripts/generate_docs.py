@@ -21,6 +21,7 @@ SPEC_DIR = ROOT / "spec"
 # root to be honored by crawlers.
 SITE_ROOT_DIR = ROOT / "docs"
 DOCS_DIR = SITE_ROOT_DIR / "spec"
+CONTENT_DIR = ROOT / "content"
 TEMPLATE_PATH = ROOT / "templates" / "docs-page.html"
 ASSETS_DIR = DOCS_DIR / "assets"
 
@@ -1362,12 +1363,36 @@ def landing_page_lastmod() -> str:
         return date.today().isoformat()
 
 
+def blog_slug(path: Path) -> str:
+    """Return the generated blog slug, honoring an optional frontmatter slug."""
+    text = path.read_text()
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end != -1:
+            for line in text[4:end].splitlines():
+                if line.lower().startswith("slug:"):
+                    return slugify(line.split(":", 1)[1].strip().strip('"\''))
+    return slugify(path.stem)
+
+
+def blog_sitemap_entries() -> list[tuple[str, str]]:
+    """Return canonical blog URLs and lastmod dates for content/*.md posts."""
+    if not CONTENT_DIR.exists():
+        return []
+    entries = [(f"{SITE_ORIGIN}/blog/", landing_page_lastmod())]
+    for path in sorted(CONTENT_DIR.glob("*.md")):
+        lastmod = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date().isoformat()
+        entries.append((f"{SITE_ORIGIN}/blog/{blog_slug(path)}/", lastmod))
+    return entries
+
+
 def write_sitemap_xml(pages: list[Page]) -> None:
     """Write the site-wide sitemap.xml at the domain root.
 
-    Includes the marketing landing page (`https://git-meta.com/`) followed by
-    every generated spec page. Each spec entry uses its source markdown's
-    mtime as <lastmod>; the landing page uses `docs/index.html`'s mtime.
+    Includes the marketing landing page (`https://git-meta.com/`), the blog,
+    and every generated spec page. Each generated entry uses its source
+    markdown's mtime as <lastmod>; the landing page uses `docs/index.html`'s
+    mtime.
     """
     entries: list[str] = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -1377,6 +1402,11 @@ def write_sitemap_xml(pages: list[Page]) -> None:
         f"    <lastmod>{landing_page_lastmod()}</lastmod>",
         "  </url>",
     ]
+    for loc, lastmod in blog_sitemap_entries():
+        entries.append("  <url>")
+        entries.append(f"    <loc>{html.escape(loc)}</loc>")
+        entries.append(f"    <lastmod>{lastmod}</lastmod>")
+        entries.append("  </url>")
     for page in pages:
         loc = page_url(page)
         if page.output_rel == "index.html":

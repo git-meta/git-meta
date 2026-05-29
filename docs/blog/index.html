@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (() => {
+        const stored = localStorage.getItem("git-meta-theme");
+        document.documentElement.dataset.theme = stored || "system";
+      })();
+    </script>
+    <title>Blog · git-meta</title>
+    <meta name="description" content="Project notes from git-meta." />
+    <link rel="icon" type="image/png" href="../assets/git-meta-icon.png" />
+    <link rel="canonical" href="https://git-meta.com/blog/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="../index.html" aria-label="git-meta home">
+          <img class="brand-mark" src="../assets/git-meta-icon.png" width="32" height="32" alt="" />
+          <span class="brand-name">git-meta</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="../blog/">Blog</a>
+          <a href="../spec/" class="nav-muted">Spec &rarr;</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap blog-page blog-index">
+      <section class="blog-hero">
+        <p class="eyebrow">Blog</p>
+        <h1>Project notes from git-meta</h1>
+        <p>Short little deep dives into how various things are handled with the git-meta approach to storing metadata with your Git code.</p>
+      </section>
+      <section class="blog-list" aria-label="Posts">
+        <article class="blog-card"><time datetime="2026-05-29">May 29, 2026</time><h2><a href="introducing-git-meta/">introducing git-meta</a></h2><p>A short introduction to git-meta, an open specification for structured metadata in Git.</p></article>
+      </section>
+    </main>
+  </body>
+</html>

@@ -940,6 +940,163 @@ details[open] summary::after { content: "−"; }
 .cta-strip .btn-ghost { color: inherit; border-color: color-mix(in oklab, currentColor 40%, transparent); }
 .cta-strip .btn-ghost:hover { background: color-mix(in oklab, currentColor 15%, transparent); color: inherit; border-color: currentColor; }
 
+/* ——— BLOG ——— */
+.blog-page { padding-top: 64px; padding-bottom: 96px; }
+.blog-hero { max-width: 720px; margin-bottom: 36px; }
+.blog-hero h1,
+.blog-article h1 {
+  font-size: clamp(34px, 5.5vw, 54px);
+  line-height: 1.04;
+  letter-spacing: -0.05em;
+  margin: 0 0 18px;
+}
+.blog-article h1 {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+  margin-bottom: 28px;
+}
+.blog-hero p { font-size: 18px; max-width: 58ch; }
+.blog-list { display: grid; gap: 18px; max-width: 760px; }
+.blog-card {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-sm);
+}
+.blog-card time,
+.blog-kicker {
+  display: block;
+  font: 500 12px/1.4 "JetBrains Mono", monospace;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+.blog-post-main > .blog-kicker { margin-bottom: 16px; }
+.blog-card h2 { font-size: 24px; margin-bottom: 8px; }
+.blog-card h2 a:hover { color: var(--brand-dark); }
+.blog-card p { margin-bottom: 0; }
+.blog-index { text-align: center; }
+.blog-index .blog-hero {
+  margin-left: auto;
+  margin-right: auto;
+}
+.blog-index .blog-hero h1 {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(24px, 3.8vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+}
+.blog-index .blog-hero p {
+  margin-left: auto;
+  margin-right: auto;
+}
+.blog-index .blog-list {
+  display: block;
+  max-width: 720px;
+  margin: 0 auto;
+  border-top: 1px solid var(--line-2);
+}
+.blog-index .blog-card {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+.blog-index .blog-card time {
+  margin: 0;
+  white-space: nowrap;
+}
+.blog-index .blog-card h2 {
+  margin: 0;
+  font: 500 14px/1.4 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+}
+.blog-index .blog-card h2 a { color: var(--brand-dark); }
+.blog-index .blog-card h2 a:hover { color: var(--brand); }
+.blog-index .blog-card p { display: none; }
+.blog-post-page {
+  display: grid;
+  grid-template-columns: minmax(0, 760px) 220px;
+  justify-content: center;
+  align-items: start;
+  gap: 56px;
+}
+.blog-post-main { min-width: 0; }
+.blog-article { max-width: 760px; }
+.blog-post-main > .blog-kicker { max-width: 760px; }
+.blog-toc {
+  position: sticky;
+  top: 92px;
+  padding-top: 8px;
+  font: 500 13px/1.45 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink-3);
+}
+.blog-toc-title {
+  margin-bottom: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.blog-toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--line-2);
+}
+.blog-toc li { margin: 0; }
+.blog-toc a {
+  display: block;
+  padding: 5px 0 5px 12px;
+  color: var(--ink-3);
+}
+.blog-toc a:hover { color: var(--brand-dark); }
+.blog-toc-h3 a { padding-left: 24px; }
+.blog-toc-h4 a { padding-left: 36px; font-size: 12px; }
+@media (max-width: 1100px) {
+  .blog-post-page { display: block; }
+  .blog-article,
+  .blog-post-main > .blog-kicker {
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .blog-toc { display: none; }
+}
+.blog-content {
+  padding-top: 0;
+}
+.blog-content p {
+  font-size: 17px;
+  line-height: 1.72;
+  margin-bottom: 20px;
+}
+.blog-content h2,
+.blog-content h3 {
+  font-size: 21px;
+  line-height: 1.35;
+  margin-top: 30px;
+  margin-bottom: 10px;
+}
+.blog-content ul { color: var(--ink-2); padding-left: 1.4rem; }
+.blog-content li + li { margin-top: 0.35rem; }
+.blog-content pre {
+  overflow-x: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--code-bg);
+}
+.blog-content pre code { border: 0; padding: 0; background: transparent; }
+
 /* ——— FOOTER ——— */
 .site-footer {
   padding: 56px 0 24px;
