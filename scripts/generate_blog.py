@@ -5,6 +5,7 @@ import argparse
 import html
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -304,13 +305,59 @@ def generate_blog() -> None:
     print(f"Generated {len(posts)} blog posts in {BLOG_DIR}")
 
 
+def content_snapshot() -> dict[Path, tuple[int, int]]:
+    if not CONTENT_DIR.exists():
+        return {}
+    snapshot: dict[Path, tuple[int, int]] = {}
+    for path in CONTENT_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        snapshot[path] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
+
+
+def watch_blog(interval: float) -> None:
+    generate_blog()
+    last_snapshot = content_snapshot()
+    print(f"Watching {CONTENT_DIR} for changes. Press Ctrl-C to stop.")
+    while True:
+        time.sleep(interval)
+        current_snapshot = content_snapshot()
+        if current_snapshot == last_snapshot:
+            continue
+        last_snapshot = current_snapshot
+        try:
+            generate_blog()
+        except Exception as error:
+            print(f"Error generating blog: {error}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate blog pages from content/*.md")
+    parser.add_argument("--watch", action="store_true", help="rebuild when content files change")
+    parser.add_argument(
+        "--watch-interval",
+        type=float,
+        default=1.0,
+        help="seconds between change checks when using --watch (default: 1.0)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
-    parse_args()
+    args = parse_args()
+    if args.watch_interval <= 0:
+        raise SystemExit("--watch-interval must be greater than 0")
+    if args.watch:
+        try:
+            watch_blog(args.watch_interval)
+        except KeyboardInterrupt:
+            print("Stopped watching.")
+        return
     generate_blog()
 
 
