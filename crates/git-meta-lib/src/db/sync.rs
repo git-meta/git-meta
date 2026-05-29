@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension};
 use crate::error::Result;
 use crate::list_value::{encode_entries, parse_timestamp_from_entry_name, ListEntry};
 use crate::tree::model::{Key, Tombstone, TreeValue};
-use crate::types::{set_member_id, TargetType, ValueType, GIT_REF_THRESHOLD};
+use crate::types::{set_member_id, TargetType, ValueType};
 
 use super::types::Operation;
 
@@ -167,8 +167,8 @@ impl Store {
     /// that exist only in the tombstone map. List entries and set members that have
     /// corresponding tombstones are filtered out before writing.
     ///
-    /// Large string values (exceeding [`GIT_REF_THRESHOLD`]) are stored as git blob
-    /// references if a repository is attached to this `Store` instance.
+    /// Large string values (exceeding [`Store::object_max_size`]) are stored as git
+    /// blob references if a repository is attached to this `Store` instance.
     pub fn apply_tree(
         &self,
         values: &BTreeMap<Key, TreeValue>,
@@ -178,17 +178,16 @@ impl Store {
         email: &str,
         now: i64,
     ) -> Result<()> {
+        let object_max_size = self.object_max_size()?;
         for (k, tree_val) in values {
             let target = k.to_target();
             match tree_val {
                 TreeValue::String(s) => {
-                    if s.len() > GIT_REF_THRESHOLD {
+                    if s.len() > object_max_size {
                         if let Some(repo) = &self.repo {
                             let existing = self.get(&target, &k.key)?;
                             let unchanged = existing.as_ref().is_some_and(|entry| {
-                                entry.value_type == ValueType::String
-                                    && entry.is_git_ref
-                                    && entry.value == s.as_str()
+                                entry.value_type == ValueType::String && entry.value == s.as_str()
                             });
                             if !unchanged {
                                 let blob_oid = repo

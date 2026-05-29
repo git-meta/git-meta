@@ -1,5 +1,6 @@
 //! SQLite storage internals used by the CLI and session implementation.
 
+mod config;
 mod lists;
 mod metadata;
 mod promised;

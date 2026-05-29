@@ -308,7 +308,7 @@ impl Store {
                 Ok(Some(MetadataValue {
                     value: resolved,
                     value_type: vt.parse::<ValueType>()?,
-                    is_git_ref,
+                    is_git_ref: false,
                 }))
             }
             None => Ok(None),
@@ -469,11 +469,10 @@ impl Store {
                         });
                     }
                     ValueType::String => {
-                        let resolved = resolve_blob(self.repo.as_ref(), &value, is_git_ref)?;
                         results.push(MetadataRecord {
                             target_value,
                             key,
-                            value: resolved,
+                            value,
                             value_type: vt,
                             is_git_ref,
                             is_promised: false,
