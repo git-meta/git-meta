@@ -589,4 +589,79 @@ impl Store {
 
         Ok(deleted > 0)
     }
+
+    /// Remove all metadata keys that match `key_prefix` across every target.
+    ///
+    /// Matches either the exact key or keys below it in the colon-separated
+    /// namespace. For example, `agent` clears both `agent` and `agent:model`.
+    ///
+    /// # Returns
+    ///
+    /// The number of metadata rows removed.
+    pub fn clear_key_prefix(&self, key_prefix: &str, email: &str, timestamp: i64) -> Result<usize> {
+        validate_key(key_prefix)?;
+        let key_like = format!("{}:%", escape_like_pattern(key_prefix));
+        let sp = self.savepoint()?;
+
+        let rows = {
+            let mut stmt = self.conn.prepare(
+                "SELECT rowid, target_type, target_value, key
+                 FROM metadata
+                 WHERE key = ?1 OR key LIKE ?2 ESCAPE '\\'
+                 ORDER BY target_type, target_value, key",
+            )?;
+            let matches = stmt.query_map(params![key_prefix, key_like], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?;
+
+            let mut rows = Vec::new();
+            for row in matches {
+                rows.push(row?);
+            }
+            rows
+        };
+
+        for (metadata_id, target_type, target_value, key) in &rows {
+            self.conn.execute(
+                "DELETE FROM list_values WHERE metadata_id = ?1",
+                params![metadata_id],
+            )?;
+            self.conn.execute(
+                "DELETE FROM set_values WHERE metadata_id = ?1",
+                params![metadata_id],
+            )?;
+            self.conn.execute(
+                "DELETE FROM metadata WHERE rowid = ?1",
+                params![metadata_id],
+            )?;
+
+            self.conn.execute(
+                "INSERT INTO tombstones (tombstone_type, target_type, target_value, key, entry_id, value, timestamp, email)
+                 VALUES ('metadata', ?1, ?2, ?3, '', '', ?4, ?5)
+                 ON CONFLICT(tombstone_type, target_type, target_value, key, entry_id) DO UPDATE
+                 SET timestamp = excluded.timestamp, email = excluded.email",
+                params![target_type, target_value, key, timestamp, email],
+            )?;
+            self.conn.execute(
+                "DELETE FROM tombstones
+                 WHERE tombstone_type IN ('list_entry', 'set_member')
+                 AND target_type = ?1 AND target_value = ?2 AND key = ?3",
+                params![target_type, target_value, key],
+            )?;
+            self.conn.execute(
+                "INSERT INTO metadata_log (target_type, target_value, key, value, value_type, operation, email, timestamp)
+                 VALUES (?1, ?2, ?3, '', '', 'rm', ?4, ?5)",
+                params![target_type, target_value, key, email, timestamp],
+            )?;
+        }
+
+        sp.commit()?;
+
+        Ok(rows.len())
+    }
 }

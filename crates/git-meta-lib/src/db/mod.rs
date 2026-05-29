@@ -599,6 +599,49 @@ mod tests {
     }
 
     #[test]
+    fn test_clear_key_prefix_removes_matching_keys_across_targets() {
+        let db = Store::open_in_memory().unwrap();
+        let first = commit_target("abc123");
+        let second = commit_target("def456");
+        for (target, key, value) in [
+            (&first, "agent:model", "\"claude\""),
+            (&first, "agent:provider", "\"anthropic\""),
+            (&first, "other:key", "\"kept\""),
+            (&second, "agent:model", "\"claude\""),
+        ] {
+            db.set(target, key, value, &ValueType::String, "a@b.com", 1000)
+                .unwrap();
+        }
+
+        let removed = db.clear_key_prefix("agent", "a@b.com", 2000).unwrap();
+
+        assert_eq!(removed, 3);
+        assert_eq!(db.get(&first, "agent:model").unwrap(), None);
+        assert_eq!(db.get(&first, "agent:provider").unwrap(), None);
+        assert_eq!(db.get(&second, "agent:model").unwrap(), None);
+        assert!(db.get(&first, "other:key").unwrap().is_some());
+        assert_eq!(db.get_all_tombstones().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_clear_key_prefix_escapes_like_wildcards() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        for key in ["a%:literal", "abc:anything", "a_:literal", "ab:anything"] {
+            db.set(&target, key, "\"val\"", &ValueType::String, "a@b.com", 1000)
+                .unwrap();
+        }
+
+        let removed = db.clear_key_prefix("a%", "a@b.com", 2000).unwrap();
+
+        assert_eq!(removed, 1);
+        assert_eq!(db.get(&target, "a%:literal").unwrap(), None);
+        assert!(db.get(&target, "abc:anything").unwrap().is_some());
+        assert!(db.get(&target, "a_:literal").unwrap().is_some());
+        assert!(db.get(&target, "ab:anything").unwrap().is_some());
+    }
+
+    #[test]
     fn test_set_clears_tombstone() {
         let db = Store::open_in_memory().unwrap();
         let target = commit_target("abc123");
