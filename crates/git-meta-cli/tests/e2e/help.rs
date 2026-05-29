@@ -6,6 +6,7 @@ use crate::harness;
 const GROUP_HEADINGS: &[&str] = &[
     "read and write data",
     "browse and exchange (porcelain)",
+    "example helpers",
     "low-level git ref operations (plumbing)",
     "setup and configuration",
 ];
@@ -18,6 +19,7 @@ const VISIBLE_COMMANDS: &[&str] = &[
     "set",
     "get",
     "rm",
+    "clear",
     "list:push",
     "set:add",
     "show",
@@ -25,6 +27,7 @@ const VISIBLE_COMMANDS: &[&str] = &[
     "log",
     "blame",
     "stats",
+    "import",
     "push",
     "pull",
     "sync",
@@ -35,14 +38,7 @@ const VISIBLE_COMMANDS: &[&str] = &[
     "teardown",
 ];
 
-const HIDDEN_COMMANDS: &[&str] = &[
-    "import",
-    "watch",
-    "promisor",
-    "prune",
-    "local-prune",
-    "config:prune",
-];
+const HIDDEN_COMMANDS: &[&str] = &["promisor", "prune", "local-prune", "config:prune"];
 
 /// All four ways of asking for top-level help — bare invocation, `-h`,
 /// `--help`, and the `help` pseudo-subcommand — must print the curated
@@ -72,8 +68,8 @@ fn top_level_help_is_curated_for_every_invocation() {
 }
 
 /// Within the porcelain group, the daily-use sync commands `push`,
-/// `pull`, and `sync` come first as their own block, separated from the read-only
-/// inspection commands (`show`, `inspect`, `log`, `stats`) by a blank
+/// `pull`, and `sync` come first as their own block, separated from the
+/// read-only inspection commands (`inspect`, `log`, `stats`) by a blank
 /// line. We verify both the order and the blank-line separator by
 /// matching a multi-line snippet of stdout.
 #[test]
@@ -87,27 +83,50 @@ fn porcelain_group_lists_exchange_commands_before_inspection_commands() {
             let push = out.find("   push ").expect("push line missing");
             let pull = out.find("   pull ").expect("pull line missing");
             let sync = out.find("   sync ").expect("sync line missing");
-            let show = out.find("   show ").expect("show line missing");
+            let inspect = out.find("   inspect ").expect("inspect line missing");
             let stats = out.find("   stats ").expect("stats line missing");
-            push < pull && pull < sync && sync < show && show < stats
+            push < pull && pull < sync && sync < inspect && inspect < stats
         }))
         .stdout(predicate::str::contains(
-            "Pull, merge, rewrite if needed, and push metadata\n\n   show",
+            "Pull, merge, rewrite if needed, and push metadata\n\n   inspect",
         ));
 }
 
+/// The `example helpers` group lists `show`, `blame`, and `import` and
+/// renders immediately above the plumbing group.
+#[test]
+fn example_helpers_group_precedes_plumbing() {
+    let dir = TempDir::new().unwrap();
+
+    harness::git_meta(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::function(|out: &str| {
+            let helpers = out
+                .find("example helpers")
+                .expect("example helpers heading missing");
+            let show = out.find("   show ").expect("show line missing");
+            let blame = out.find("   blame ").expect("blame line missing");
+            let import = out.find("   import ").expect("import line missing");
+            let plumbing = out
+                .find("low-level git ref operations (plumbing)")
+                .expect("plumbing heading missing");
+            helpers < show && show < blame && blame < import && import < plumbing
+        }));
+}
+
 /// Hiding a command from the curated help must not disable it. Hidden
-/// commands like `import` should still be invokable directly and produce
+/// commands like `promisor` should still be invokable directly and produce
 /// their own clap-generated per-subcommand help.
 #[test]
 fn hidden_commands_remain_invokable() {
     let dir = TempDir::new().unwrap();
 
     harness::git_meta(dir.path())
-        .args(["import", "--help"])
+        .args(["promisor", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Import metadata"));
+        .stdout(predicate::str::contains("promisor"));
 }
 
 /// `git meta <subcommand> --help` must continue to fall through to

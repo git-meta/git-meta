@@ -21,4 +21,3 @@ pub(crate) mod show;
 pub(crate) mod stats;
 pub(crate) mod sync;
 pub(crate) mod teardown;
-pub(crate) mod watch;

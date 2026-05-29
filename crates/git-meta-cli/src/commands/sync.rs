@@ -35,7 +35,10 @@ fn remotes_to_sync(ctx: &CommandContext, remote: Option<&str>) -> Result<Vec<Str
 
     let remotes = git_meta_lib::git_utils::list_meta_remotes(ctx.session.repo())?;
     if remotes.is_empty() {
-        bail!("no metadata remotes configured");
+        bail!(
+            "no metadata remotes configured\n\n\
+             Run `git meta setup` to configure a metadata remote."
+        );
     }
 
     Ok(remotes.into_iter().map(|(name, _url)| name).collect())

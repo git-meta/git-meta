@@ -62,6 +62,8 @@ fn main() -> Result<()> {
 
         Commands::Rm { target, key } => commands::rm::run(&target, &key),
 
+        Commands::Clear { pattern } => commands::clear::run(&pattern),
+
         Commands::ListPush { target, key, value } => {
             commands::list::run_push(&target, &key, &value)
         }
@@ -186,7 +188,5 @@ fn main() -> Result<()> {
         }
 
         Commands::Teardown => commands::teardown::run(),
-
-        Commands::Watch { agent, debounce } => commands::watch::run(&agent, debounce),
     }
 }
