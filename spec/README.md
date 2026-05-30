@@ -72,6 +72,7 @@ There are three initial data types that can be used for any given target key. He
 
 Finally, there is a reference implementation for how one might actually use this concept locally in higher level version control tooling. As long as the exchange format and semantics are followed, local implementation isn't highly important, but it may be valuable to see a practical application.
 
+- [Rust library API](./implementation/api.md)
 - [Local storage](./implementation/storage.md)
 - [CLI surface](./implementation/cli.md)
 - [Output and query semantics](./implementation/output.md)

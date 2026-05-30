@@ -4,6 +4,6 @@ Everything in this "Implementation" section is how the reference implementation 
 
 I have decided to keep the local data cache in SQLite, which is documented in [Local storage](./storage.md).
 
-I have implemented the basics in Rust as a CLI that can get and set values, serialize and materialize. This CLI surface is documented [here](./cli.md).
+I have implemented the basics in Rust as a library and CLI that can get and set values, serialize and materialize. The Rust library API is documented in [Rust library API](./api.md), and the CLI surface is documented [here](./cli.md).
 
 That CLI has a few ways of returning data, which I document in [Output and query semantics](./output.md).
