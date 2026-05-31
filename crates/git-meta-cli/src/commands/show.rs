@@ -1,7 +1,5 @@
 //! `git meta show <commit-sha>` — display commit details with any associated metadata.
 
-use git_meta_lib::gix::bstr::ByteSlice;
-use git_meta_lib::gix::prelude::ObjectIdExt;
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -20,52 +18,31 @@ const BLUE: &str = "\x1b[34m";
 
 pub(crate) fn run(commit_ref: &str) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
 
     // Resolve the ref to a full commit SHA
-    let spec = repo
-        .rev_parse_single(commit_ref)
+    let sha = ctx
+        .session
+        .resolve_commitish(commit_ref)
         .with_context(|| format!("could not resolve: {commit_ref}"))?;
-    let commit_obj = spec.object()?.peel_tags_to_end()?.into_commit();
-    let sha = commit_obj.id().to_string();
+    let commit_info = ctx.session.commit_info(&sha)?;
 
     println!("{YELLOW}Commit:{RESET}     {CYAN}{sha}{RESET}");
 
     // Try to get change-id from GitButler
-    let change_id = get_change_id(repo, &sha);
+    let change_id = get_change_id(&ctx, &sha);
     if let Some(ref cid) = change_id {
         println!("{YELLOW}Change-ID:{RESET}  {CYAN}{cid}{RESET}");
     }
 
     // Author
-    let decoded = commit_obj.decode()?;
-    let author_name = decoded
-        .author()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .name
-        .to_str_lossy();
-    let author_email = decoded
-        .author()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .email
-        .to_str_lossy();
-    println!("{YELLOW}Author:{RESET}     {GREEN}{author_name} <{author_email}>{RESET}");
+    println!(
+        "{YELLOW}Author:{RESET}     {GREEN}{} <{}>{RESET}",
+        commit_info.author_name, commit_info.author_email
+    );
 
     // Date with relative time
-    let epoch = decoded
-        .author()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .time()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .seconds;
-    let offset_secs = decoded
-        .author()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .time()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .offset;
-    let utc_offset =
-        time::UtcOffset::from_whole_seconds(offset_secs).unwrap_or(time::UtcOffset::UTC);
+    let epoch = commit_info.author_time_seconds;
+    let utc_offset = time::UtcOffset::UTC;
     let local_time = OffsetDateTime::from_unix_timestamp(epoch)
         .unwrap_or(OffsetDateTime::UNIX_EPOCH)
         .to_offset(utc_offset);
@@ -81,15 +58,13 @@ pub(crate) fn run(commit_ref: &str) -> Result<()> {
     println!("{YELLOW}Date:{RESET}       {GREEN}{date_fmt}{RESET} {DIM}({relative}){RESET}");
 
     println!();
-    let message = decoded.message.to_str_lossy();
-    for line in message.trim_end().lines() {
+    for line in commit_info.message.trim_end().lines() {
         println!("{line}");
     }
 
     // Show diff stats using git subprocess (gix diff API is complex, this is simpler)
-    let git_dir = repo.path();
     let diff_output = Command::new("git")
-        .args(["--git-dir", &git_dir.to_string_lossy()])
+        .args(["--git-dir", &ctx.session.git_dir_path().to_string_lossy()])
         .args(["diff-tree", "--no-commit-id", "-r", "--name-status", &sha])
         .output()
         .ok();
@@ -185,9 +160,9 @@ fn format_meta_value(value: &str, value_type: &ValueType) -> String {
 
 /// Get a change-id for a commit. First tries `but show --json`, then falls back
 /// to looking for a Change-Id trailer in the commit message.
-fn get_change_id(repo: &git_meta_lib::gix::Repository, sha: &str) -> Option<String> {
+fn get_change_id(ctx: &CommandContext, sha: &str) -> Option<String> {
     // Try GitButler CLI first
-    let workdir = repo.workdir()?;
+    let workdir = ctx.session.workdir_path()?;
     let output = Command::new("but")
         .args(["show", sha, "--json"])
         .current_dir(workdir)
@@ -204,11 +179,8 @@ fn get_change_id(repo: &git_meta_lib::gix::Repository, sha: &str) -> Option<Stri
     }
 
     // Fall back: look for a Change-Id trailer in the commit message
-    let oid = git_meta_lib::gix::ObjectId::from_hex(sha.as_bytes()).ok()?;
-    let commit_obj = oid.attach(repo).object().ok()?.into_commit();
-    let decoded = commit_obj.decode().ok()?;
-    let message = decoded.message.to_str_lossy();
-    for line in message.lines().rev() {
+    let commit_info = ctx.session.maybe_commit_info(sha).ok()??;
+    for line in commit_info.message.lines().rev() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("Change-Id:") {
             return Some(rest.trim().to_string());

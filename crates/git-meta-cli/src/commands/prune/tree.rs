@@ -5,19 +5,14 @@
 //! existing tree), this rebuilds the tree from the DB, filtering out all
 //! metadata entries (string, list, set) older than the cutoff.
 
-use anyhow::Result;
-use git_meta_lib::gix::prelude::ObjectIdExt;
-use git_meta_lib::gix::refs::transaction::PreviousValue;
-
 use crate::context::CommandContext;
+use anyhow::Result;
 use git_meta_lib::prune::parse_since_to_cutoff_ms;
-use git_meta_lib::serialize::{build_filtered_tree, count_prune_stats};
 use git_meta_lib::tree::filter::{classify_key, parse_filter_rules, MAIN_DEST};
 use git_meta_lib::types::{Target, TargetType};
 
 pub(crate) fn run(dry_run: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
 
     // Read prune rules -- need at least meta:prune:since
     let since = if let Some(entry) = ctx
@@ -52,19 +47,15 @@ pub(crate) fn run(dry_run: bool) -> Result<()> {
 
     // Find the current serialized tree
     let ref_name = format!("refs/{}/local/main", ctx.session.namespace());
-    let Some(current_commit_oid) = repo
-        .find_reference(&ref_name)
-        .ok()
-        .and_then(|r| r.into_fully_peeled_id().ok())
-        .map(git_meta_lib::gix::Id::detach)
-    else {
+    let Some(current_commit_oid) = ctx.session.find_ref_oid(&ref_name)? else {
         eprintln!("No serialized metadata found at {ref_name}. Run `git meta serialize` first.");
         return Ok(());
     };
 
-    let current_commit_obj = current_commit_oid.attach(repo).object()?.into_commit();
-    let tree_oid = current_commit_obj.tree_id()?.detach();
-    let (_, current_keys) = count_prune_stats(repo, tree_oid, tree_oid)?;
+    let tree_oid = ctx.session.commit_info(&current_commit_oid)?.tree_oid;
+    let (_, current_keys) = ctx
+        .session
+        .count_prune_stats_for_trees(&tree_oid, &tree_oid)?;
 
     eprintln!("Pruning {ref_name} (cutoff: {cutoff_date} -- entries older than {since})");
     eprintln!("  current tree: {current_keys} keys");
@@ -138,15 +129,16 @@ pub(crate) fn run(dry_run: bool) -> Result<()> {
     eprintln!("  {pruned_meta} metadata keys and {pruned_tombs} tombstones to drop");
 
     // Build a fresh tree from the surviving entries
-    let pruned_tree_oid = build_filtered_tree(
-        repo,
+    let pruned_tree_oid = ctx.session.build_filtered_tree_oid(
         &metadata,
         &tombstones,
         &set_tombstones,
         &list_tombstones,
     )?;
 
-    let (keys_dropped, keys_retained) = count_prune_stats(repo, tree_oid, pruned_tree_oid)?;
+    let (keys_dropped, keys_retained) = ctx
+        .session
+        .count_prune_stats_for_trees(&tree_oid, &pruned_tree_oid)?;
 
     eprintln!("  pruned tree:  {keys_retained} keys ({keys_dropped} dropped from tree)");
 
@@ -157,41 +149,22 @@ pub(crate) fn run(dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Commit the pruned tree
-    let name = ctx.session.name();
-    let email = ctx.session.email();
-    let sig = git_meta_lib::gix::actor::Signature {
-        name: name.into(),
-        email: email.into(),
-        time: git_meta_lib::gix::date::Time::now_local_or_utc(),
-    };
-
     let message = format!(
         "git-meta: prune --since={since}\n\npruned: true\nsince: {since}\nkeys-dropped: {keys_dropped}\nkeys-retained: {keys_retained}"
     );
 
-    let commit = git_meta_lib::gix::objs::Commit {
-        message: message.into(),
-        tree: pruned_tree_oid,
-        author: sig.clone(),
-        committer: sig,
-        encoding: None,
-        parents: vec![current_commit_oid].into(),
-        extra_headers: Default::default(),
-    };
-
-    let commit_oid = repo.write_object(&commit)?.detach();
-    repo.reference(
+    let commit_oid = ctx.session.commit_tree_to_ref(
         ref_name.as_str(),
-        commit_oid,
-        PreviousValue::Any,
+        &pruned_tree_oid,
+        Some(&current_commit_oid),
+        &message,
         "git-meta: prune",
     )?;
 
     println!(
         "pruned to {} ({}) -- dropped {} keys, retained {}",
         ref_name,
-        &commit_oid.to_string()[..8],
+        &commit_oid[..8],
         keys_dropped,
         keys_retained
     );

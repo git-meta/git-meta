@@ -140,9 +140,6 @@ pub use session::Session;
 pub use session_handle::SessionTargetHandle;
 pub use types::{MetaEdit, MetaValue, Target, TargetType, ValueType};
 
-#[cfg(feature = "internal")]
-pub use gix;
-
 // Workflow output types
 pub use materialize::{MaterializeOutput, MaterializeRefResult, MaterializeStrategy};
 pub use pull::PullOutput;

@@ -1,27 +1,20 @@
 use anyhow::{bail, Result};
-use git_meta_lib::gix::bstr::ByteSlice;
-use git_meta_lib::gix::prelude::ObjectIdExt;
 
 use crate::context::CommandContext;
 use git_meta_lib::types::{TargetType, ValueType};
 
 pub(crate) fn run() -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
     let ns = ctx.session.namespace();
 
     let tracking_ref = format!("refs/{ns}/remotes/main");
-    let tip_oid = match repo.find_reference(&tracking_ref) {
-        Ok(r) => r.into_fully_peeled_id()?.detach(),
-        Err(_) => bail!(
-            "no remote tracking ref ({tracking_ref}).\nAdd a remote first: git meta remote add <url>"
-        ),
+    let Some(tip_oid) = ctx.session.find_ref_oid(&tracking_ref)? else {
+        bail!("no remote tracking ref ({tracking_ref}).\nAdd a remote first: git meta remote add <url>");
     };
 
-    eprintln!("Walking history from {} ...", &tip_oid.to_string()[..12]);
+    eprintln!("Walking history from {} ...", &tip_oid[..12]);
 
-    let walk = repo.rev_walk(Some(tip_oid));
-    let iter = walk.all()?;
+    let iter = ctx.session.rev_walk_oids(&tip_oid)?;
 
     let mut commits_walked = 0;
     let mut commits_parsed = 0;
@@ -31,27 +24,22 @@ pub(crate) fn run() -> Result<()> {
     let mut skipped_deletes = 0;
     let mut is_tip = true;
 
-    for info_result in iter {
-        let info = info_result?;
-        let oid = info.id;
+    for oid in iter {
         commits_walked += 1;
-
-        let commit_obj = oid.attach(repo).object()?.into_commit();
-        let decoded = commit_obj.decode()?;
+        let commit_info = ctx.session.commit_info(&oid)?;
 
         if is_tip {
             is_tip = false;
-            let msg_first_line = decoded.message.to_str_lossy();
-            let msg_first_line = msg_first_line.lines().next().unwrap_or("");
+            let msg_first_line = commit_info.message.lines().next().unwrap_or("");
             eprintln!(
                 "  {} (tip, skipped -- already materialized) {}",
-                &oid.to_string()[..12],
+                &oid[..12],
                 msg_first_line,
             );
             continue;
         }
 
-        let message = decoded.message.to_str_lossy().to_string();
+        let message = commit_info.message;
         let first_line = message.lines().next().unwrap_or("");
 
         match git_meta_lib::sync::parse_commit_changes(&message) {
@@ -91,7 +79,7 @@ pub(crate) fn run() -> Result<()> {
 
                 eprintln!(
                     "  {} ({} changes: +{} inserted, ~{} existing, -{} deletes) {}",
-                    &oid.to_string()[..12],
+                    &oid[..12],
                     changes.len(),
                     commit_inserted,
                     commit_skipped,
@@ -99,18 +87,15 @@ pub(crate) fn run() -> Result<()> {
                     first_line,
                 );
             }
-            None if decoded.parents().count() == 0
+            None if commit_info.parent_count == 0
                 || git_meta_lib::sync::commit_changes_omitted(&message) =>
             {
-                // Root commits and omitted-change commits do not have an
-                // inline per-key list, so discover keys from tree paths.
-                let reason = if decoded.parents().count() == 0 {
+                let reason = if commit_info.parent_count == 0 {
                     "root"
                 } else {
                     "changes omitted"
                 };
-                let tree_id = decoded.tree();
-                let keys = git_meta_lib::sync::extract_keys_from_tree(repo, tree_id)?;
+                let keys = ctx.session.extract_keys_from_tree(&commit_info.tree_oid)?;
                 commits_parsed += 1;
                 let mut commit_inserted = 0;
                 let mut commit_skipped = 0;
@@ -137,7 +122,7 @@ pub(crate) fn run() -> Result<()> {
 
                 eprintln!(
                     "  {} ({reason}, {} tree keys: +{} inserted, ~{} existing) {}",
-                    &oid.to_string()[..12],
+                    &oid[..12],
                     keys.len(),
                     commit_inserted,
                     commit_skipped,
@@ -146,11 +131,7 @@ pub(crate) fn run() -> Result<()> {
             }
             None => {
                 commits_unparseable += 1;
-                eprintln!(
-                    "  {} (no change list) {}",
-                    &oid.to_string()[..12],
-                    first_line,
-                );
+                eprintln!("  {} (no change list) {}", &oid[..12], first_line,);
             }
         }
     }

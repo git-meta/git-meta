@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use gix::prelude::ObjectIdExt;
+use gix::refs::transaction::PreviousValue;
 
 use time::OffsetDateTime;
 
@@ -38,6 +41,60 @@ pub struct Session {
     pub(crate) email: String,
     pub(crate) name: String,
     pub(crate) timestamp_override: Option<i64>,
+}
+
+/// Git object entry kind for simple tree walking APIs.
+#[cfg(feature = "internal")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitTreeEntryKind {
+    /// A Git blob object.
+    Blob,
+    /// A Git tree object.
+    Tree,
+    /// Any other object kind.
+    Other,
+}
+
+/// A tree entry represented with plain strings instead of gitoxide types.
+#[cfg(feature = "internal")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitTreeEntryInfo {
+    /// Entry filename.
+    pub name: String,
+    /// Object id as a hex SHA string.
+    pub oid: String,
+    /// Entry kind.
+    pub kind: GitTreeEntryKind,
+}
+
+/// Commit data represented with plain strings and integers for CLI consumers.
+#[cfg(feature = "internal")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitCommitInfo {
+    /// Commit id as a hex SHA string.
+    pub oid: String,
+    /// Commit tree id as a hex SHA string.
+    pub tree_oid: String,
+    /// Author name.
+    pub author_name: String,
+    /// Author email.
+    pub author_email: String,
+    /// Author timestamp in seconds since the Unix epoch.
+    pub author_time_seconds: i64,
+    /// Commit message.
+    pub message: String,
+    /// Number of parent commits.
+    pub parent_count: usize,
+}
+
+/// A reference and its peeled object id, represented as strings.
+#[cfg(feature = "internal")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitRefInfo {
+    /// Full ref name.
+    pub name: String,
+    /// Peeled object id as a hex SHA string.
+    pub oid: String,
 }
 
 impl Session {
@@ -228,6 +285,18 @@ impl Session {
         crate::sync::insert_promisor_entries(&self.repo, &self.store, tip_oid, old_tip)
     }
 
+    /// Index metadata keys from commit history using plain hex object ids.
+    #[cfg(feature = "internal")]
+    pub fn index_history_from_oid(
+        &self,
+        tip_oid: &str,
+        old_tip: Option<&str>,
+    ) -> crate::error::Result<usize> {
+        let tip_oid = Self::parse_object_id(tip_oid)?;
+        let old_tip = old_tip.map(Self::parse_object_id).transpose()?;
+        crate::sync::insert_promisor_entries(&self.repo, &self.store, tip_oid, old_tip)
+    }
+
     /// Serialize local metadata to Git tree(s) and commit(s).
     ///
     /// Determines incremental vs full mode automatically. Applies filter
@@ -367,5 +436,504 @@ impl Session {
         progress: impl FnMut(crate::push::PushProgress),
     ) -> crate::error::Result<()> {
         crate::push::resolve_push_conflict_with_progress(self, remote, self.now(), progress)
+    }
+
+    #[cfg(feature = "internal")]
+    fn parse_object_id(oid: &str) -> crate::error::Result<gix::ObjectId> {
+        gix::ObjectId::from_hex(oid.as_bytes())
+            .map_err(|err| crate::error::Error::Other(format!("invalid object id {oid}: {err}")))
+    }
+
+    #[cfg(feature = "internal")]
+    fn other_error(err: impl std::fmt::Display) -> crate::error::Error {
+        crate::error::Error::Other(err.to_string())
+    }
+
+    /// Run a git command in this session's repository and return stdout.
+    #[cfg(feature = "internal")]
+    pub fn run_git(&self, args: &[&str]) -> crate::error::Result<String> {
+        crate::git_utils::run_git(&self.repo, args)
+    }
+
+    /// Repository git directory path.
+    #[cfg(feature = "internal")]
+    pub fn git_dir_path(&self) -> &Path {
+        self.repo.path()
+    }
+
+    /// Repository worktree path, if this is a non-bare repository.
+    #[cfg(feature = "internal")]
+    pub fn workdir_path(&self) -> Option<&Path> {
+        self.repo.workdir()
+    }
+
+    /// Read a string from git config.
+    #[cfg(feature = "internal")]
+    pub fn git_config_string(&self, key: &str) -> Option<String> {
+        self.repo
+            .config_snapshot()
+            .string(key)
+            .map(|value| value.to_string())
+    }
+
+    /// Read `core.pager` from git config.
+    #[cfg(feature = "internal")]
+    pub fn core_pager(&self) -> Option<String> {
+        self.git_config_string("core.pager")
+    }
+
+    /// Write a blob and return its object id as a hex SHA string.
+    #[cfg(feature = "internal")]
+    pub fn write_blob_string(&self, value: &str) -> crate::error::Result<String> {
+        let oid: gix::ObjectId = self
+            .repo
+            .write_blob(value.as_bytes())
+            .map_err(Self::other_error)?
+            .into();
+        Ok(oid.to_string())
+    }
+
+    /// Read a blob object as UTF-8 text.
+    #[cfg(feature = "internal")]
+    pub fn read_blob_string(&self, oid: &str) -> crate::error::Result<String> {
+        let oid = Self::parse_object_id(oid)?;
+        let obj = oid.attach(&self.repo).object().map_err(Self::other_error)?;
+        let blob = obj.into_blob();
+        std::str::from_utf8(&blob.data)
+            .map(str::to_string)
+            .map_err(|err| {
+                crate::error::Error::Other(format!("git blob {oid} is not UTF-8: {err}"))
+            })
+    }
+
+    /// Resolve a ref or commit-ish to a peeled commit id.
+    #[cfg(feature = "internal")]
+    pub fn resolve_commitish(&self, spec: &str) -> crate::error::Result<String> {
+        let obj = self.repo.rev_parse_single(spec).map_err(|err| {
+            crate::error::Error::Other(format!("could not resolve ref '{spec}': {err}"))
+        })?;
+        let commit = obj
+            .object()
+            .map_err(Self::other_error)?
+            .peel_tags_to_end()
+            .map_err(Self::other_error)?
+            .into_commit();
+        Ok(commit.id().to_string())
+    }
+
+    /// Find metadata remote refs matching the namespace and optional remote filter.
+    #[cfg(feature = "internal")]
+    pub fn find_remote_refs(
+        &self,
+        remote: Option<&str>,
+    ) -> crate::error::Result<Vec<(String, String)>> {
+        Ok(
+            crate::materialize::find_remote_refs(&self.repo, self.namespace(), remote)?
+                .into_iter()
+                .map(|(name, oid)| (name, oid.to_string()))
+                .collect(),
+        )
+    }
+
+    /// Find a reference and return its peeled object id if present.
+    #[cfg(feature = "internal")]
+    pub fn find_ref_oid(&self, ref_name: &str) -> crate::error::Result<Option<String>> {
+        match self.repo.find_reference(ref_name) {
+            Ok(reference) => Ok(Some(
+                reference
+                    .into_fully_peeled_id()
+                    .map_err(Self::other_error)?
+                    .detach()
+                    .to_string(),
+            )),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// List all refs with their peeled object ids.
+    #[cfg(feature = "internal")]
+    pub fn list_refs(&self) -> crate::error::Result<Vec<GitRefInfo>> {
+        let mut refs = Vec::new();
+        let platform = self.repo.references().map_err(Self::other_error)?;
+        for reference in platform.all().map_err(Self::other_error)? {
+            let reference = reference.map_err(|err| crate::error::Error::Other(err.to_string()))?;
+            let name = reference.name().as_bstr().to_string();
+            if let Ok(id) = reference.into_fully_peeled_id() {
+                refs.push(GitRefInfo {
+                    name,
+                    oid: id.detach().to_string(),
+                });
+            }
+        }
+        Ok(refs)
+    }
+
+    /// Delete a reference if it exists.
+    #[cfg(feature = "internal")]
+    pub fn delete_ref(&self, ref_name: &str) -> crate::error::Result<bool> {
+        match self.repo.find_reference(ref_name) {
+            Ok(reference) => {
+                reference
+                    .delete()
+                    .map_err(|err| crate::error::Error::Other(err.to_string()))?;
+                Ok(true)
+            }
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// Create or update a reference from a hex object id.
+    #[cfg(feature = "internal")]
+    pub fn set_ref(&self, ref_name: &str, oid: &str, message: &str) -> crate::error::Result<()> {
+        let oid = Self::parse_object_id(oid)?;
+        self.repo
+            .reference(ref_name, oid, PreviousValue::Any, message)
+            .map_err(|err| crate::error::Error::Other(err.to_string()))?;
+        Ok(())
+    }
+
+    /// Return commit information for an object id.
+    #[cfg(feature = "internal")]
+    pub fn commit_info(&self, oid: &str) -> crate::error::Result<GitCommitInfo> {
+        let oid = Self::parse_object_id(oid)?;
+        let commit = oid
+            .attach(&self.repo)
+            .object()
+            .map_err(Self::other_error)?
+            .into_commit();
+        let tree_oid = commit
+            .tree_id()
+            .map_err(Self::other_error)?
+            .detach()
+            .to_string();
+        let decoded = commit.decode().map_err(Self::other_error)?;
+        let author = decoded
+            .author()
+            .map_err(|err| crate::error::Error::Other(err.to_string()))?;
+        let author_time_seconds = author
+            .time()
+            .map_err(|err| crate::error::Error::Other(err.to_string()))?
+            .seconds;
+        let parent_count = decoded.parents().count();
+        Ok(GitCommitInfo {
+            oid: oid.to_string(),
+            tree_oid,
+            author_name: author.name.to_string(),
+            author_email: author.email.to_string(),
+            author_time_seconds,
+            message: decoded.message.to_string(),
+            parent_count,
+        })
+    }
+
+    /// Return commit information if the object id names a readable commit.
+    #[cfg(feature = "internal")]
+    pub fn maybe_commit_info(&self, oid: &str) -> crate::error::Result<Option<GitCommitInfo>> {
+        let Ok(oid) = Self::parse_object_id(oid) else {
+            return Ok(None);
+        };
+        let Ok(object) = oid.attach(&self.repo).object() else {
+            return Ok(None);
+        };
+        let commit = object.into_commit();
+        let tree_oid = commit
+            .tree_id()
+            .map_err(Self::other_error)?
+            .detach()
+            .to_string();
+        let decoded = commit.decode().map_err(Self::other_error)?;
+        let author = decoded
+            .author()
+            .map_err(|err| crate::error::Error::Other(err.to_string()))?;
+        let author_time_seconds = author
+            .time()
+            .map_err(|err| crate::error::Error::Other(err.to_string()))?
+            .seconds;
+        let parent_count = decoded.parents().count();
+        Ok(Some(GitCommitInfo {
+            oid: oid.to_string(),
+            tree_oid,
+            author_name: author.name.to_string(),
+            author_email: author.email.to_string(),
+            author_time_seconds,
+            message: decoded.message.to_string(),
+            parent_count,
+        }))
+    }
+
+    /// Walk commits reachable from a starting object id.
+    #[cfg(feature = "internal")]
+    pub fn rev_walk_oids(&self, start_oid: &str) -> crate::error::Result<Vec<String>> {
+        let start_oid = Self::parse_object_id(start_oid)?;
+        let walk = self.repo.rev_walk(Some(start_oid));
+        let iter = walk.all().map_err(Self::other_error)?;
+        let mut oids = Vec::new();
+        for info in iter {
+            oids.push(
+                info.map_err(|err| crate::error::Error::Other(err.to_string()))?
+                    .id
+                    .to_string(),
+            );
+        }
+        Ok(oids)
+    }
+
+    /// Return merge-base object id for two commits, if one exists.
+    #[cfg(feature = "internal")]
+    pub fn merge_base_oid(&self, left: &str, right: &str) -> crate::error::Result<Option<String>> {
+        let left = Self::parse_object_id(left)?;
+        let right = Self::parse_object_id(right)?;
+        Ok(self
+            .repo
+            .merge_base(left, right)
+            .ok()
+            .map(|oid| oid.to_string()))
+    }
+
+    /// Extract metadata keys from a tree object.
+    #[cfg(feature = "internal")]
+    pub fn extract_keys_from_tree(
+        &self,
+        tree_oid: &str,
+    ) -> crate::error::Result<Vec<(String, String, String)>> {
+        let tree_oid = Self::parse_object_id(tree_oid)?;
+        crate::sync::extract_keys_from_tree(&self.repo, tree_oid)
+    }
+
+    /// Parse a metadata tree by object id.
+    #[cfg(feature = "internal")]
+    pub fn parse_metadata_tree(
+        &self,
+        tree_oid: &str,
+    ) -> crate::error::Result<crate::tree::model::ParsedTree> {
+        let tree_oid = Self::parse_object_id(tree_oid)?;
+        crate::tree::format::parse_tree(&self.repo, tree_oid, "")
+    }
+
+    /// Return entries directly below a tree object.
+    #[cfg(feature = "internal")]
+    pub fn tree_entries(&self, tree_oid: &str) -> crate::error::Result<Vec<GitTreeEntryInfo>> {
+        let tree_oid = Self::parse_object_id(tree_oid)?;
+        let tree = tree_oid
+            .attach(&self.repo)
+            .object()
+            .map_err(Self::other_error)?
+            .into_tree();
+        let mut entries = Vec::new();
+        for entry in tree.iter() {
+            let entry = entry.map_err(|err| crate::error::Error::Other(err.to_string()))?;
+            let kind = if entry.mode().is_blob() {
+                GitTreeEntryKind::Blob
+            } else if entry.mode().is_tree() {
+                GitTreeEntryKind::Tree
+            } else {
+                GitTreeEntryKind::Other
+            };
+            entries.push(GitTreeEntryInfo {
+                name: entry.filename().to_string(),
+                oid: entry.object_id().to_string(),
+                kind,
+            });
+        }
+        Ok(entries)
+    }
+
+    /// Find the object id for a path inside a tree.
+    #[cfg(feature = "internal")]
+    pub fn find_blob_oid_in_tree(
+        &self,
+        tree_oid: &str,
+        path: &str,
+    ) -> crate::error::Result<Option<String>> {
+        let tree_oid = Self::parse_object_id(tree_oid)?;
+        Ok(
+            crate::git_utils::find_blob_oid_in_tree(&self.repo, tree_oid, path)?
+                .map(|oid| oid.to_string()),
+        )
+    }
+
+    /// Build a serialized tree from already-filtered records.
+    #[cfg(feature = "internal")]
+    pub fn build_filtered_tree_oid(
+        &self,
+        metadata: &[crate::db::types::SerializableEntry],
+        tombstones: &[crate::db::types::TombstoneRecord],
+        set_tombstones: &[crate::db::types::SetTombstoneRecord],
+        list_tombstones: &[crate::db::types::ListTombstoneRecord],
+    ) -> crate::error::Result<String> {
+        Ok(crate::serialize::build_filtered_tree(
+            &self.repo,
+            metadata,
+            tombstones,
+            set_tombstones,
+            list_tombstones,
+        )?
+        .to_string())
+    }
+
+    /// Count dropped and retained keys between two tree ids.
+    #[cfg(feature = "internal")]
+    pub fn count_prune_stats_for_trees(
+        &self,
+        original_oid: &str,
+        pruned_oid: &str,
+    ) -> crate::error::Result<(u64, u64)> {
+        let original_oid = Self::parse_object_id(original_oid)?;
+        let pruned_oid = Self::parse_object_id(pruned_oid)?;
+        crate::serialize::count_prune_stats(&self.repo, original_oid, pruned_oid)
+    }
+
+    /// Create a one-file tree containing `README.md`, commit it, update a ref, and return the commit id.
+    #[cfg(feature = "internal")]
+    pub fn commit_readme_to_ref(
+        &self,
+        ref_name: &str,
+        readme_content: &str,
+        message: &str,
+        parent_oid: Option<&str>,
+        reflog_message: &str,
+        must_not_exist: bool,
+    ) -> crate::error::Result<String> {
+        let blob_oid: gix::ObjectId = self
+            .repo
+            .write_blob(readme_content.as_bytes())
+            .map_err(Self::other_error)?
+            .into();
+        let tree_oid = {
+            let mut editor = self.repo.empty_tree().edit().map_err(Self::other_error)?;
+            editor
+                .upsert("README.md", gix::objs::tree::EntryKind::Blob, blob_oid)
+                .map_err(Self::other_error)?;
+            editor.write().map_err(Self::other_error)?
+        };
+        let parents = parent_oid
+            .map(Self::parse_object_id)
+            .transpose()?
+            .into_iter()
+            .collect::<Vec<_>>();
+        let sig = gix::actor::Signature {
+            name: self.name().into(),
+            email: self.email().into(),
+            time: gix::date::Time::now_local_or_utc(),
+        };
+        let commit = gix::objs::Commit {
+            message: message.into(),
+            tree: tree_oid.into(),
+            author: sig.clone(),
+            committer: sig,
+            encoding: None,
+            parents: parents.into(),
+            extra_headers: Default::default(),
+        };
+        let commit_oid = self
+            .repo
+            .write_object(&commit)
+            .map_err(Self::other_error)?
+            .detach();
+        let previous = if must_not_exist {
+            PreviousValue::MustNotExist
+        } else {
+            PreviousValue::Any
+        };
+        self.repo
+            .reference(ref_name, commit_oid, previous, reflog_message)
+            .map_err(Self::other_error)?;
+        Ok(commit_oid.to_string())
+    }
+
+    /// Create a commit for a tree, update a ref, and return the commit id.
+    #[cfg(feature = "internal")]
+    pub fn commit_tree_to_ref(
+        &self,
+        ref_name: &str,
+        tree_oid: &str,
+        parent_oid: Option<&str>,
+        message: &str,
+        reflog_message: &str,
+    ) -> crate::error::Result<String> {
+        let tree_oid = Self::parse_object_id(tree_oid)?;
+        let parents = parent_oid
+            .map(Self::parse_object_id)
+            .transpose()?
+            .into_iter()
+            .collect::<Vec<_>>();
+        let sig = gix::actor::Signature {
+            name: self.name().into(),
+            email: self.email().into(),
+            time: gix::date::Time::now_local_or_utc(),
+        };
+        let commit = gix::objs::Commit {
+            message: message.into(),
+            tree: tree_oid,
+            author: sig.clone(),
+            committer: sig,
+            encoding: None,
+            parents: parents.into(),
+            extra_headers: Default::default(),
+        };
+        let commit_oid = self
+            .repo
+            .write_object(&commit)
+            .map_err(Self::other_error)?
+            .detach();
+        self.repo
+            .reference(ref_name, commit_oid, PreviousValue::Any, reflog_message)
+            .map_err(Self::other_error)?;
+        Ok(commit_oid.to_string())
+    }
+
+    /// List configured metadata remotes.
+    #[cfg(feature = "internal")]
+    pub fn list_meta_remotes(&self) -> crate::error::Result<Vec<(String, String)>> {
+        crate::git_utils::list_meta_remotes(&self.repo)
+    }
+
+    /// Hydrate blobs reachable from a remote metadata tip and return the count fetched.
+    #[cfg(feature = "internal")]
+    pub fn hydrate_tip_blobs_counted(
+        &self,
+        remote_name: &str,
+        ref_name: &str,
+    ) -> crate::error::Result<usize> {
+        crate::git_utils::hydrate_tip_blobs_counted(&self.repo, remote_name, ref_name)
+    }
+
+    /// Fetch specific blob ids from a metadata remote.
+    #[cfg(feature = "internal")]
+    pub fn fetch_blob_oids(&self, remote_name: &str, oids: &[String]) -> crate::error::Result<()> {
+        let parsed = oids
+            .iter()
+            .map(|oid| Self::parse_object_id(oid))
+            .collect::<crate::error::Result<Vec<_>>>()?;
+        crate::git_utils::fetch_blob_oids(&self.repo, remote_name, &parsed)
+    }
+
+    /// Read a named blob entry from a tree.
+    #[cfg(feature = "internal")]
+    pub fn tree_blob_string(
+        &self,
+        tree_oid: &str,
+        name: &str,
+    ) -> crate::error::Result<Option<String>> {
+        for entry in self.tree_entries(tree_oid)? {
+            if entry.name == name && entry.kind == GitTreeEntryKind::Blob {
+                return self.read_blob_string(&entry.oid).map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Return a named subtree entry object id from a tree.
+    #[cfg(feature = "internal")]
+    pub fn tree_subtree_oid(
+        &self,
+        tree_oid: &str,
+        name: &str,
+    ) -> crate::error::Result<Option<String>> {
+        Ok(self
+            .tree_entries(tree_oid)?
+            .into_iter()
+            .find(|entry| entry.name == name && entry.kind == GitTreeEntryKind::Tree)
+            .map(|entry| entry.oid))
     }
 }

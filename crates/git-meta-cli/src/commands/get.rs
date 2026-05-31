@@ -1,5 +1,4 @@
-use anyhow::{Context, Result};
-use git_meta_lib::gix::prelude::ObjectIdExt;
+use anyhow::Result;
 use serde_json::{json, Map, Value};
 
 use crate::commands::hydrate::hydrate_promised_entries;
@@ -17,8 +16,6 @@ pub(crate) fn run(
 ) -> Result<()> {
     let ctx = CommandContext::open(None)?;
     let target = ctx.session.resolve_target(&Target::parse(target_str)?)?;
-    let repo = ctx.session.repo();
-
     let include_target_subtree = *target.target_type() == TargetType::Path;
     let mut entries =
         ctx.session
@@ -85,7 +82,7 @@ pub(crate) fn run(
         .filter(|r| !r.is_promised)
         .map(|r| {
             if r.is_git_ref {
-                let resolved_value = resolve_git_ref(repo, &r.value)?;
+                let resolved_value = ctx.session.read_blob_string(&r.value)?;
                 let json_value = serde_json::to_string(&resolved_value)?;
                 Ok((r.target_value, r.key, json_value, r.value_type))
             } else {
@@ -105,20 +102,6 @@ pub(crate) fn run(
     }
 
     Ok(())
-}
-
-/// Resolve a git blob SHA to its content as a UTF-8 string.
-fn resolve_git_ref(repo: &git_meta_lib::gix::Repository, sha: &str) -> Result<String> {
-    let oid = git_meta_lib::gix::ObjectId::from_hex(sha.as_bytes())
-        .with_context(|| format!("invalid git blob SHA: {sha}"))?;
-    let obj = oid
-        .attach(repo)
-        .object()
-        .with_context(|| format!("git blob not found: {sha}"))?;
-    let blob = obj.into_blob();
-    let content = std::str::from_utf8(&blob.data)
-        .with_context(|| format!("git blob {sha} is not valid UTF-8"))?;
-    Ok(content.to_string())
 }
 
 fn truncate_str(s: &str, max: usize) -> String {

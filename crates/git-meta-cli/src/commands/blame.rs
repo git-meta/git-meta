@@ -41,7 +41,7 @@ pub(crate) fn run(path: &str, rev: Option<&str>, porcelain: bool, json: bool) ->
     } else if json {
         println!("{}", serde_json::to_string_pretty(&json_groups(&groups))?);
     } else {
-        let mut out = Pager::start(Some(ctx.session.repo()));
+        let mut out = Pager::start(ctx.session.core_pager());
         print_text(&mut out, &groups)?;
     }
 

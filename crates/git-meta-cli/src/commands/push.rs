@@ -7,19 +7,19 @@ use crate::context::CommandContext;
 /// This only succeeds if the branch doesn't already exist (no force push).
 pub(crate) fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
 
     let remote_name = ctx.session.resolve_remote(remote)?;
 
     // Gather project info from git config
-    let config = repo.config_snapshot();
-    let origin_url = config
-        .string("remote.origin.url")
-        .map_or_else(|| "unknown".to_string(), |s| s.to_string());
+    let origin_url = ctx
+        .session
+        .git_config_string("remote.origin.url")
+        .unwrap_or_else(|| "unknown".to_string());
     let meta_url_key = format!("remote.{remote_name}.url");
-    let meta_url = config
-        .string(&meta_url_key)
-        .map_or_else(|| "unknown".to_string(), |s| s.to_string());
+    let meta_url = ctx
+        .session
+        .git_config_string(&meta_url_key)
+        .unwrap_or_else(|| "unknown".to_string());
     let ns = ctx.session.namespace();
 
     let readme_content = generate_readme(&origin_url, &meta_url, ns);
@@ -30,42 +30,16 @@ pub(crate) fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
         eprintln!("[verbose] meta url: {meta_url}");
     }
 
-    // Create blob -> tree -> commit
-    let blob_oid: git_meta_lib::gix::ObjectId = repo.write_blob(readme_content.as_bytes())?.into();
-
-    let tree_oid = {
-        let mut editor = repo.empty_tree().edit()?;
-        editor.upsert(
-            "README.md",
-            git_meta_lib::gix::objs::tree::EntryKind::Blob,
-            blob_oid,
-        )?;
-        editor.write()?
-    };
-
-    let name = ctx.session.name();
-    let email = ctx.session.email();
-    let sig = git_meta_lib::gix::actor::Signature {
-        name: name.into(),
-        email: email.into(),
-        time: git_meta_lib::gix::date::Time::now_local_or_utc(),
-    };
-
-    let commit = git_meta_lib::gix::objs::Commit {
-        message: "Initial metadata repository setup\n\nCreated by git meta to provide documentation for contributors.".into(),
-        tree: tree_oid.into(),
-        author: sig.clone(),
-        committer: sig,
-        encoding: None,
-        parents: vec![].into(),
-        extra_headers: Default::default(),
-    };
-
-    let commit_oid = repo.write_object(&commit)?.detach();
+    let commit_oid = ctx.session.commit_readme_to_ref(
+        "refs/meta/tmp/readme",
+        &readme_content,
+        "Initial metadata repository setup\n\nCreated by git meta to provide documentation for contributors.",
+        None,
+        "git-meta: create README",
+        false,
+    )?;
 
     if verbose {
-        eprintln!("[verbose] created blob: {blob_oid}");
-        eprintln!("[verbose] created tree: {tree_oid}");
         eprintln!("[verbose] created commit: {commit_oid}");
     }
 
@@ -78,7 +52,7 @@ pub(crate) fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     }
 
     eprintln!("Pushing README to {remote_name}...");
-    let result = git_meta_lib::git_utils::run_git(repo, &["push", &remote_name, &push_refspec]);
+    let result = ctx.session.run_git(&["push", &remote_name, &push_refspec]);
 
     match result {
         Ok(_) => {
