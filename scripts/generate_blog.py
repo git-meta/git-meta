@@ -246,6 +246,7 @@ def render_page(title: str, description: str, body: str, canonical_path: str) ->
         </a>
         <nav class=\"nav-links\" aria-label=\"Primary\">
           <a href=\"{root}blog/\">Blog</a>
+          <a href=\"{root}blog/feed.xml\">RSS</a>
           <a href=\"{root}spec/\" class=\"nav-muted\">Spec &rarr;</a>
         </nav>
       </div>
@@ -289,7 +290,6 @@ def render_index(posts: list[Post]) -> str:
         <p class=\"eyebrow\">Blog</p>
         <h1>project notes from git-meta</h1>
         <p>short little deep dives into how various things are handled with the git-meta approach to storing metadata with your git code</p>
-        <p><a href=\"feed.xml\">RSS feed</a></p>
       </section>
       <section class=\"blog-list\" aria-label=\"Posts\">
         {''.join(cards)}
