@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (() => {
+        const stored = localStorage.getItem("git-meta-theme");
+        document.documentElement.dataset.theme = stored || "system";
+      })();
+    </script>
+    <title>publishing metadata to the right places · git-meta</title>
+    <meta name="description" content="serialize filters let git-meta keep local, company, and public metadata separate" />
+    <link rel="icon" type="image/png" href="../../assets/git-meta-icon.png" />
+    <link rel="canonical" href="https://git-meta.com/blog/metadata-filters-public-and-private/" />
+    <link rel="alternate" type="application/rss+xml" title="git-meta blog" href="https://git-meta.com/blog/feed.xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="../../index.html" aria-label="git-meta home">
+          <img class="brand-mark" src="../../assets/git-meta-icon.png" width="32" height="32" alt="" />
+          <span class="brand-name">git-meta</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="../../blog/">Blog</a>
+          <a href="../../blog/feed.xml">RSS</a>
+          <a href="../../spec/" class="nav-muted">Spec &rarr;</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap blog-page blog-post-page">
+      <div class="blog-post-main">
+        <p class="blog-kicker"><a href="../">blog</a> / 2026-05-31 / schacon</p>
+        <article class="blog-article">
+          <h1>publishing metadata to the right places</h1>
+          <div class="blog-content">
+            <p>One of the awkward things about metadata is that not all of it wants the same audience.</p>
+<p>Some metadata is obviously public. Review status, ownership hints, generated documentation notes, compatibility information, provenance for a generated patch. If the repository is public, that metadata can probably travel with it.</p>
+<p>Some metadata is useful only inside a company. Internal ticket IDs, security scan details, deployment approvals, customer names, private model evaluations, or links to systems that only exist behind the VPN.</p>
+<p>And some metadata should not leave your laptop at all. Cursor positions, local scratch state, experiments, personal agent notes, temporary import markers.</p>
+<p>If all of that lives in one pile, pushing metadata becomes scary. So <code>git-meta</code> has serialize filters.</p>
+<h2 id="the-default-publish-normal-keys">The default: publish normal keys</h2>
+<p>By default, metadata serializes to the main local metadata ref:</p>
+<pre><code>refs/meta/local/main</code></pre>
+<p>That ref can then be pushed to a remote metadata ref, normally something like:</p>
+<pre><code>refs/meta/main</code></pre>
+<p>So if you set ordinary keys:</p>
+<pre><code>git meta set project review:policy required
+git meta set path:src/api.rs owner platform-team
+git meta set commit:abc123 provenance:generator codegen-v2</code></pre>
+<p>then <code>git meta serialize</code> writes those keys to the normal serialized tree.</p>
+<p>That is the happy path. If a key is not special and no filter matches it, it goes to <code>main</code>.</p>
+<h2 id="local-only-keys">Local-only keys</h2>
+<p>There is one hard rule that does not need configuration:</p>
+<pre><code>meta:local:*</code></pre>
+<p>Anything under <code>meta:local:</code> is never serialized.</p>
+<p>For example:</p>
+<pre><code>git meta set project meta:local:last-viewed-branch sc/experiment
+git meta set path:src/api.rs meta:local:cursor-line 142</code></pre>
+<p>Those values stay in your local SQLite database. They are not written to any Git tree, even if you add a filter that tries to route them somewhere.</p>
+<p>Use this namespace for personal state, caches, UI hints, and anything that would be noise or a leak if another clone saw it.</p>
+<h2 id="excluding-keys">Excluding keys</h2>
+<p>Sometimes a key is not purely local, but you still do not want it serialized. Add an <code>exclude</code> rule.</p>
+<p>Filter rules are set members on the project target:</p>
+<pre><code>git meta set:add project meta:filter &quot;exclude draft:**&quot;</code></pre>
+<p>That means any key under <code>draft:</code> is skipped during serialization:</p>
+<pre><code>git meta set project draft:summary &quot;not ready yet&quot;
+git meta set project draft:review-notes &quot;too spicy&quot;</code></pre>
+<p>The <code>**</code> wildcard means zero or more key segments, so <code>draft:title</code> and <code>draft:review:notes</code> both match.</p>
+<p>A plain <code>*</code> matches exactly one segment:</p>
+<pre><code>git meta set:add project meta:filter &quot;exclude scratch:*&quot;</code></pre>
+<p>That matches <code>scratch:one</code>, but not <code>scratch:one:two</code>.</p>
+<h2 id="routing-keys-to-another-ref">Routing keys to another ref</h2>
+<p>The more interesting filter is <code>route</code>.</p>
+<p>A route rule keeps matching keys out of <code>main</code> and writes them to another local destination ref:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
+<p>Now this key:</p>
+<pre><code>git meta set commit:abc123 company:jira PROJ-1234</code></pre>
+<p>serializes to:</p>
+<pre><code>refs/meta/local/company</code></pre>
+<p>instead of:</p>
+<pre><code>refs/meta/local/main</code></pre>
+<p>That gives you two separate publishable streams:</p>
+<ul><li><code>main</code> for public metadata</li><li><code>company</code> for internal metadata</li></ul>
+<p>The serialized trees use the same exchange format; they just live under different refs.</p>
+<h2 id="shared-filters-vs-personal-filters">Shared filters vs personal filters</h2>
+<p>There are two places to put filter rules:</p>
+<pre><code>meta:filter
+meta:local:filter</code></pre>
+<p>Use <code>meta:filter</code> for project policy. These rules are themselves shared metadata, so everyone can agree that <code>company:**</code> goes to the company-only destination.</p>
+<p>Use <code>meta:local:filter</code> for your own publishing preferences. Since it is under <code>meta:local:</code>, it is not serialized.</p>
+<p>For example, a company might share this rule:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
+<p>And you might locally add:</p>
+<pre><code>git meta set:add project meta:local:filter &quot;route me:** mine&quot;</code></pre>
+<p>Now company values go to the company destination, your personal values go to your private destination, and normal values still go to public <code>main</code>.</p>
+<h2 id="a-public-plus-company-workflow">A public plus company workflow</h2>
+<p>Imagine an open source project maintained by a company. The public repository should get useful metadata:</p>
+<pre><code>git meta set commit:abc123 review:status approved
+git meta set commit:abc123 provenance:agent codex
+git meta set path:src/billing.rs owner billing-team</code></pre>
+<p>But internal systems should stay internal:</p>
+<pre><code>git meta set commit:abc123 company:jira BILL-2841
+git meta set commit:abc123 company:security-scan scan-99812
+git meta set path:src/billing.rs company:service-id billing-prod</code></pre>
+<p>Set the shared filter once:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
+<p>Then serialize:</p>
+<pre><code>git meta serialize</code></pre>
+<p>You now have at least two local metadata refs:</p>
+<pre><code>refs/meta/local/main
+refs/meta/local/company</code></pre>
+<p>The public ref can be pushed to the public host. The company ref can be pushed to an internal metadata remote or internal ref. The exact remote setup is host-tool policy, but the important bit is that the data is already separated before publishing.</p>
+<p>Conceptually:</p>
+<pre><code># public metadata
+git push public refs/meta/local/main:refs/meta/main
+
+# internal metadata
+git push company refs/meta/local/company:refs/meta/main</code></pre>
+<p>Now public consumers can materialize review status, owners, and provenance without seeing internal Jira IDs. Company users can materialize the internal stream too.</p>
+<h2 id="multiple-destinations">Multiple destinations</h2>
+<p>A route can name more than one destination with commas:</p>
+<pre><code>git meta set:add project meta:filter &quot;route audit:** company,audit&quot;</code></pre>
+<p>That writes matching keys to both destination refs. This is useful when one class of metadata should go to a broad internal audience and also to a narrower archive or compliance stream.</p>
+<h2 id="conflict-rules-are-intentionally-boring">Conflict rules are intentionally boring</h2>
+<p>Filters decide where a key is serialized. They do not change the meaning of the key, the target, or the merge rules for the value.</p>
+<p>Strings are still strings. Lists are still append-friendly lists. Sets are still unique-member sets. A routed ref is just another serialized git-meta tree.</p>
+<p>That is the design goal: keep policy about <em>where metadata goes</em> separate from semantics about <em>what metadata means</em>.</p>
+<h2 id="a-simple-naming-pattern">A simple naming pattern</h2>
+<p>The practical advice is to pick obvious top-level namespaces:</p>
+<pre><code>review:*        public review metadata
+provenance:*    public generation/provenance metadata
+owner           public ownership hint
+company:*       company-only metadata
+me:*            personal metadata routed by local preference
+meta:local:*    never serialized at all</code></pre>
+<p>Then the filters are easy to understand:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;
+git meta set:add project meta:local:filter &quot;route me:** mine&quot;</code></pre>
+<p>The result is boring in the good way: public metadata can be published publicly, company metadata can stay inside the company, and local metadata can remain local.</p>
+<p>That is the point of serialize filters. Not secrecy magic, not access control, not encryption. Just a clean way to avoid mixing audiences before the data ever gets pushed.</p>
+          </div>
+        </article>
+      </div>
+      <aside class="blog-toc" aria-label="On this page"><div class="blog-toc-title">On this page</div><ol><li class="blog-toc-h2"><a href="#the-default-publish-normal-keys">The default: publish normal keys</a></li><li class="blog-toc-h2"><a href="#local-only-keys">Local-only keys</a></li><li class="blog-toc-h2"><a href="#excluding-keys">Excluding keys</a></li><li class="blog-toc-h2"><a href="#routing-keys-to-another-ref">Routing keys to another ref</a></li><li class="blog-toc-h2"><a href="#shared-filters-vs-personal-filters">Shared filters vs personal filters</a></li><li class="blog-toc-h2"><a href="#a-public-plus-company-workflow">A public plus company workflow</a></li><li class="blog-toc-h2"><a href="#multiple-destinations">Multiple destinations</a></li><li class="blog-toc-h2"><a href="#conflict-rules-are-intentionally-boring">Conflict rules are intentionally boring</a></li><li class="blog-toc-h2"><a href="#a-simple-naming-pattern">A simple naming pattern</a></li></ol></aside>
+    </main>
+  </body>
+</html>
