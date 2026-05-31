@@ -203,3 +203,147 @@ pub fn classify_key(key: &str, rules: &[FilterRule]) -> Option<Vec<String>> {
         Some(matched_routes)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn rule(raw: &str) -> FilterRule {
+        parse_rule(raw).unwrap()
+    }
+
+    fn classify(raw_rules: &[&str], key: &str) -> Option<Vec<String>> {
+        let rules = raw_rules.iter().map(|raw| rule(raw)).collect::<Vec<_>>();
+        classify_key(key, &rules)
+    }
+
+    #[test]
+    fn defaults_to_main_without_matching_rules() {
+        assert_eq!(classify(&[], "review:status"), Some(vec!["main".into()]));
+        assert_eq!(
+            classify(&["route private:** private"], "review:status"),
+            Some(vec!["main".into()])
+        );
+    }
+
+    #[test]
+    fn meta_local_keys_are_never_serialized() {
+        assert_eq!(classify(&[], "meta:local:cursor"), None);
+        assert_eq!(
+            classify(&["route meta:local:** private"], "meta:local:cursor"),
+            None
+        );
+        assert_eq!(
+            classify(&["route meta:* private"], "meta:local"),
+            Some(vec!["private".into()])
+        );
+    }
+
+    #[test]
+    fn exclude_rules_drop_matching_keys() {
+        assert_eq!(classify(&["exclude draft:**"], "draft:title"), None);
+        assert_eq!(
+            classify(&["exclude draft:**"], "draft:review:comment"),
+            None
+        );
+        assert_eq!(
+            classify(&["exclude draft:**"], "published:title"),
+            Some(vec!["main".into()])
+        );
+    }
+
+    #[test]
+    fn route_rules_replace_main_destination() {
+        assert_eq!(
+            classify(&["route private:** private"], "private:secret"),
+            Some(vec!["private".into()])
+        );
+        assert_eq!(
+            classify(&["route private:** private"], "private:deep:secret"),
+            Some(vec!["private".into()])
+        );
+    }
+
+    #[test]
+    fn route_rules_can_send_to_multiple_destinations() {
+        assert_eq!(
+            classify(&["route acme:** company,audit"], "acme:scan"),
+            Some(vec!["company".into(), "audit".into()])
+        );
+    }
+
+    #[test]
+    fn overlapping_routes_are_deduplicated_in_rule_order() {
+        assert_eq!(
+            classify(
+                &[
+                    "route acme:** company,audit",
+                    "route acme:secrets:** audit,security",
+                ],
+                "acme:secrets:token"
+            ),
+            Some(vec!["company".into(), "audit".into(), "security".into()])
+        );
+    }
+
+    #[test]
+    fn exclude_wins_over_route_regardless_of_order() {
+        assert_eq!(
+            classify(
+                &["route private:** private", "exclude private:secret"],
+                "private:secret"
+            ),
+            None
+        );
+        assert_eq!(
+            classify(
+                &["exclude private:secret", "route private:** private"],
+                "private:secret"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn star_matches_exactly_one_segment() {
+        assert_eq!(
+            classify(&["route review:* team"], "review:status"),
+            Some(vec!["team".into()])
+        );
+        assert_eq!(
+            classify(&["route review:* team"], "review:thread:status"),
+            Some(vec!["main".into()])
+        );
+        assert_eq!(
+            classify(&["route review:* team"], "review"),
+            Some(vec!["main".into()])
+        );
+    }
+
+    #[test]
+    fn globstar_matches_zero_or_more_segments() {
+        assert_eq!(
+            classify(&["route review:**:status team"], "review:status"),
+            Some(vec!["team".into()])
+        );
+        assert_eq!(
+            classify(&["route review:**:status team"], "review:thread:status"),
+            Some(vec!["team".into()])
+        );
+        assert_eq!(
+            classify(
+                &["route review:**:status team"],
+                "review:thread:subthread:status"
+            ),
+            Some(vec!["team".into()])
+        );
+    }
+
+    #[test]
+    fn invalid_rules_are_rejected() {
+        assert!(parse_rule("exclude").is_err());
+        assert!(parse_rule("route private:**").is_err());
+        assert!(parse_rule("copy private:** private").is_err());
+    }
+}
