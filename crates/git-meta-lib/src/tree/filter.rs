@@ -105,6 +105,11 @@ fn parse_rule(s: &str) -> Result<FilterRule> {
                 .map(|d| d.trim().to_string())
                 .filter(|d| !d.is_empty())
                 .collect();
+            if destinations.is_empty() {
+                return Err(Error::InvalidFilterRule(format!(
+                    "route rule requires a destination: '{s}'"
+                )));
+            }
             FilterAction::Route(destinations)
         }
         other => {
@@ -342,6 +347,7 @@ mod tests {
     fn invalid_rules_are_rejected() {
         assert!(parse_rule("exclude").is_err());
         assert!(parse_rule("route private:**").is_err());
+        assert!(parse_rule("route private:** ,").is_err());
         assert!(parse_rule("copy private:** private").is_err());
     }
 }

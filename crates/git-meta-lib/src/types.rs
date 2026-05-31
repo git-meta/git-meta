@@ -385,6 +385,56 @@ impl<'a> MetaEdit<'a> {
     }
 }
 
+/// A local-only metadata publish operation.
+///
+/// Publishing converts hydrated `local:` metadata into non-local metadata for
+/// the same target. Prefix publishes tombstone the old local key; set-member
+/// publishes remove only the selected members from the local set. Source keys
+/// must start with `local:`, destination keys must not, and promised rows are
+/// not publishable.
+///
+/// This only describes a local metadata change; it does not serialize, fetch,
+/// pull, push, or sync.
+#[derive(Debug, Clone)]
+#[must_use]
+pub enum LocalPublish<'a> {
+    /// Publish an exact local key and every child key below it.
+    KeyPrefix {
+        /// The exact local key or namespace to publish from.
+        local_prefix: &'a str,
+        /// The exact non-local key or namespace to publish to.
+        published_prefix: &'a str,
+    },
+    /// Publish selected members from a local set into a non-local set.
+    SetMembers {
+        /// The local set key to remove members from.
+        local_key: &'a str,
+        /// The non-local set key to add members to.
+        published_key: &'a str,
+        /// Members to publish.
+        members: &'a [String],
+    },
+}
+
+impl<'a> LocalPublish<'a> {
+    /// Publish an exact local key and every child key below it.
+    pub fn key_prefix(local_prefix: &'a str, published_prefix: &'a str) -> Self {
+        Self::KeyPrefix {
+            local_prefix,
+            published_prefix,
+        }
+    }
+
+    /// Publish selected members from a local set into a non-local set.
+    pub fn set_members(local_key: &'a str, published_key: &'a str, members: &'a [String]) -> Self {
+        Self::SetMembers {
+            local_key,
+            published_key,
+            members,
+        }
+    }
+}
+
 /// Size threshold (in bytes) above which file values are stored as git blob references.
 #[cfg(not(feature = "internal"))]
 pub(crate) const GIT_REF_THRESHOLD: usize = 1024;

@@ -99,6 +99,204 @@ fn remove_key() {
 }
 
 #[test]
+fn publish_local_publishes_key_prefix_without_rewriting_values() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+    let handle = session.target(&Target::project());
+    let list_entries = vec![
+        ListEntry {
+            value: "first".to_string(),
+            timestamp: 10,
+        },
+        ListEntry {
+            value: "second".to_string(),
+            timestamp: 20,
+        },
+    ];
+
+    handle.set("local:agent:session:s1:title", "draft").unwrap();
+    handle
+        .set("local:agent:session:s1:turns", list_entries.clone())
+        .unwrap();
+    handle
+        .set_add("local:agent:session:s1:tags", "review")
+        .unwrap();
+
+    handle
+        .publish_local([LocalPublish::key_prefix(
+            "local:agent:session:s1",
+            "agent:session:s1",
+        )])
+        .unwrap();
+
+    assert_eq!(
+        handle.get_value("agent:session:s1:title").unwrap(),
+        Some(MetaValue::String("draft".to_string()))
+    );
+    assert_eq!(
+        handle.get_value("agent:session:s1:turns").unwrap(),
+        Some(MetaValue::List(list_entries))
+    );
+    let Some(MetaValue::Set(tags)) = handle.get_value("agent:session:s1:tags").unwrap() else {
+        panic!("expected published set");
+    };
+    assert!(tags.contains("review"));
+    assert!(handle
+        .get_value("local:agent:session:s1:title")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn publish_local_publishes_exact_prefix_and_child_keys_without_siblings() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+    let handle = session.target(&Target::project());
+
+    handle.set("local:agent:session:s1", "root").unwrap();
+    handle.set("local:agent:session:s1:title", "draft").unwrap();
+    handle
+        .set("local:agent:session:s10:title", "sibling")
+        .unwrap();
+
+    handle
+        .publish_local([LocalPublish::key_prefix(
+            "local:agent:session:s1",
+            "agent:session:s1",
+        )])
+        .unwrap();
+
+    assert_eq!(
+        handle.get_value("agent:session:s1").unwrap(),
+        Some(MetaValue::String("root".to_string()))
+    );
+    assert_eq!(
+        handle.get_value("agent:session:s1:title").unwrap(),
+        Some(MetaValue::String("draft".to_string()))
+    );
+    assert_eq!(
+        handle.get_value("local:agent:session:s10:title").unwrap(),
+        Some(MetaValue::String("sibling".to_string()))
+    );
+    assert!(handle
+        .get_value("agent:session:s10:title")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn publish_local_publishes_selected_set_members() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+    let handle = session.target(&Target::project());
+
+    handle.set_add("local:agent:sessions", "s1").unwrap();
+    handle.set_add("local:agent:sessions", "s2").unwrap();
+
+    let members = vec!["s1".to_string(), "s1".to_string()];
+    handle
+        .publish_local([LocalPublish::set_members(
+            "local:agent:sessions",
+            "agent:sessions",
+            &members,
+        )])
+        .unwrap();
+
+    let Some(MetaValue::Set(local)) = handle.get_value("local:agent:sessions").unwrap() else {
+        panic!("expected source set");
+    };
+    assert!(!local.contains("s1"));
+    assert!(local.contains("s2"));
+    let Some(MetaValue::Set(public)) = handle.get_value("agent:sessions").unwrap() else {
+        panic!("expected destination set");
+    };
+    assert!(public.contains("s1"));
+    assert!(!public.contains("s2"));
+}
+
+#[test]
+fn publish_local_requires_local_source_and_published_destination() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+    let handle = session.target(&Target::project());
+
+    assert!(
+        handle
+            .publish_local([LocalPublish::key_prefix(
+                "agent:session:s1",
+                "agent:session:s2"
+            )])
+            .is_err(),
+        "source must be local-only"
+    );
+    assert!(
+        handle
+            .publish_local([LocalPublish::key_prefix(
+                "local:agent:session:s1",
+                "local:agent:session:s2"
+            )])
+            .is_err(),
+        "destination must be published"
+    );
+}
+
+#[test]
+fn publish_local_rolls_back_batch_when_a_publish_fails() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+    let handle = session.target(&Target::project());
+
+    handle.set("local:agent:session:s1:title", "draft").unwrap();
+    let members = vec!["s1".to_string()];
+
+    let result = handle.publish_local([
+        LocalPublish::key_prefix("local:agent:session:s1", "agent:session:s1"),
+        LocalPublish::set_members("local:agent:missing", "agent:sessions", &members),
+    ]);
+
+    assert!(
+        result.is_err(),
+        "batch should fail on the missing source set"
+    );
+    assert_eq!(
+        handle.get_value("local:agent:session:s1:title").unwrap(),
+        Some(MetaValue::String("draft".to_string()))
+    );
+    assert!(handle
+        .get_value("agent:session:s1:title")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn publish_local_rolls_back_when_destination_key_exists() {
+    let (_dir, repo) = setup_repo();
+    let session = open_session(repo);
+    let handle = session.target(&Target::project());
+
+    handle.set("local:agent:session:s1:title", "draft").unwrap();
+    handle.set("agent:session:s1:title", "existing").unwrap();
+
+    let result = handle.publish_local([LocalPublish::key_prefix(
+        "local:agent:session:s1",
+        "agent:session:s1",
+    )]);
+
+    assert!(
+        result.is_err(),
+        "batch should fail on destination collision"
+    );
+    assert_eq!(
+        handle.get_value("local:agent:session:s1:title").unwrap(),
+        Some(MetaValue::String("draft".to_string()))
+    );
+    assert_eq!(
+        handle.get_value("agent:session:s1:title").unwrap(),
+        Some(MetaValue::String("existing".to_string()))
+    );
+}
+
+#[test]
 fn all_target_types() {
     let (_dir, repo) = setup_repo();
     let sha = head_sha(&repo);

@@ -3,6 +3,7 @@
 mod helpers;
 
 use git_meta_lib::*;
+use gix::prelude::ObjectIdExt;
 use helpers::*;
 
 #[test]
@@ -205,6 +206,231 @@ fn incremental_serialize_only_includes_changes() {
         output2.changes > 0,
         "incremental serialize should still report changes"
     );
+}
+
+#[test]
+fn published_prefix_survives_incremental_serialize_materialize() {
+    let (dir_a, repo_a) = setup_repo();
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
+    let handle_a = session_a.target(&Target::project());
+
+    handle_a.set("version", "1.0.0").unwrap();
+    handle_a
+        .set("local:agent:session:s1:title", "draft")
+        .unwrap();
+    let _ = session_a.serialize().unwrap();
+
+    let session_a2 = reopen_session(dir_a.path(), 2000);
+    session_a2
+        .target(&Target::project())
+        .publish_local([LocalPublish::key_prefix(
+            "local:agent:session:s1",
+            "agent:session:s1",
+        )])
+        .unwrap();
+    let _ = session_a2.serialize().unwrap();
+
+    let repo_a_re = gix::open_opts(
+        dir_a.path(),
+        gix::open::Options::isolated()
+            .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
+    )
+    .unwrap();
+    let message = meta_commit_message(&repo_a_re, "refs/meta/local/main");
+    assert!(
+        !message.contains("local:agent:session:s1"),
+        "serialize commit message must not leak local-only keys"
+    );
+    assert!(message.contains("agent:session:s1:title"));
+    let a_oid = repo_a_re
+        .find_reference("refs/meta/local/main")
+        .unwrap()
+        .into_fully_peeled_id()
+        .unwrap()
+        .detach();
+
+    let (dir_c, _repo_c) = setup_repo();
+    let src_objects = dir_a.path().join(".git").join("objects");
+    inject_remote_ref(&src_objects, dir_c.path(), a_oid);
+
+    let session_c = reopen_session(dir_c.path(), 3000);
+    let _ = session_c.materialize(None).unwrap();
+    let handle_c = session_c.target(&Target::project());
+
+    assert_eq!(
+        handle_c.get_value("agent:session:s1:title").unwrap(),
+        Some(MetaValue::String("draft".to_string()))
+    );
+    assert!(handle_c
+        .get_value("local:agent:session:s1:title")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn published_set_members_survive_incremental_serialize_materialize() {
+    let (dir_a, repo_a) = setup_repo();
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
+    let handle_a = session_a.target(&Target::project());
+
+    handle_a.set_add("local:agent:sessions", "s1").unwrap();
+    handle_a.set_add("local:agent:sessions", "s2").unwrap();
+    let _ = session_a.serialize().unwrap();
+
+    let session_a2 = reopen_session(dir_a.path(), 2000);
+    let members = vec!["s1".to_string()];
+    session_a2
+        .target(&Target::project())
+        .publish_local([LocalPublish::set_members(
+            "local:agent:sessions",
+            "agent:sessions",
+            &members,
+        )])
+        .unwrap();
+    let _ = session_a2.serialize().unwrap();
+
+    let repo_a_re = gix::open_opts(
+        dir_a.path(),
+        gix::open::Options::isolated()
+            .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
+    )
+    .unwrap();
+    let a_oid = repo_a_re
+        .find_reference("refs/meta/local/main")
+        .unwrap()
+        .into_fully_peeled_id()
+        .unwrap()
+        .detach();
+
+    let (dir_c, _repo_c) = setup_repo();
+    let src_objects = dir_a.path().join(".git").join("objects");
+    inject_remote_ref(&src_objects, dir_c.path(), a_oid);
+
+    let session_c = reopen_session(dir_c.path(), 3000);
+    let _ = session_c.materialize(None).unwrap();
+    let Some(MetaValue::Set(sessions)) = session_c
+        .target(&Target::project())
+        .get_value("agent:sessions")
+        .unwrap()
+    else {
+        panic!("expected published set");
+    };
+
+    assert!(sessions.contains("s1"));
+    assert!(!sessions.contains("s2"));
+}
+
+#[test]
+fn incremental_serialize_clears_main_when_modified_key_routes_away() {
+    let (dir_a, repo_a) = setup_repo();
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
+    session_a
+        .target(&Target::project())
+        .set("agent:session:s1:title", "draft")
+        .unwrap();
+    let _ = session_a.serialize().unwrap();
+
+    let session_a2 = reopen_session(dir_a.path(), 2000);
+    session_a2
+        .target(&Target::project())
+        .set_add("local:meta:filter", "route agent:** private")
+        .unwrap();
+    let output = session_a2.serialize().unwrap();
+    assert!(
+        output
+            .refs_written
+            .iter()
+            .any(|ref_name| ref_name == "refs/meta/local/main"),
+        "main ref should be rewritten to remove stale routed-away data"
+    );
+
+    let repo_a_re = gix::open_opts(
+        dir_a.path(),
+        gix::open::Options::isolated()
+            .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
+    )
+    .unwrap();
+    assert!(
+        repo_a_re.find_reference("refs/meta/local/private").is_ok(),
+        "routed key should still be written to its new destination"
+    );
+    let a_oid = repo_a_re
+        .find_reference("refs/meta/local/main")
+        .unwrap()
+        .into_fully_peeled_id()
+        .unwrap()
+        .detach();
+
+    let (dir_c, _repo_c) = setup_repo();
+    let src_objects = dir_a.path().join(".git").join("objects");
+    inject_remote_ref(&src_objects, dir_c.path(), a_oid);
+
+    let session_c = reopen_session(dir_c.path(), 3000);
+    let _ = session_c.materialize(None).unwrap();
+    assert!(session_c
+        .target(&Target::project())
+        .get_value("agent:session:s1:title")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn published_set_prefix_ignores_stale_destination_member_tombstones() {
+    let (dir_a, repo_a) = setup_repo();
+    let session_a = Session::open(repo_a.path()).unwrap().with_timestamp(1000);
+    let handle_a = session_a.target(&Target::project());
+
+    handle_a.set_add("agent:sessions", "s1").unwrap();
+    handle_a.set_remove("agent:sessions", "s1").unwrap();
+    handle_a.remove("agent:sessions").unwrap();
+    handle_a.set_add("local:agent:sessions", "s1").unwrap();
+    handle_a
+        .publish_local([LocalPublish::key_prefix(
+            "local:agent:sessions",
+            "agent:sessions",
+        )])
+        .unwrap();
+    let _ = session_a.serialize().unwrap();
+
+    let repo_a_re = gix::open_opts(
+        dir_a.path(),
+        gix::open::Options::isolated()
+            .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
+    )
+    .unwrap();
+    let a_oid = repo_a_re
+        .find_reference("refs/meta/local/main")
+        .unwrap()
+        .into_fully_peeled_id()
+        .unwrap()
+        .detach();
+
+    let (dir_c, _repo_c) = setup_repo();
+    let src_objects = dir_a.path().join(".git").join("objects");
+    inject_remote_ref(&src_objects, dir_c.path(), a_oid);
+
+    let session_c = reopen_session(dir_c.path(), 2000);
+    let _ = session_c.materialize(None).unwrap();
+    let Some(MetaValue::Set(sessions)) = session_c
+        .target(&Target::project())
+        .get_value("agent:sessions")
+        .unwrap()
+    else {
+        panic!("expected published set");
+    };
+
+    assert!(sessions.contains("s1"));
+}
+
+fn meta_commit_message(repo: &gix::Repository, ref_name: &str) -> String {
+    let commit_oid = repo
+        .find_reference(ref_name)
+        .unwrap()
+        .into_fully_peeled_id()
+        .unwrap()
+        .detach();
+    let commit = commit_oid.attach(repo).object().unwrap().into_commit();
+    commit.message_raw().unwrap().to_string()
 }
 
 #[test]

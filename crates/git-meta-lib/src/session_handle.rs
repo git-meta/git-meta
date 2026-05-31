@@ -200,6 +200,32 @@ impl<'a> SessionTargetHandle<'a> {
         )
     }
 
+    /// Publish hydrated `local:` metadata into non-local keys in one transaction.
+    ///
+    /// This only changes local SQLite metadata; it does not serialize, fetch,
+    /// pull, push, or sync.
+    ///
+    /// If any publish operation fails, none of the batch is committed. Prefix
+    /// publishes update metadata keys in-place so list/set backing rows keep
+    /// their identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a source is not `local:`, a destination is
+    /// `local:`, a selected row is promised, a prefix destination already
+    /// exists, or a selected set member is missing or not a set member.
+    pub fn publish_local<'b>(
+        &self,
+        entries: impl IntoIterator<Item = crate::LocalPublish<'b>>,
+    ) -> Result<()> {
+        self.session.store.publish_local(
+            &self.target,
+            entries,
+            self.session.email(),
+            self.session.now(),
+        )
+    }
+
     /// Pop a value from a list.
     ///
     /// Uses the session's email and timestamp automatically.
