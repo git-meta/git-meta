@@ -2,11 +2,11 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://git-meta.com/</loc>
-    <lastmod>2026-05-29</lastmod>
+    <lastmod>2026-05-30</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/blog/</loc>
-    <lastmod>2026-05-29</lastmod>
+    <lastmod>2026-05-30</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/blog/introducing-git-meta/</loc>
@@ -22,7 +22,7 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/</loc>
-    <lastmod>2026-04-21</lastmod>
+    <lastmod>2026-05-30</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/exchange-format/targets.html</loc>
@@ -50,7 +50,11 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/overview.html</loc>
-    <lastmod>2026-03-26</lastmod>
+    <lastmod>2026-05-30</lastmod>
+  </url>
+  <url>
+    <loc>https://git-meta.com/spec/implementation/api.html</loc>
+    <lastmod>2026-05-30</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/storage.html</loc>

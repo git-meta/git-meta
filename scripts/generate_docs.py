@@ -62,6 +62,7 @@ PAGE_ORDER = [
     "exchange-format/lists.md",
     "exchange-format/sets.md",
     "implementation/overview.md",
+    "implementation/api.md",
     "implementation/storage.md",
     "implementation/cli.md",
     "implementation/output.md",
@@ -87,6 +88,7 @@ PAGE_GROUPS = {
     ],
     "Implementation": [
         "implementation/overview.md",
+        "implementation/api.md",
         "implementation/storage.md",
         "implementation/cli.md",
         "implementation/output.md",
