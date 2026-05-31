@@ -298,11 +298,16 @@ def render_index(posts: list[Post]) -> str:
     return render_page("blog", "project notes from git-meta.", body, "/blog/")
 
 
+def cdata(text: str) -> str:
+    return "<![CDATA[" + text.replace("]]>", "]]]]><![CDATA[>") + "]]>"
+
+
 def render_feed(posts: list[Post]) -> str:
     latest = max((post_publication_datetime(post) for post in posts), default=datetime.now(timezone.utc))
     items = []
     for post in posts:
         url = f"{SITE_ORIGIN}{post_url(post)}"
+        content, _headings = markdown_to_html(post.body_markdown)
         items.append(
             "    <item>\n"
             f"      <title>{html.escape(post.title)}</title>\n"
@@ -310,11 +315,12 @@ def render_feed(posts: list[Post]) -> str:
             f"      <guid isPermaLink=\"true\">{html.escape(url)}</guid>\n"
             f"      <pubDate>{rfc2822_date(post_publication_datetime(post))}</pubDate>\n"
             f"      <description>{html.escape(post.description)}</description>\n"
+            f"      <content:encoded>{cdata(content)}</content:encoded>\n"
             "    </item>"
         )
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
-        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">\n'
         '  <channel>\n'
         '    <title>git-meta blog</title>\n'
         f'    <link>{SITE_ORIGIN}/blog/</link>\n'
