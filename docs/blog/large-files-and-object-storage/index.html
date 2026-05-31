@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (() => {
+        const stored = localStorage.getItem("git-meta-theme");
+        document.documentElement.dataset.theme = stored || "system";
+      })();
+    </script>
+    <title>dealing with large values · git-meta</title>
+    <meta name="description" content="git-meta can keep values either in SQLite or in Git" />
+    <link rel="icon" type="image/png" href="../../assets/git-meta-icon.png" />
+    <link rel="canonical" href="https://git-meta.com/blog/large-files-and-object-storage/" />
+    <link rel="alternate" type="application/rss+xml" title="git-meta blog" href="https://git-meta.com/blog/feed.xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="../../index.html" aria-label="git-meta home">
+          <img class="brand-mark" src="../../assets/git-meta-icon.png" width="32" height="32" alt="" />
+          <span class="brand-name">git-meta</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="../../blog/">Blog</a>
+          <a href="../../blog/feed.xml">RSS</a>
+          <a href="../../spec/" class="nav-muted">Spec &rarr;</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap blog-page blog-post-page">
+      <div class="blog-post-main">
+        <p class="blog-kicker"><a href="../">blog</a> / 2026-05-29 / schacon</p>
+        <article class="blog-article">
+          <h1>dealing with large values</h1>
+          <div class="blog-content">
+            <p>Metadata starts out cute and tiny, right up until somebody decides that the value should be an entire agent transcript, a generated report, or some giant attestation blob.</p>
+<p>That&#x27;s when your nice little key/value store starts looking like a junk drawer.</p>
+<p>Most <code>git-meta</code> values are boring in the best possible way. A model name. A review status. A URL. A short string that says something useful about a commit, branch, path, or project. Those values belong directly in SQLite because SQLite is fast, local, and extremely good at answering questions like &quot;what is the current value for this target and key?&quot;</p>
+<p>But not everything should live inline forever.</p>
+<h2 id="sqlite-is-the-index-git-is-the-object-store">SQLite is the index, Git is the object store</h2>
+<p>The trick is that <code>git-meta</code> already has two useful storage systems available.</p>
+<p>SQLite is the local working database. It tracks targets, keys, value types, authors, timestamps, and the current state of the world. That&#x27;s the stuff you want to query quickly without walking Git history or inflating a bunch of objects for no reason.</p>
+<p>Git, on the other hand, is very good at storing content-addressed blobs and moving them around with fetch and push. So when a value gets large enough, <code>git-meta</code> can write the actual payload as a Git blob and store the blob id in SQLite instead.</p>
+<p>SQLite keeps the pointer. Git keeps the big thing.</p>
+<h2 id="the-cutoff">The cutoff</h2>
+<p>By default, the cutoff is 1 KiB. If a string value is larger than that, <code>git-meta</code> stores it as a Git blob reference instead of stuffing the whole thing into the SQLite row.</p>
+<p>This applies whether the value came from the command line:</p>
+<pre><code>git meta set commit:HEAD agent:transcript &quot;...some very large string...&quot;</code></pre>
+<p>or from a file:</p>
+<pre><code>git meta set commit:HEAD agent:transcript -F transcript.jsonl</code></pre>
+<p>Originally, this only happened for <code>-F/--file</code> payloads. That was too cute. Large is large, regardless of whether it came from a file or from an inline argument, so the check now happens on the resulting value itself.</p>
+<h2 id="you-can-change-the-size">You can change the size</h2>
+<p>The cutoff is not hardcoded policy anymore. You can set it with metadata too, which is pleasingly recursive.</p>
+<p>There are two keys:</p>
+<ul><li><code>meta:sqlite:object-max-size</code> sets the shared project default.</li><li><code>meta:local:sqlite:object-max-size</code> sets your local override and wins if both are present.</li></ul>
+<p>Both accept plain byte counts or friendly sizes like <code>4k</code>, <code>64k</code>, or <code>1m</code>.</p>
+<p>Set it low if you want SQLite to stay lean. Set it high if you want more values inline for easier inspection. Set it to <code>0</code> if you want every non-empty string value to become a Git blob reference.</p>
+<p>Please do not set it to something ridiculous and then act surprised when the database becomes ridiculous. Computers are obedient, not wise.</p>
+<h2 id="reading-it-back">Reading it back</h2>
+<p>The blob reference is supposed to be an implementation detail.</p>
+<p>When you run <code>git meta get</code>, you should get the value back, not a random-looking object id that makes you go spelunking through <code>.git/objects</code>. Internally, <code>git-meta</code> remembers whether a stored value is inline text or a Git reference, then resolves it on read when needed.</p>
+<p>That distinction also matters during sync and materialization. Remote metadata can arrive with blob-backed values, and the local store needs to preserve that shape instead of accidentally turning an object id into the user-visible value.</p>
+<h2 id="why-bother">Why bother?</h2>
+<p>Because small metadata and large metadata want different tradeoffs.</p>
+<p>Small values should be cheap, local, and queryable. Large values should not bloat the hot path just because we wanted to attach something useful to a commit. Splitting the two lets <code>git-meta</code> keep SQLite as the fast index and Git as the durable blob store.</p>
+<p>That&#x27;s the whole idea: use the boring parts for what they&#x27;re good at.</p>
+          </div>
+        </article>
+      </div>
+      <aside class="blog-toc" aria-label="On this page"><div class="blog-toc-title">On this page</div><ol><li class="blog-toc-h2"><a href="#sqlite-is-the-index-git-is-the-object-store">SQLite is the index, Git is the object store</a></li><li class="blog-toc-h2"><a href="#the-cutoff">The cutoff</a></li><li class="blog-toc-h2"><a href="#you-can-change-the-size">You can change the size</a></li><li class="blog-toc-h2"><a href="#reading-it-back">Reading it back</a></li><li class="blog-toc-h2"><a href="#why-bother">Why bother?</a></li></ol></aside>
+    </main>
+  </body>
+</html>

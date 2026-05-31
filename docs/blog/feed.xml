@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>git-meta blog</title>
+    <link>https://git-meta.com/blog/</link>
+    <description>project notes from git-meta.</description>
+    <language>en</language>
+    <lastBuildDate>Sun, 31 May 2026 00:00:00 GMT</lastBuildDate>
+    <atom:link href="https://git-meta.com/blog/feed.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>publishing metadata to the right places</title>
+      <link>https://git-meta.com/blog/metadata-filters-public-and-private/</link>
+      <guid isPermaLink="true">https://git-meta.com/blog/metadata-filters-public-and-private/</guid>
+      <pubDate>Sun, 31 May 2026 00:00:00 GMT</pubDate>
+      <description>serialize filters let git-meta keep local, company, and public metadata separate</description>
+      <content:encoded><![CDATA[<p>One of the awkward things about metadata is that not all of it wants the same audience.</p>
+<p>Some metadata is obviously public. Review status, ownership hints, generated documentation notes, compatibility information, provenance for a generated patch. If the repository is public, that metadata can probably travel with it.</p>
+<p>Some metadata is useful only inside a company. Internal ticket IDs, security scan details, deployment approvals, customer names, private model evaluations, or links to systems that only exist behind the VPN.</p>
+<p>And some metadata should not leave your laptop at all. Cursor positions, local scratch state, experiments, personal agent notes, temporary import markers.</p>
+<p>If all of that lives in one pile, pushing metadata becomes scary. So <code>git-meta</code> has serialize filters.</p>
+<h2 id="the-default-publish-normal-keys">The default: publish normal keys</h2>
+<p>By default, metadata serializes to the main local metadata ref:</p>
+<pre><code>refs/meta/local/main</code></pre>
+<p>That ref can then be pushed to a remote metadata ref, normally something like:</p>
+<pre><code>refs/meta/main</code></pre>
+<p>So if you set ordinary keys:</p>
+<pre><code>git meta set project review:policy required
+git meta set path:src/api.rs owner platform-team
+git meta set commit:abc123 provenance:generator codegen-v2</code></pre>
+<p>then <code>git meta serialize</code> writes those keys to the normal serialized tree.</p>
+<p>That is the happy path. If a key is not special and no filter matches it, it goes to <code>main</code>.</p>
+<h2 id="local-only-keys">Local-only keys</h2>
+<p>There is one hard rule that does not need configuration:</p>
+<pre><code>meta:local:*</code></pre>
+<p>Anything under <code>meta:local:</code> is never serialized.</p>
+<p>For example:</p>
+<pre><code>git meta set project meta:local:last-viewed-branch sc/experiment
+git meta set path:src/api.rs meta:local:cursor-line 142</code></pre>
+<p>Those values stay in your local SQLite database. They are not written to any Git tree, even if you add a filter that tries to route them somewhere.</p>
+<p>Use this namespace for personal state, caches, UI hints, and anything that would be noise or a leak if another clone saw it.</p>
+<h2 id="excluding-keys">Excluding keys</h2>
+<p>Sometimes a key is not purely local, but you still do not want it serialized. Add an <code>exclude</code> rule.</p>
+<p>Filter rules are set members on the project target:</p>
+<pre><code>git meta set:add project meta:filter &quot;exclude draft:**&quot;</code></pre>
+<p>That means any key under <code>draft:</code> is skipped during serialization:</p>
+<pre><code>git meta set project draft:summary &quot;not ready yet&quot;
+git meta set project draft:review-notes &quot;too spicy&quot;</code></pre>
+<p>The <code>**</code> wildcard means zero or more key segments, so <code>draft:title</code> and <code>draft:review:notes</code> both match.</p>
+<p>A plain <code>*</code> matches exactly one segment:</p>
+<pre><code>git meta set:add project meta:filter &quot;exclude scratch:*&quot;</code></pre>
+<p>That matches <code>scratch:one</code>, but not <code>scratch:one:two</code>.</p>
+<h2 id="routing-keys-to-another-ref">Routing keys to another ref</h2>
+<p>The more interesting filter is <code>route</code>.</p>
+<p>A route rule keeps matching keys out of <code>main</code> and writes them to another local destination ref:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
+<p>Now this key:</p>
+<pre><code>git meta set commit:abc123 company:jira PROJ-1234</code></pre>
+<p>serializes to:</p>
+<pre><code>refs/meta/local/company</code></pre>
+<p>instead of:</p>
+<pre><code>refs/meta/local/main</code></pre>
+<p>That gives you two separate publishable streams:</p>
+<ul><li><code>main</code> for public metadata</li><li><code>company</code> for internal metadata</li></ul>
+<p>The serialized trees use the same exchange format; they just live under different refs.</p>
+<h2 id="shared-filters-vs-personal-filters">Shared filters vs personal filters</h2>
+<p>There are two places to put filter rules:</p>
+<pre><code>meta:filter
+meta:local:filter</code></pre>
+<p>Use <code>meta:filter</code> for project policy. These rules are themselves shared metadata, so everyone can agree that <code>company:**</code> goes to the company-only destination.</p>
+<p>Use <code>meta:local:filter</code> for your own publishing preferences. Since it is under <code>meta:local:</code>, it is not serialized.</p>
+<p>For example, a company might share this rule:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
+<p>And you might locally add:</p>
+<pre><code>git meta set:add project meta:local:filter &quot;route me:** mine&quot;</code></pre>
+<p>Now company values go to the company destination, your personal values go to your private destination, and normal values still go to public <code>main</code>.</p>
+<h2 id="a-public-plus-company-workflow">A public plus company workflow</h2>
+<p>Imagine an open source project maintained by a company. The public repository should get useful metadata:</p>
+<pre><code>git meta set commit:abc123 review:status approved
+git meta set commit:abc123 provenance:agent codex
+git meta set path:src/billing.rs owner billing-team</code></pre>
+<p>But internal systems should stay internal:</p>
+<pre><code>git meta set commit:abc123 company:jira BILL-2841
+git meta set commit:abc123 company:security-scan scan-99812
+git meta set path:src/billing.rs company:service-id billing-prod</code></pre>
+<p>Set the shared filter once:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
+<p>Then serialize:</p>
+<pre><code>git meta serialize</code></pre>
+<p>You now have at least two local metadata refs:</p>
+<pre><code>refs/meta/local/main
+refs/meta/local/company</code></pre>
+<p>The public ref can be pushed to the public host. The company ref can be pushed to an internal metadata remote or internal ref. The exact remote setup is host-tool policy, but the important bit is that the data is already separated before publishing.</p>
+<p>Conceptually:</p>
+<pre><code># public metadata
+git push public refs/meta/local/main:refs/meta/main
+
+# internal metadata
+git push company refs/meta/local/company:refs/meta/main</code></pre>
+<p>Now public consumers can materialize review status, owners, and provenance without seeing internal Jira IDs. Company users can materialize the internal stream too.</p>
+<h2 id="multiple-destinations">Multiple destinations</h2>
+<p>A route can name more than one destination with commas:</p>
+<pre><code>git meta set:add project meta:filter &quot;route audit:** company,audit&quot;</code></pre>
+<p>That writes matching keys to both destination refs. This is useful when one class of metadata should go to a broad internal audience and also to a narrower archive or compliance stream.</p>
+<h2 id="conflict-rules-are-intentionally-boring">Conflict rules are intentionally boring</h2>
+<p>Filters decide where a key is serialized. They do not change the meaning of the key, the target, or the merge rules for the value.</p>
+<p>Strings are still strings. Lists are still append-friendly lists. Sets are still unique-member sets. A routed ref is just another serialized git-meta tree.</p>
+<p>That is the design goal: keep policy about <em>where metadata goes</em> separate from semantics about <em>what metadata means</em>.</p>
+<h2 id="a-simple-naming-pattern">A simple naming pattern</h2>
+<p>The practical advice is to pick obvious top-level namespaces:</p>
+<pre><code>review:*        public review metadata
+provenance:*    public generation/provenance metadata
+owner           public ownership hint
+company:*       company-only metadata
+me:*            personal metadata routed by local preference
+meta:local:*    never serialized at all</code></pre>
+<p>Then the filters are easy to understand:</p>
+<pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;
+git meta set:add project meta:local:filter &quot;route me:** mine&quot;</code></pre>
+<p>The result is boring in the good way: public metadata can be published publicly, company metadata can stay inside the company, and local metadata can remain local.</p>
+<p>That is the point of serialize filters. Not secrecy magic, not access control, not encryption. Just a clean way to avoid mixing audiences before the data ever gets pushed.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>dealing with large values</title>
+      <link>https://git-meta.com/blog/large-files-and-object-storage/</link>
+      <guid isPermaLink="true">https://git-meta.com/blog/large-files-and-object-storage/</guid>
+      <pubDate>Fri, 29 May 2026 00:00:00 GMT</pubDate>
+      <description>git-meta can keep values either in SQLite or in Git</description>
+      <content:encoded><![CDATA[<p>Metadata starts out cute and tiny, right up until somebody decides that the value should be an entire agent transcript, a generated report, or some giant attestation blob.</p>
+<p>That&#x27;s when your nice little key/value store starts looking like a junk drawer.</p>
+<p>Most <code>git-meta</code> values are boring in the best possible way. A model name. A review status. A URL. A short string that says something useful about a commit, branch, path, or project. Those values belong directly in SQLite because SQLite is fast, local, and extremely good at answering questions like &quot;what is the current value for this target and key?&quot;</p>
+<p>But not everything should live inline forever.</p>
+<h2 id="sqlite-is-the-index-git-is-the-object-store">SQLite is the index, Git is the object store</h2>
+<p>The trick is that <code>git-meta</code> already has two useful storage systems available.</p>
+<p>SQLite is the local working database. It tracks targets, keys, value types, authors, timestamps, and the current state of the world. That&#x27;s the stuff you want to query quickly without walking Git history or inflating a bunch of objects for no reason.</p>
+<p>Git, on the other hand, is very good at storing content-addressed blobs and moving them around with fetch and push. So when a value gets large enough, <code>git-meta</code> can write the actual payload as a Git blob and store the blob id in SQLite instead.</p>
+<p>SQLite keeps the pointer. Git keeps the big thing.</p>
+<h2 id="the-cutoff">The cutoff</h2>
+<p>By default, the cutoff is 1 KiB. If a string value is larger than that, <code>git-meta</code> stores it as a Git blob reference instead of stuffing the whole thing into the SQLite row.</p>
+<p>This applies whether the value came from the command line:</p>
+<pre><code>git meta set commit:HEAD agent:transcript &quot;...some very large string...&quot;</code></pre>
+<p>or from a file:</p>
+<pre><code>git meta set commit:HEAD agent:transcript -F transcript.jsonl</code></pre>
+<p>Originally, this only happened for <code>-F/--file</code> payloads. That was too cute. Large is large, regardless of whether it came from a file or from an inline argument, so the check now happens on the resulting value itself.</p>
+<h2 id="you-can-change-the-size">You can change the size</h2>
+<p>The cutoff is not hardcoded policy anymore. You can set it with metadata too, which is pleasingly recursive.</p>
+<p>There are two keys:</p>
+<ul><li><code>meta:sqlite:object-max-size</code> sets the shared project default.</li><li><code>meta:local:sqlite:object-max-size</code> sets your local override and wins if both are present.</li></ul>
+<p>Both accept plain byte counts or friendly sizes like <code>4k</code>, <code>64k</code>, or <code>1m</code>.</p>
+<p>Set it low if you want SQLite to stay lean. Set it high if you want more values inline for easier inspection. Set it to <code>0</code> if you want every non-empty string value to become a Git blob reference.</p>
+<p>Please do not set it to something ridiculous and then act surprised when the database becomes ridiculous. Computers are obedient, not wise.</p>
+<h2 id="reading-it-back">Reading it back</h2>
+<p>The blob reference is supposed to be an implementation detail.</p>
+<p>When you run <code>git meta get</code>, you should get the value back, not a random-looking object id that makes you go spelunking through <code>.git/objects</code>. Internally, <code>git-meta</code> remembers whether a stored value is inline text or a Git reference, then resolves it on read when needed.</p>
+<p>That distinction also matters during sync and materialization. Remote metadata can arrive with blob-backed values, and the local store needs to preserve that shape instead of accidentally turning an object id into the user-visible value.</p>
+<h2 id="why-bother">Why bother?</h2>
+<p>Because small metadata and large metadata want different tradeoffs.</p>
+<p>Small values should be cheap, local, and queryable. Large values should not bloat the hot path just because we wanted to attach something useful to a commit. Splitting the two lets <code>git-meta</code> keep SQLite as the fast index and Git as the durable blob store.</p>
+<p>That&#x27;s the whole idea: use the boring parts for what they&#x27;re good at.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>introducing git-meta</title>
+      <link>https://git-meta.com/blog/introducing-git-meta/</link>
+      <guid isPermaLink="true">https://git-meta.com/blog/introducing-git-meta/</guid>
+      <pubDate>Fri, 29 May 2026 00:00:00 GMT</pubDate>
+      <description>A short introduction to git-meta, an open specification for structured metadata in Git.</description>
+      <content:encoded><![CDATA[<p>The <code>git-meta</code> project is basically another stab at <code>git notes</code> - a way to attach arbitrary metadata to things in Git without needing to rewrite information.</p>
+<p>If you&#x27;re familiar with <code>git notes</code>, you know that it allows you to attach a single blob of data to a single Git object (normally a commit) and use Git push/fetch commands to move them around. They are somewhat rarely used because of a number of shortcomings such as:</p>
+<ul><li>complexity around merging from two contributors</li><li>the limitation of one value per commit</li><li>the inability to attach data to other things like paths or the project as a whole</li><li>scalability issues</li><li>and more!</li></ul>
+<p>The <code>git-meta</code> project was started to address this. With <code>git-meta</code>, you can:</p>
+<ul><li>attach values to various types of targets in the project (branches, paths, commits, change-ids)</li><li>have namespaced key/value pairs (ie <code>agent:model</code> on a commit)</li><li>have rich value types (strings, sets or lists)</li><li>merge multi-user metadata easily</li><li>use multiple sharing targets</li><li>scale to many millions of keys easily</li><li>and more!</li></ul>
+<p>We created this specification, a Rust library, and a reference CLI implementation to allow everyone to easily attach and manage arbitrary metadata to various parts of their existing Git codebases with minimal difficulty.</p>
+<h2 id="simple-example">Simple example</h2>
+<p>Here&#x27;s how it works. You can install it with Cargo:</p>
+<pre><code>cargo install git-meta-cli</code></pre>
+<p>Then you have the <code>git-meta</code> CLI tool that can manage everything. Attach a new arbitrary value on a commit with the <code>git meta set</code> command:</p>
+<pre><code>❯ git meta set commit:314e7f0fa7 agent:model &quot;claude-opus-4-8[1m]&quot;</code></pre>
+<p>That will look up the commit, expand it to the full SHA and place a value under the key <code>agent:model</code> attached to that commit. You could also set <code>agent:provider</code> or any other key/value combination.</p>
+<p>Then you can get the value back out with <code>git meta get</code>:</p>
+<pre><code>❯ git meta get commit:314e7f0fa7 agent:model
+agent:model  claude-opus-4-6[1m]</code></pre>
+<p>You probably get the idea. You can also <a href="https://github.com/git-meta/git-meta#value-types">assign sets or lists of values</a> to a key if that makes more sense for the data type.</p>
+<h2 id="sharing">Sharing</h2>
+<p>You can easily setup a meta remote (someplace to push the data to) with <code>git meta setup</code> which will default to the same repository as your code, but under a hidden <code>refs/meta/main</code> reference. So it can, for example, be on GitHub with your code but just not visible.</p>
+<p>Then just type <code>git meta sync</code> to push new values you&#x27;ve created and pull down new values from other users on your team.</p>
+<h2 id="try-it-out">Try it out</h2>
+<p>The project is still early, but the core direction is in place: make Git metadata portable, local-first, and tool-friendly. Try it out and give us feedback!</p>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

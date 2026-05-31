@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rust Library API · git-meta</title>
+    <meta name="description" content="git-meta project documentation generated from the canonical spec markdown files.">
+    <link rel="stylesheet" href="../assets/style.css">
+    <script>
+      (() => {
+        const stored = localStorage.getItem('git-meta-theme');
+        document.documentElement.dataset.theme = stored || 'system';
+      })();
+    </script>
+  </head>
+  <body class="has-toc">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-main">
+          <a class="brand" href="../index.html">
+            <img class="brand-icon" src="../../other/git-meta-icon.png" alt="" width="40" height="40">
+            <span class="brand-text">git-meta</span>
+          </a>
+          <p class="tagline">Git metadata specification and project docs</p>
+          <nav class="nav">
+            <div class="nav-group"><a href="../index.html">Overview</a></div><div class="nav-group"><h2>Exchange format</h2><a href="../exchange-format/targets.html">Targets and keys</a><a href="../exchange-format/exchange.html">Serialization</a><a href="../exchange-format/materialization.html">Materialization</a></div><div class="nav-group"><h2>Value types</h2><a href="../exchange-format/strings.html">Strings</a><a href="../exchange-format/lists.html">Lists</a><a href="../exchange-format/sets.html">Sets</a></div><div class="nav-group"><h2>Implementation</h2><a href="overview.html">Implementation Overview</a><a class="active" href="api.html">Rust Library API</a><a href="storage.html">Local storage</a><a href="cli.html">CLI surface</a><a href="output.html">Output and query semantics</a><a href="pruning.html">Auto-pruning</a><a href="serialize-filters.html">Serialize filters</a></div><div class="nav-group"><h2>Other Considerations</h2><a href="standard-keys.html">Standard keys</a><a href="remotes.html">Remote Management</a><a href="auto-sync.html">Syncing with normal Git</a><a href="workflow.html">Workflow</a></div>
+          </nav>
+        </div>
+        <div class="sidebar-footer">
+          <div class="theme-control" aria-label="Theme switcher">
+            <button type="button" class="theme-icon-button" data-theme-value="light" aria-label="Use light theme" title="Light theme">
+              <span aria-hidden="true">☀️</span>
+            </button>
+            <button type="button" class="theme-icon-button" data-theme-value="dark" aria-label="Use dark theme" title="Dark theme">
+              <span aria-hidden="true">🌙</span>
+            </button>
+          </div>
+          <button type="button" class="sidebar-toggle" aria-label="Collapse sidebar" title="Collapse sidebar">
+            <span class="collapse-icon" aria-hidden="true">◧</span>
+          </button>
+        </div>
+      </aside>
+      <main class="content">
+        <header class="page-header">
+          <div class="page-header-main">
+            <div class="eyebrow">Generated from <a href="https://github.com/git-meta/git-meta/tree/main/spec"><code>spec/*.md</code></a></div>
+            <h1>Rust Library API</h1>
+          </div>
+          <a class="page-source-link" href="https://raw.githubusercontent.com/git-meta/git-meta/main/spec/implementation/api.md" rel="noopener" title="View raw markdown source on GitHub">
+            <span aria-hidden="true">{ }</span>
+            <span>markdown</span>
+          </a>
+        </header>
+        <article class="doc-content">
+          <p>The <code>git-meta-lib</code> crate is the reference Rust library for storing, querying, serializing, and exchanging git-meta metadata from another Rust application. It is useful when you are building a tool that wants metadata to live beside a Git repository without adding files to the worktree.</p>
+<p>Add it to your project and import the public API from the <code>git_meta_lib</code> crate name:</p>
+<pre><code>[dependencies]
+git-meta-lib = &quot;0.1.0&quot;</code></pre>
+<pre><code>use git_meta_lib::{MetaValue, Session, Target};</code></pre>
+<h2 id="the-mental-model">The mental model</h2>
+<p>The public API is centered on three ideas:</p>
+<ul><li><code>Session</code> opens a Git repository and its local metadata database.</li><li><code>Target</code> identifies what metadata is attached to: a commit, path, branch, change ID, or the whole project.</li><li><code>MetaValue</code> stores one key as a string, list, or set.</li></ul>
+<p>Most applications create one <code>Session</code>, create <code>Target</code> values for the objects they care about, and use <code>session.target(&amp;target)</code> to get a scoped handle for reading and writing keys on that target.</p>
+<h2 id="opening-a-repository">Opening a repository</h2>
+<p>Use <code>Session::discover()</code> when your process is already inside a Git repository, or <code>Session::open(path)</code> when you have a repository path.</p>
+<pre><code>use git_meta_lib::Session;
+
+let session = Session::discover()?;
+
+println!(&quot;metadata namespace: {}&quot;, session.namespace());
+println!(&quot;author email: {}&quot;, session.email());</code></pre>
+<p>The session opens or creates the local SQLite store at <code>.git/git-meta.sqlite</code>, reads Git config such as <code>user.email</code>, and uses the configured metadata namespace. The default namespace is <code>meta</code>, which produces refs such as <code>refs/meta/local/main</code> and <code>refs/meta/main</code>.</p>
+<h2 id="choosing-targets">Choosing targets</h2>
+<p>A <code>Target</code> describes the thing your metadata is about.</p>
+<pre><code>use git_meta_lib::Target;
+
+let project = Target::project();
+let commit = Target::commit(&quot;abc123&quot;)?;
+let path = Target::path(&quot;src/main.rs&quot;);
+let branch = Target::branch(&quot;main&quot;);
+let change = Target::change_id(&quot;kqszpwnx&quot;);
+
+let parsed = Target::parse(&quot;path:src/main.rs&quot;)?;</code></pre>
+<p>For commit targets, partial SHAs are accepted. If you need to normalize a commit target before storing metadata, call <code>session.resolve_target(&amp;target)</code> to expand it through the repository.</p>
+<h2 id="reading-and-writing-metadata">Reading and writing metadata</h2>
+<p>Call <code>session.target(&amp;target)</code> to get a <code>SessionTargetHandle</code>. The handle automatically uses the session email and timestamp for mutations.</p>
+<pre><code>use git_meta_lib::{MetaValue, Session, Target};
+
+let session = Session::discover()?;
+let target = Target::path(&quot;src/main.rs&quot;);
+let handle = session.target(&amp;target);
+
+handle.set(&quot;owner&quot;, &quot;compiler-team&quot;)?;
+handle.set(&quot;review:status&quot;, &quot;approved&quot;)?;
+
+if let Some(MetaValue::String(owner)) = handle.get_value(&quot;owner&quot;)? {
+    println!(&quot;owner: {owner}&quot;);
+}
+
+for (key, value) in handle.get_all_values(Some(&quot;review&quot;))? {
+    println!(&quot;{key} = {value}&quot;);
+}</code></pre>
+<p>Important handle methods:</p>
+<ul><li><code>get_value(key)</code> returns one typed value.</li><li><code>get_all_values(prefix)</code> returns all keys for a target, optionally filtered by a key prefix.</li><li><code>set(key, value)</code> writes a string, list, set, or explicit <code>MetaValue</code>.</li><li><code>remove(key)</code> tombstones one key.</li><li><code>get_authorship(key)</code> returns the last author email and timestamp for a key.</li></ul>
+<p>Keys use colon-separated namespaces such as <code>agent:model</code> or <code>review:status</code>. Prefix queries match the exact key or descendants under that namespace.</p>
+<h2 id="value-types">Value types</h2>
+<p>git-meta supports three public value shapes.</p>
+<h3 id="strings">Strings</h3>
+<p>Strings are the simplest value type. Setting a string replaces the previous value.</p>
+<pre><code>handle.set(&quot;ci:state&quot;, &quot;passed&quot;)?;</code></pre>
+<h3 id="lists">Lists</h3>
+<p>Lists are ordered timestamped entries. They are useful for append-heavy data such as comments, events, transcript chunks, or logs.</p>
+<pre><code>handle.list_push(&quot;comments&quot;, &quot;Looks good to me&quot;)?;
+handle.list_push(&quot;comments&quot;, &quot;Merged after CI passed&quot;)?;
+
+for entry in handle.list_entries(&quot;comments&quot;)? {
+    println!(&quot;{}: {}&quot;, entry.timestamp, entry.value);
+}</code></pre>
+<p>You can also remove list items with <code>list_pop(key, value)</code> or <code>list_remove(key, index)</code>.</p>
+<h3 id="sets">Sets</h3>
+<p>Sets store unique unordered strings. They are useful for labels, reviewers, capabilities, and other membership-style metadata.</p>
+<pre><code>handle.set_add(&quot;labels&quot;, &quot;security-reviewed&quot;)?;
+handle.set_add(&quot;labels&quot;, &quot;needs-docs&quot;)?;
+handle.set_remove(&quot;labels&quot;, &quot;needs-docs&quot;)?;</code></pre>
+<h2 id="records-over-key-prefixes">Records over key prefixes</h2>
+<p>For small typed records, <code>set_record(prefix, record)</code> writes string fields to child keys under a prefix, and <code>get_record(prefix)</code> reads those child keys back through Serde.</p>
+<pre><code>use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = &quot;kebab-case&quot;)]
+struct AgentInfo {
+    name: String,
+    model: String,
+}
+
+handle.set_record(&quot;agent&quot;, &amp;AgentInfo {
+    name: &quot;codex&quot;.into(),
+    model: &quot;gpt-5&quot;.into(),
+})?;
+
+let agent: Option&lt;AgentInfo&gt; = handle.get_record(&quot;agent&quot;)?;</code></pre>
+<p>This writes keys such as <code>agent:name</code> and <code>agent:model</code>. Record writes are partial updates: fields serialized as <code>null</code> are skipped rather than deleted.</p>
+<h2 id="atomic-edits">Atomic edits</h2>
+<p>Use <code>apply_edits</code> when several changes should be committed to the local store as one transaction.</p>
+<pre><code>use git_meta_lib::{MetaEdit, MetaValue};
+
+let status = MetaValue::String(&quot;approved&quot;.into());
+let labels = vec![&quot;ready&quot;.to_string(), &quot;reviewed&quot;.to_string()];
+
+handle.apply_edits([
+    MetaEdit::set_value(&quot;review:status&quot;, &amp;status),
+    MetaEdit::set_add(&quot;labels&quot;, &amp;labels),
+])?;</code></pre>
+<p>If any edit fails, none of the batch is committed.</p>
+<h2 id="exchanging-metadata-through-git">Exchanging metadata through Git</h2>
+<p>Local reads and writes happen in SQLite. To exchange metadata with other clones, serialize the local store to Git objects and push or pull metadata refs.</p>
+<pre><code>let output = session.serialize()?;
+println!(&quot;serialized {} changes&quot;, output.changes);
+
+let push = session.push_once(None)?;
+if push.non_fast_forward {
+    session.resolve_push_conflict(None)?;
+    let retry = session.push_once(None)?;
+    assert!(retry.success);
+}</code></pre>
+<p>Important workflow methods on <code>Session</code>:</p>
+<ul><li><code>serialize()</code> writes local metadata to the local metadata ref.</li><li><code>serialize_full()</code> rebuilds serialized state from the full SQLite store.</li><li><code>materialize(remote)</code> merges fetched metadata refs into the local store.</li><li><code>pull(remote)</code> fetches metadata from a configured metadata remote, materializes it, and indexes history for lazy loading.</li><li><code>push_once(remote)</code> serializes and attempts one push.</li><li><code>resolve_push_conflict(remote)</code> fetches and materializes remote changes after a non-fast-forward push rejection so the caller can retry.</li></ul>
+<p>The <code>remote</code> argument is <code>Option&lt;&amp;str&gt;</code>. Passing <code>None</code> uses the first configured metadata remote. Passing <code>Some(&quot;origin&quot;)</code> selects a specific metadata remote.</p>
+<p>Long-running operations also have progress variants such as <code>serialize_with_progress</code>, <code>push_once_with_progress</code>, and <code>resolve_push_conflict_with_progress</code> for UI integration.</p>
+<h2 id="what-the-library-gives-an-application">What the library gives an application</h2>
+<p>If you are building a Rust system on top of git-meta, the main tools are:</p>
+<ul><li>A fast local metadata database tied to a Git repository.</li><li>Typed targets for commits, paths, branches, change IDs, and project-wide metadata.</li><li>Namespaced metadata keys with string, list, and set semantics.</li><li>Convenience APIs for typed Serde records over key prefixes.</li><li>Atomic local edit batches.</li><li>Authorship and timestamp tracking for mutations.</li><li>Serialization and materialization between SQLite and the Git-tree exchange format.</li><li>Pull, push, and push-conflict-resolution workflows built on normal Git refs and transport.</li><li>Output structs that let a CLI, daemon, IDE integration, or code-review system decide how to present results without the library printing directly.</li></ul>
+<p>Most consumers should stay on the public API re-exported from <code>git_meta_lib</code>. The crate has an <code>internal</code> feature used by the reference CLI for lower-level plumbing, but ordinary integrations should not need it.</p>
+        </article>
+      </main>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#the-mental-model">The mental model</a></li><li class="toc-h2"><a href="#opening-a-repository">Opening a repository</a></li><li class="toc-h2"><a href="#choosing-targets">Choosing targets</a></li><li class="toc-h2"><a href="#reading-and-writing-metadata">Reading and writing metadata</a></li><li class="toc-h2"><a href="#value-types">Value types</a><ul class="toc-sub"><li class="toc-h3"><a href="#strings">Strings</a></li><li class="toc-h3"><a href="#lists">Lists</a></li><li class="toc-h3"><a href="#sets">Sets</a></li></ul></li><li class="toc-h2"><a href="#records-over-key-prefixes">Records over key prefixes</a></li><li class="toc-h2"><a href="#atomic-edits">Atomic edits</a></li><li class="toc-h2"><a href="#exchanging-metadata-through-git">Exchanging metadata through Git</a></li><li class="toc-h2"><a href="#what-the-library-gives-an-application">What the library gives an application</a></li></ul></aside>
+    </div>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const sidebar = document.querySelector('.sidebar');
+        const themeButtons = document.querySelectorAll('.theme-icon-button');
+        const sidebarToggle = document.querySelector('.sidebar-toggle');
+        const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+        function currentTheme() {
+          return localStorage.getItem('git-meta-theme') || 'system';
+        }
+
+        function applyTheme(theme) {
+          root.dataset.theme = theme;
+          const effective = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
+          themeButtons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.themeValue === effective);
+          });
+        }
+
+        function currentSidebarState() {
+          return localStorage.getItem('git-meta-sidebar') || 'expanded';
+        }
+
+        function applySidebarState(state) {
+          const collapsed = state === 'collapsed';
+          sidebar.classList.toggle('collapsed', collapsed);
+          document.body.classList.toggle('sidebar-collapsed', collapsed);
+          sidebarToggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+          sidebarToggle.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+        }
+
+        themeButtons.forEach((button) => {
+          button.addEventListener('click', () => {
+            localStorage.setItem('git-meta-theme', button.dataset.themeValue);
+            applyTheme(button.dataset.themeValue);
+          });
+        });
+
+        sidebarToggle.addEventListener('click', () => {
+          const next = currentSidebarState() === 'collapsed' ? 'expanded' : 'collapsed';
+          localStorage.setItem('git-meta-sidebar', next);
+          applySidebarState(next);
+        });
+
+        media.addEventListener?.('change', () => {
+          if (currentTheme() === 'system') {
+            applyTheme('system');
+          }
+        });
+
+        applyTheme(currentTheme());
+        applySidebarState(currentSidebarState());
+
+        // Right-hand TOC scroll-spy: highlight the toc link whose target
+        // heading is currently nearest the top of the viewport. Uses
+        // IntersectionObserver so it stays cheap on long pages.
+        const tocLinks = document.querySelectorAll('.toc-aside a[href^="#"]');
+        if (tocLinks.length) {
+          const linkByAnchor = new Map();
+          const headings = [];
+          tocLinks.forEach((a) => {
+            const id = a.getAttribute('href').slice(1);
+            const heading = id ? document.getElementById(id) : null;
+            if (heading) {
+              linkByAnchor.set(id, a);
+              headings.push(heading);
+            }
+          });
+          const setActive = (id) => {
+            tocLinks.forEach((a) => a.classList.remove('active'));
+            const link = id && linkByAnchor.get(id);
+            if (link) link.classList.add('active');
+          };
+          const observer = new IntersectionObserver(
+            (entries) => {
+              const visible = entries
+                .filter((e) => e.isIntersecting)
+                .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+              if (visible.length) setActive(visible[0].target.id);
+            },
+            { rootMargin: '-15% 0% -75% 0%', threshold: 0 }
+          );
+          headings.forEach((h) => observer.observe(h));
+        }
+      })();
+    </script>
+  </body>
+</html>
