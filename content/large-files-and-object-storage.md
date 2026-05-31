@@ -39,8 +39,6 @@ or from a file:
 git meta set commit:HEAD agent:transcript -F transcript.jsonl
 ```
 
-Originally, this only happened for `-F/--file` payloads. That was too cute. Large is large, regardless of whether it came from a file or from an inline argument, so the check now happens on the resulting value itself.
-
 ## You can change the size
 
 The cutoff is not hardcoded policy anymore. You can set it with metadata too, which is pleasingly recursive.
@@ -54,8 +52,6 @@ Both accept plain byte counts or friendly sizes like `4k`, `64k`, or `1m`.
 
 Set it low if you want SQLite to stay lean. Set it high if you want more values inline for easier inspection. Set it to `0` if you want every non-empty string value to become a Git blob reference.
 
-Please do not set it to something ridiculous and then act surprised when the database becomes ridiculous. Computers are obedient, not wise.
-
 ## Reading it back
 
 The blob reference is supposed to be an implementation detail.
@@ -63,11 +59,3 @@ The blob reference is supposed to be an implementation detail.
 When you run `git meta get`, you should get the value back, not a random-looking object id that makes you go spelunking through `.git/objects`. Internally, `git-meta` remembers whether a stored value is inline text or a Git reference, then resolves it on read when needed.
 
 That distinction also matters during sync and materialization. Remote metadata can arrive with blob-backed values, and the local store needs to preserve that shape instead of accidentally turning an object id into the user-visible value.
-
-## Why bother?
-
-Because small metadata and large metadata want different tradeoffs.
-
-Small values should be cheap, local, and queryable. Large values should not bloat the hot path just because we wanted to attach something useful to a commit. Splitting the two lets `git-meta` keep SQLite as the fast index and Git as the durable blob store.
-
-That's the whole idea: use the boring parts for what they're good at.
