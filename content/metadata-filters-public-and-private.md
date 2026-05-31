@@ -46,19 +46,19 @@ That is the happy path. If a key is not special and no filter matches it, it goe
 There is one hard rule that does not need configuration:
 
 ```text
-meta:local:*
+local:*
 ```
 
-Anything under `meta:local:` is never serialized.
+Anything under `local:` is never serialized, no matter which target it is attached to.
 
 For example:
 
 ```bash
-git meta set project meta:local:last-viewed-branch sc/experiment
-git meta set path:src/api.rs meta:local:cursor-line 142
+git meta set project local:last-viewed-branch sc/experiment
+git meta set path:src/api.rs local:cursor-line 142
 ```
 
-Those values stay in your local SQLite database. They are not written to any Git tree, even if you add a filter that tries to route them somewhere.
+Those values stay in your local SQLite database. They are not written to any Git tree, even if they are attached to a commit, branch, path, or project, and even if you add a filter that tries to route them somewhere.
 
 Use this namespace for personal state, caches, UI hints, and anything that would be noise or a leak if another clone saw it.
 
@@ -130,12 +130,12 @@ There are two places to put filter rules:
 
 ```text
 meta:filter
-meta:local:filter
+local:meta:filter
 ```
 
 Use `meta:filter` for project policy. These rules are themselves shared metadata, so everyone can agree that `company:**` goes to the company-only destination.
 
-Use `meta:local:filter` for your own publishing preferences. Since it is under `meta:local:`, it is not serialized.
+Use `local:meta:filter` for your own publishing preferences. Since it is under `local:`, it is not serialized.
 
 For example, a company might share this rule:
 
@@ -146,7 +146,7 @@ git meta set:add project meta:filter "route company:** company"
 And you might locally add:
 
 ```bash
-git meta set:add project meta:local:filter "route me:** mine"
+git meta set:add project local:meta:filter "route me:** mine"
 ```
 
 Now company values go to the company destination, your personal values go to your private destination, and normal values still go to public `main`.
@@ -230,14 +230,14 @@ provenance:*    public generation/provenance metadata
 owner           public ownership hint
 company:*       company-only metadata
 me:*            personal metadata routed by local preference
-meta:local:*    never serialized at all
+local:*    never serialized at all
 ```
 
 Then the filters are easy to understand:
 
 ```bash
 git meta set:add project meta:filter "route company:** company"
-git meta set:add project meta:local:filter "route me:** mine"
+git meta set:add project local:meta:filter "route me:** mine"
 ```
 
 The result is boring in the good way: public metadata can be published publicly, company metadata can stay inside the company, and local metadata can remain local.

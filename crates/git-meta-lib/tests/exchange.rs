@@ -3,6 +3,8 @@
 mod helpers;
 
 use git_meta_lib::*;
+use gix::bstr::ByteSlice;
+use gix::prelude::ObjectIdExt;
 use helpers::*;
 
 #[test]
@@ -71,7 +73,7 @@ fn filter_routes_keys_to_destinations() {
     // Set a filter rule: route "private:**" keys to "private" destination
     session
         .target(&Target::project())
-        .set_add("meta:local:filter", "route private:** private")
+        .set_add("local:meta:filter", "route private:** private")
         .unwrap();
 
     // Set a regular key and a private key
@@ -122,6 +124,112 @@ fn filter_routes_keys_to_destinations() {
         "should write private ref, got: {:?}",
         output.refs_written
     );
+
+    let main_entries = ref_tree_entries(&repo_re, "refs/meta/local/main");
+    assert!(
+        main_entries
+            .iter()
+            .any(|(_path, content)| content == "everyone-sees-this"),
+        "main ref should include public key, got: {main_entries:?}"
+    );
+    assert!(
+        main_entries
+            .iter()
+            .all(|(_path, content)| content != "only-private-dest"),
+        "main ref should not include routed private key, got: {main_entries:?}"
+    );
+    assert!(
+        main_entries
+            .iter()
+            .all(|(_path, content)| !content.contains("route private:** private")),
+        "main ref should not serialize local filter config, got: {main_entries:?}"
+    );
+
+    let private_entries = ref_tree_entries(&repo_re, "refs/meta/local/private");
+    assert!(
+        private_entries
+            .iter()
+            .any(|(_path, content)| content == "only-private-dest"),
+        "private ref should include routed key, got: {private_entries:?}"
+    );
+    assert!(
+        private_entries
+            .iter()
+            .all(|(_path, content)| content != "everyone-sees-this"),
+        "private ref should not include public key, got: {private_entries:?}"
+    );
+}
+
+#[test]
+fn local_prefix_keys_are_never_serialized_on_any_target() {
+    let (_dir, repo) = setup_repo();
+    let sha = head_sha(&repo);
+    let session = Session::open(repo.path()).unwrap().with_timestamp(1000);
+
+    session
+        .target(&Target::project())
+        .set_add("local:meta:filter", "route local:** private")
+        .unwrap();
+    session
+        .target(&Target::project())
+        .set("public:project", "public-project")
+        .unwrap();
+    session
+        .target(&Target::project())
+        .set("local:project", "local-project")
+        .unwrap();
+    session
+        .target(&Target::commit(&sha).unwrap())
+        .set("local:commit", "local-commit")
+        .unwrap();
+    session
+        .target(&Target::branch("main"))
+        .set("local:branch", "local-branch")
+        .unwrap();
+    session
+        .target(&Target::path("src/lib.rs"))
+        .set("local:path", "local-path")
+        .unwrap();
+
+    let output = session.serialize().unwrap();
+    assert_eq!(
+        output.refs_written,
+        vec!["refs/meta/local/main"],
+        "local-prefixed keys must not create routed destination refs"
+    );
+
+    let repo_re = gix::open_opts(
+        repo.workdir().unwrap(),
+        gix::open::Options::isolated()
+            .config_overrides(["user.name=Test User", "user.email=test@example.com"]),
+    )
+    .unwrap();
+    assert!(
+        repo_re.find_reference("refs/meta/local/private").is_err(),
+        "route rules must not override the local: hard exclusion"
+    );
+
+    let entries = ref_tree_entries(&repo_re, "refs/meta/local/main");
+    assert!(
+        entries
+            .iter()
+            .any(|(_path, content)| content == "public-project"),
+        "sanity check: public key should serialize, got: {entries:?}"
+    );
+    for local_value in [
+        "local-project",
+        "local-commit",
+        "local-branch",
+        "local-path",
+        "route local:** private",
+    ] {
+        assert!(
+            entries
+                .iter()
+                .all(|(_path, content)| content != local_value),
+            "local-prefixed value {local_value:?} should not serialize, got: {entries:?}"
+        );
+    }
 }
 
 #[test]
@@ -154,4 +262,45 @@ fn pull_with_no_remote_returns_error() {
         result.is_err(),
         "pull should fail when no remote is configured"
     );
+}
+
+fn ref_tree_entries(repo: &gix::Repository, ref_name: &str) -> Vec<(String, String)> {
+    let commit_oid = repo
+        .find_reference(ref_name)
+        .unwrap()
+        .into_fully_peeled_id()
+        .unwrap()
+        .detach();
+    let commit = commit_oid.attach(repo).object().unwrap().into_commit();
+    let tree = commit.tree().unwrap();
+    let mut entries = Vec::new();
+    walk_tree(repo, tree.id, "", &mut entries);
+    entries
+}
+
+fn walk_tree(
+    repo: &gix::Repository,
+    tree_id: gix::ObjectId,
+    prefix: &str,
+    entries: &mut Vec<(String, String)>,
+) {
+    let tree = tree_id.attach(repo).object().unwrap().into_tree();
+    for entry in tree.iter() {
+        let entry = entry.unwrap();
+        let name = entry.filename().to_str().unwrap();
+        let path = if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        if entry.mode().is_tree() {
+            walk_tree(repo, entry.object_id(), &path, entries);
+        } else {
+            let blob = entry.object().unwrap();
+            let content = std::str::from_utf8(blob.data.as_ref())
+                .unwrap_or("")
+                .to_string();
+            entries.push((path, content));
+        }
+    }
 }

@@ -289,7 +289,7 @@ format: integer byte count with optional human-friendly suffix (`512k`, `10m`, `
 default: `1024`
 ```
 
-```key meta:local:sqlite:object-max-size
+```key local:meta:sqlite:object-max-size
 type: string
 meaning: personal/local override for `meta:sqlite:object-max-size`; this key is never serialized
 format: integer byte count with optional human-friendly suffix (`512k`, `10m`, `1g`)
@@ -304,7 +304,7 @@ examples:
   - route myteam:** private
 ```
 
-```key meta:local:filter
+```key local:meta:filter
 type: set
 meaning: personal serialization filter rules that are themselves never serialized; same format as `meta:filter`
 format: each entry is `<action> <pattern> [<destination>]`

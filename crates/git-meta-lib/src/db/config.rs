@@ -13,14 +13,14 @@ pub(crate) const OBJECT_MAX_SIZE_KEY: &str = "meta:sqlite:object-max-size";
 
 /// Local-only override (never serialized) for the maximum inline object size.
 /// Takes precedence over [`OBJECT_MAX_SIZE_KEY`].
-pub(crate) const LOCAL_OBJECT_MAX_SIZE_KEY: &str = "meta:local:sqlite:object-max-size";
+pub(crate) const LOCAL_OBJECT_MAX_SIZE_KEY: &str = "local:meta:sqlite:object-max-size";
 
 impl Store {
     /// Resolve the maximum size, in bytes, a string value may occupy inline in
     /// SQLite before it is offloaded to a Git blob and referenced by its OID.
     ///
     /// Resolution order (first match wins):
-    /// 1. `meta:local:sqlite:object-max-size` — local-only override
+    /// 1. `local:meta:sqlite:object-max-size` — local-only override
     /// 2. `meta:sqlite:object-max-size` — shared project config
     /// 3. [`GIT_REF_THRESHOLD`] — built-in default
     ///

@@ -55,13 +55,13 @@
           <p>This document describes how metadata keys can be excluded from serialization or routed to alternative refs during the serialize step.</p>
 <p>This allows the user to split up project metadata into different references for exchange - for example, public versus corporate data.</p>
 <h2 id="design">Design</h2>
-<h3 id="local-only-keys-via-the-metalocal-namespace">Local-only keys via the <code>meta:local:</code> namespace</h3>
-<p>Any key whose first segments are <code>meta:local</code> is <strong>never serialized</strong> to any ref. They are only available in the local storage.</p>
+<h3 id="local-only-keys-via-the-local-namespace">Local-only keys via the <code>local:</code> namespace</h3>
+<p>Any key whose first segment is <code>local</code> is <strong>never serialized</strong> to any ref, on any target. These keys are only available in local storage.</p>
 <p>Examples:</p>
-<ul><li><code>meta:local:scratch</code></li><li><code>meta:local:editor:cursor</code></li><li><code>meta:local:build:last-status</code></li><li><code>meta:local:ai:draft-summary</code></li></ul>
-<p>The <code>meta:local:</code> prefix is a hard rule enforced by the serializer. No filter configuration is needed to make it work. Keys in this namespace are silently skipped during serialize and are never written into any git tree.</p>
+<ul><li><code>local:scratch</code></li><li><code>local:editor:cursor</code></li><li><code>local:build:last-status</code></li><li><code>local:ai:draft-summary</code></li></ul>
+<p>The <code>local:</code> prefix is a hard rule enforced by the serializer. No filter configuration is needed to make it work. Keys in this namespace are silently skipped during serialize and are never written into any git tree.</p>
 <h3 id="filter-rules">Filter rules</h3>
-<p>Users can define filter rules that control serialization behavior. Filter rules are stored as set members on the <strong>project</strong> target under either <code>meta:filter</code> or <code>meta:local:filter</code>. The <code>meta:filter</code> rules are shared (corporate rules), the local ones are not (personal rules).</p>
+<p>Users can define filter rules that control serialization behavior. Filter rules are stored as set members on the <strong>project</strong> target under either <code>meta:filter</code> or <code>local:meta:filter</code>. The <code>meta:filter</code> rules are shared (corporate rules), the local ones are not (personal rules).</p>
 <p>Each set member is a rule string with the format:</p>
 <pre><code>&lt;action&gt; &lt;pattern&gt; [&lt;destination&gt;]</code></pre>
 <h4 id="actions">Actions</h4>
@@ -84,50 +84,50 @@
 <p>The <code>&lt;destination&gt;</code> can be a comma delimited list of destinations and the matching key values will be written to all of them.</p>
 <h3 id="rule-evaluation">Rule evaluation</h3>
 <p>Rules are evaluated in order of specificity:</p>
-<ol><li><code>meta:local:</code> keys are never serialized regardless of any filter rules.</li><li>Filter rules are evaluated.</li></ol>
-<ul><li>Filters in <code>meta:local:filter</code> are evaluated first, then <code>meta:filter</code> rules.</li><li>If multiple rules match the same key:<ul><li>any <code>exclude</code> match applies and key value is not serialized anywhere</li><li>otherwise, _all_ <code>route</code> rules apply</li></ul></li></ul>
+<ol><li><code>local:</code> keys are never serialized regardless of any filter rules.</li><li>Filter rules are evaluated.</li></ol>
+<ul><li>Filters in <code>local:meta:filter</code> are evaluated first, then <code>meta:filter</code> rules.</li><li>If multiple rules match the same key:<ul><li>any <code>exclude</code> match applies and key value is not serialized anywhere</li><li>otherwise, _all_ <code>route</code> rules apply</li></ul></li></ul>
 <ol><li>Keys that match no rule are serialized to the primary ref as usual.</li></ol>
 <h2 id="serialize-algorithm-changes">Serialize algorithm changes</h2>
 <p>The current serialize flow is:</p>
 <ol><li>Read all metadata from SQLite (<code>get_all_metadata</code>)</li><li>Read all tombstones</li><li>Build git tree entries for each key</li><li>Commit to <code>refs/meta/local/main</code></li></ol>
 <p>The new flow becomes:</p>
-<ol><li>Read all metadata from SQLite</li><li>Read all tombstones</li><li>Read filter rules from <code>meta:local:filter</code> on the project target</li><li>For each key:</li></ol>
-<ul><li>If key starts with <code>meta:local:</code> -&gt; skip entirely</li><li>If key matches an <code>exclude</code> rule -&gt; skip entirely</li><li>If key matches a <code>route</code> rule -&gt; add to the tree builder for that rule&#x27;s destination</li><li>Otherwise -&gt; add to the primary tree builder</li></ul>
+<ol><li>Read all metadata from SQLite</li><li>Read all tombstones</li><li>Read filter rules from <code>local:meta:filter</code> on the project target</li><li>For each key:</li></ol>
+<ul><li>If key starts with <code>local:</code> -&gt; skip entirely</li><li>If key matches an <code>exclude</code> rule -&gt; skip entirely</li><li>If key matches a <code>route</code> rule -&gt; add to the tree builder for that rule&#x27;s destination</li><li>Otherwise -&gt; add to the primary tree builder</li></ul>
 <ol><li>Apply the same skip/route logic to tombstones</li><li>Commit the primary tree to <code>refs/meta/local/main</code></li><li>For each destination that has entries, commit its tree to <code>refs/meta/local/&lt;destination&gt;</code></li></ol>
 <h2 id="cli-surface">CLI surface</h2>
 <p>No new commands are needed. Filter rules are managed with the existing <code>set</code> commands:</p>
 <pre><code># Add a filter rule
 git meta set:add project meta:filter &quot;exclude draft:**&quot;
-git meta set:add project meta:local:filter &quot;route myteam:** private&quot;
-git meta set:add project meta:local:filter &quot;route acme:** vendor&quot;
+git meta set:add project local:meta:filter &quot;route myteam:** private&quot;
+git meta set:add project local:meta:filter &quot;route acme:** vendor&quot;
 
 # View current filter rules
-git meta get project meta:local:filter
+git meta get project local:meta:filter
 
 # Remove a filter rule
 git meta set:rm project meta:filter &quot;exclude draft:**&quot;</code></pre>
 <h2 id="examples">Examples</h2>
 <h3 id="keep-draft-notes-local">Keep draft notes local</h3>
-<pre><code>git meta set:add project meta:local:filter &quot;exclude draft:**&quot;
+<pre><code>git meta set:add project local:meta:filter &quot;exclude draft:**&quot;
 git meta add commit:abc123 draft:summary &quot;WIP: still thinking about this&quot;
 git meta serialize   # draft:summary is not in the git tree</code></pre>
 <h3 id="route-personal-annotations-to-a-separate-ref">Route personal annotations to a separate ref</h3>
-<pre><code>git meta set:add project meta:local:filter &quot;route myname:** mine&quot;
+<pre><code>git meta set:add project local:meta:filter &quot;route myname:** mine&quot;
 git meta set commit:abc123 myname:review-note &quot;looks good but check error handling&quot;
 git meta serialize   # review-note goes to refs/meta/local/mine, not refs/meta/local/main</code></pre>
 <h3 id="route-different-namespaces-to-different-refs">Route different namespaces to different refs</h3>
-<pre><code>git meta set:add project meta:local:filter &quot;route myname:** mine&quot;
-git meta set:add project meta:local:filter &quot;route acme:** vendor&quot;
+<pre><code>git meta set:add project local:meta:filter &quot;route myname:** mine&quot;
+git meta set:add project local:meta:filter &quot;route acme:** vendor&quot;
 git meta serialize   # myname:* keys go to refs/meta/local/mine
                   # acme:* keys go to refs/meta/local/vendor</code></pre>
 <h3 id="always-local-scratch-space">Always-local scratch space</h3>
-<pre><code>git meta set commit:abc123 meta:local:cursor-pos &quot;line 42&quot;
-git meta serialize   # meta:local:cursor-pos is never serialized, no filter needed</code></pre>
+<pre><code>git meta set commit:abc123 local:cursor-pos &quot;line 42&quot;
+git meta serialize   # local:cursor-pos is never serialized, no filter needed</code></pre>
 <h2 id="non-goals">Non-goals</h2>
 <ul><li>Per-target filtering (all filters apply globally across targets)</li><li>Regex patterns (glob syntax is sufficient)</li><li>Filter rules on non-project targets</li><li>Nested destination refs (destination is a single name, not a path)</li></ul>
         </article>
       </main>
-      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#design">Design</a><ul class="toc-sub"><li class="toc-h3"><a href="#local-only-keys-via-the-metalocal-namespace">Local-only keys via the <code>meta:local:</code> namespace</a></li><li class="toc-h3"><a href="#filter-rules">Filter rules</a></li><li class="toc-h3"><a href="#rule-evaluation">Rule evaluation</a></li></ul></li><li class="toc-h2"><a href="#serialize-algorithm-changes">Serialize algorithm changes</a></li><li class="toc-h2"><a href="#cli-surface">CLI surface</a></li><li class="toc-h2"><a href="#examples">Examples</a><ul class="toc-sub"><li class="toc-h3"><a href="#keep-draft-notes-local">Keep draft notes local</a></li><li class="toc-h3"><a href="#route-personal-annotations-to-a-separate-ref">Route personal annotations to a separate ref</a></li><li class="toc-h3"><a href="#route-different-namespaces-to-different-refs">Route different namespaces to different refs</a></li><li class="toc-h3"><a href="#always-local-scratch-space">Always-local scratch space</a></li></ul></li><li class="toc-h2"><a href="#non-goals">Non-goals</a></li></ul></aside>
+      <aside class="toc-aside" aria-label="On this page"><div class="toc-title">On this page</div><ul class="toc-list"><li class="toc-h2"><a href="#design">Design</a><ul class="toc-sub"><li class="toc-h3"><a href="#local-only-keys-via-the-local-namespace">Local-only keys via the <code>local:</code> namespace</a></li><li class="toc-h3"><a href="#filter-rules">Filter rules</a></li><li class="toc-h3"><a href="#rule-evaluation">Rule evaluation</a></li></ul></li><li class="toc-h2"><a href="#serialize-algorithm-changes">Serialize algorithm changes</a></li><li class="toc-h2"><a href="#cli-surface">CLI surface</a></li><li class="toc-h2"><a href="#examples">Examples</a><ul class="toc-sub"><li class="toc-h3"><a href="#keep-draft-notes-local">Keep draft notes local</a></li><li class="toc-h3"><a href="#route-personal-annotations-to-a-separate-ref">Route personal annotations to a separate ref</a></li><li class="toc-h3"><a href="#route-different-namespaces-to-different-refs">Route different namespaces to different refs</a></li><li class="toc-h3"><a href="#always-local-scratch-space">Always-local scratch space</a></li></ul></li><li class="toc-h2"><a href="#non-goals">Non-goals</a></li></ul></aside>
     </div>
     <script>
       (() => {

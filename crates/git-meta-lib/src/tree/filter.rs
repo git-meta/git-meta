@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::types::{Target, ValueType};
 
 /// Prefix for local-only metadata keys that are never serialized.
-pub const META_LOCAL_PREFIX: &str = "meta:local:";
+pub const LOCAL_PREFIX: &str = "local:";
 
 /// The "main" destination name used for the primary ref.
 pub const MAIN_DEST: &str = "main";
@@ -45,7 +45,7 @@ pub(crate) enum PatternSegment {
 
 /// Parse filter rules from the database.
 ///
-/// Reads `meta:local:filter` (higher priority) and `meta:filter` (shared)
+/// Reads `local:meta:filter` (higher priority) and `meta:filter` (shared)
 /// rules from the project scope, returning them in precedence order.
 ///
 /// # Parameters
@@ -58,8 +58,8 @@ pub(crate) enum PatternSegment {
 pub fn parse_filter_rules(db: &Store) -> Result<Vec<FilterRule>> {
     let mut rules = Vec::new();
 
-    // meta:local:filter rules first (higher priority)
-    if let Some(entry) = db.get(&Target::project(), "meta:local:filter")? {
+    // local:meta:filter rules first (higher priority)
+    if let Some(entry) = db.get(&Target::project(), "local:meta:filter")? {
         if entry.value_type == ValueType::Set {
             let members: Vec<String> = serde_json::from_str(&entry.value)?;
             for member in members {
@@ -157,7 +157,7 @@ fn pattern_matches(pattern: &[PatternSegment], key_segments: &[&str]) -> bool {
 /// Determine the destination(s) for a key based on filter rules.
 ///
 /// Returns `None` if the key should be excluded (either because it starts
-/// with `meta:local:` or because an `exclude` rule matched). Returns
+/// with `local:` or because an `exclude` rule matched). Returns
 /// `Some(destinations)` otherwise, defaulting to `["main"]` if no route
 /// rule matched.
 ///
@@ -167,8 +167,8 @@ fn pattern_matches(pattern: &[PatternSegment], key_segments: &[&str]) -> bool {
 /// - `rules`: the filter rules to check against (in precedence order)
 #[must_use]
 pub fn classify_key(key: &str, rules: &[FilterRule]) -> Option<Vec<String>> {
-    // Hard rule: meta:local: keys are never serialized
-    if key.starts_with(META_LOCAL_PREFIX) {
+    // Hard rule: local: keys are never serialized on any target.
+    if key.starts_with(LOCAL_PREFIX) {
         return None;
     }
 
@@ -228,12 +228,10 @@ mod tests {
     }
 
     #[test]
-    fn meta_local_keys_are_never_serialized() {
-        assert_eq!(classify(&[], "meta:local:cursor"), None);
-        assert_eq!(
-            classify(&["route meta:local:** private"], "meta:local:cursor"),
-            None
-        );
+    fn local_keys_are_never_serialized() {
+        assert_eq!(classify(&[], "local:cursor"), None);
+        assert_eq!(classify(&[], "local:meta:filter"), None);
+        assert_eq!(classify(&["route local:** private"], "local:cursor"), None);
         assert_eq!(
             classify(&["route meta:* private"], "meta:local"),
             Some(vec!["private".into()])

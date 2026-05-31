@@ -462,7 +462,7 @@ fn local_object_max_size_config_overrides_shared() {
         .assert()
         .success();
     harness::git_meta(dir.path())
-        .args(["config", "meta:local:sqlite:object-max-size", "512"])
+        .args(["config", "local:meta:sqlite:object-max-size", "512"])
         .assert()
         .success();
 

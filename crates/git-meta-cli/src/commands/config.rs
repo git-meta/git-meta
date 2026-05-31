@@ -3,7 +3,8 @@ use anyhow::{bail, Result};
 use crate::context::CommandContext;
 use git_meta_lib::types::{validate_key, MetaValue, Target};
 
-const CONFIG_PREFIX: &str = "meta:";
+const SHARED_CONFIG_PREFIX: &str = "meta:";
+const LOCAL_CONFIG_PREFIX: &str = "local:meta:";
 
 pub(crate) fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str>) -> Result<()> {
     let ctx = CommandContext::open(None)?;
@@ -29,8 +30,10 @@ pub(crate) fn run(list: bool, unset: bool, key: Option<&str>, value: Option<&str
 }
 
 fn validate_config_key(key: &str) -> Result<()> {
-    if !key.starts_with(CONFIG_PREFIX) {
-        bail!("config keys must start with '{CONFIG_PREFIX}' (got '{key}')");
+    if !key.starts_with(SHARED_CONFIG_PREFIX) && !key.starts_with(LOCAL_CONFIG_PREFIX) {
+        bail!(
+            "config keys must start with '{SHARED_CONFIG_PREFIX}' or '{LOCAL_CONFIG_PREFIX}' (got '{key}')"
+        );
     }
     validate_key(key)?;
     Ok(())
@@ -57,7 +60,8 @@ fn run_get(handle: &git_meta_lib::SessionTargetHandle<'_>, key: &str) -> Result<
 }
 
 fn run_list(handle: &git_meta_lib::SessionTargetHandle<'_>) -> Result<()> {
-    let entries = handle.get_all_values(Some("meta"))?;
+    let mut entries = handle.get_all_values(Some("meta"))?;
+    entries.extend(handle.get_all_values(Some("local:meta"))?);
     for (key, value) in entries {
         let display = match value {
             MetaValue::String(s) => s,
