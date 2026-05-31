@@ -7,7 +7,8 @@ import re
 import shutil
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as datetime_time, timezone
+from email.utils import format_datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -200,6 +201,14 @@ def post_url(post: Post) -> str:
     return f"/blog/{post.slug}/"
 
 
+def post_publication_datetime(post: Post) -> datetime:
+    return datetime.combine(post.published, datetime_time.min, tzinfo=timezone.utc)
+
+
+def rfc2822_date(value: datetime) -> str:
+    return format_datetime(value, usegmt=True)
+
+
 def root_prefix(canonical_path: str) -> str:
     segments = [part for part in canonical_path.strip("/").split("/") if part]
     return "../" * len(segments)
@@ -222,6 +231,7 @@ def render_page(title: str, description: str, body: str, canonical_path: str) ->
     <meta name=\"description\" content=\"{html.escape(description, quote=True)}\" />
     <link rel=\"icon\" type=\"image/png\" href=\"{root}assets/git-meta-icon.png\" />
     <link rel=\"canonical\" href=\"{SITE_ORIGIN}{html.escape(canonical_path)}\" />
+    <link rel=\"alternate\" type=\"application/rss+xml\" title=\"git-meta blog\" href=\"{SITE_ORIGIN}/blog/feed.xml\" />
     <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />
     <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />
     <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap\" rel=\"stylesheet\" />
@@ -279,12 +289,43 @@ def render_index(posts: list[Post]) -> str:
         <p class=\"eyebrow\">Blog</p>
         <h1>project notes from git-meta</h1>
         <p>short little deep dives into how various things are handled with the git-meta approach to storing metadata with your git code</p>
+        <p><a href=\"feed.xml\">RSS feed</a></p>
       </section>
       <section class=\"blog-list\" aria-label=\"Posts\">
         {''.join(cards)}
       </section>
     </main>"""
     return render_page("blog", "project notes from git-meta.", body, "/blog/")
+
+
+def render_feed(posts: list[Post]) -> str:
+    latest = max((post_publication_datetime(post) for post in posts), default=datetime.now(timezone.utc))
+    items = []
+    for post in posts:
+        url = f"{SITE_ORIGIN}{post_url(post)}"
+        items.append(
+            "    <item>\n"
+            f"      <title>{html.escape(post.title)}</title>\n"
+            f"      <link>{html.escape(url)}</link>\n"
+            f"      <guid isPermaLink=\"true\">{html.escape(url)}</guid>\n"
+            f"      <pubDate>{rfc2822_date(post_publication_datetime(post))}</pubDate>\n"
+            f"      <description>{html.escape(post.description)}</description>\n"
+            "    </item>"
+        )
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n'
+        '  <channel>\n'
+        '    <title>git-meta blog</title>\n'
+        f'    <link>{SITE_ORIGIN}/blog/</link>\n'
+        '    <description>project notes from git-meta.</description>\n'
+        '    <language>en</language>\n'
+        f'    <lastBuildDate>{rfc2822_date(latest)}</lastBuildDate>\n'
+        f'    <atom:link href="{SITE_ORIGIN}/blog/feed.xml" rel="self" type="application/rss+xml" />\n'
+        f"{chr(10).join(items)}\n"
+        '  </channel>\n'
+        '</rss>\n'
+    )
 
 
 def generate_blog() -> None:
@@ -302,7 +343,8 @@ def generate_blog() -> None:
         post.output_path.parent.mkdir(parents=True, exist_ok=True)
         post.output_path.write_text(render_post(post))
     (BLOG_DIR / "index.html").write_text(render_index(posts))
-    print(f"Generated {len(posts)} blog posts in {BLOG_DIR}")
+    (BLOG_DIR / "feed.xml").write_text(render_feed(posts))
+    print(f"Generated {len(posts)} blog posts and RSS feed in {BLOG_DIR}")
 
 
 def content_snapshot() -> dict[Path, tuple[int, int]]:

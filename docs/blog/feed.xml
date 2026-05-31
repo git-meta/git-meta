@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>git-meta blog</title>
+    <link>https://git-meta.com/blog/</link>
+    <description>project notes from git-meta.</description>
+    <language>en</language>
+    <lastBuildDate>Fri, 29 May 2026 00:00:00 GMT</lastBuildDate>
+    <atom:link href="https://git-meta.com/blog/feed.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>dealing with large values</title>
+      <link>https://git-meta.com/blog/large-files-and-object-storage/</link>
+      <guid isPermaLink="true">https://git-meta.com/blog/large-files-and-object-storage/</guid>
+      <pubDate>Fri, 29 May 2026 00:00:00 GMT</pubDate>
+      <description>git-meta can keep values either in SQLite or in Git</description>
+    </item>
+    <item>
+      <title>introducing git-meta</title>
+      <link>https://git-meta.com/blog/introducing-git-meta/</link>
+      <guid isPermaLink="true">https://git-meta.com/blog/introducing-git-meta/</guid>
+      <pubDate>Fri, 29 May 2026 00:00:00 GMT</pubDate>
+      <description>A short introduction to git-meta, an open specification for structured metadata in Git.</description>
+    </item>
+  </channel>
+</rss>
