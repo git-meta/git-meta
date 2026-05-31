@@ -10,8 +10,6 @@
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
 
 use crate::context::CommandContext;
 use crate::pager::Pager;
@@ -31,13 +29,12 @@ pub(crate) fn run(
     metadata_only: bool,     // skip commits with no metadata
 ) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
 
     // Set up the pager *before* writing anything. When stdout is a
     // terminal this hooks up the pager pipe; otherwise it falls back
     // to stdout. The `Pager` is dropped at end-of-fn, which closes
     // the pipe and reaps the child process.
-    let mut out = Pager::start(Some(repo));
+    let mut out = Pager::start(ctx.session.core_pager());
 
     write_log(&mut out, &ctx, start_ref, count, metadata_only)
 }
@@ -54,26 +51,17 @@ fn write_log<W: Write>(
     count: usize,
     metadata_only: bool,
 ) -> Result<()> {
-    let repo = ctx.session.repo();
-
-    // Resolve start ref -> OID
-    let start_oid = resolve_start(repo, start_ref)?;
-
-    // Walk commits
-    let walk = repo.rev_walk(Some(start_oid));
-    let iter = walk.all()?;
+    let start_oid = resolve_start(ctx, start_ref)?;
+    let oids = ctx.session.rev_walk_oids(&start_oid)?;
 
     let mut printed = 0usize;
 
-    for info_result in iter {
+    for sha in oids {
         if printed >= count {
             break;
         }
 
-        let info = info_result.context("error walking commits")?;
-        let oid = info.id;
-        let commit_obj = oid.attach(repo).object()?.into_commit();
-        let sha = oid.to_string();
+        let commit_info = ctx.session.commit_info(&sha)?;
 
         // Fetch metadata before deciding whether to print the commit
         let entries = ctx
@@ -106,26 +94,15 @@ fn write_log<W: Write>(
         printed += 1;
 
         let short_sha = &sha[..10];
-        let decoded = commit_obj.decode()?;
-        let author_name = decoded
-            .author()
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .name
-            .to_str_lossy();
-        let author_email = decoded
-            .author()
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .email
-            .to_str_lossy();
 
         writeln!(
             out,
             "{YELLOW}commit {short_sha}{RESET} {DIM}---{RESET} \
-             {GREEN}{author_name}{RESET} {DIM}<{author_email}>{RESET}"
+             {GREEN}{}{RESET} {DIM}<{}>{RESET}",
+            commit_info.author_name, commit_info.author_email
         )?;
 
-        let message = decoded.message.to_str_lossy();
-        let message = message.trim().to_string();
+        let message = commit_info.message.trim().to_string();
         let nonempty_lines: Vec<&str> = message.lines().filter(|l| !l.trim().is_empty()).collect();
         let shown = nonempty_lines.len().min(4);
         for line in &nonempty_lines[..shown] {
@@ -157,13 +134,11 @@ fn write_log<W: Write>(
     Ok(())
 }
 /// Resolve a ref name or commit-ish to an OID.  Falls back to HEAD.
-fn resolve_start(repo: &gix::Repository, start_ref: Option<&str>) -> Result<gix::ObjectId> {
+fn resolve_start(ctx: &CommandContext, start_ref: Option<&str>) -> Result<String> {
     let spec = start_ref.unwrap_or("HEAD");
-    let obj = repo
-        .rev_parse_single(spec)
-        .with_context(|| format!("could not resolve ref '{spec}'"))?;
-    let commit = obj.object()?.peel_tags_to_end()?.into_commit();
-    Ok(commit.id().detach())
+    ctx.session
+        .resolve_commitish(spec)
+        .with_context(|| format!("could not resolve ref '{spec}'"))
 }
 
 /// Format a raw (already-decoded) metadata value for display.

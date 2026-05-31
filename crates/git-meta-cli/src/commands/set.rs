@@ -67,14 +67,13 @@ pub(crate) fn run(
     if use_git_ref {
         // Git-ref path: store large file as a blob, then record the OID.
         // This is a power-user path that bypasses the MetaValue API.
-        let repo = ctx.session.repo();
         let email = ctx.session.email().to_string();
         let ts = time::OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000;
-        let blob_oid: gix::ObjectId = repo.write_blob(raw_value.as_bytes())?.into();
+        let blob_oid = ctx.session.write_blob_string(&raw_value)?;
         ctx.session.store().set_with_git_ref(
             &target,
             key,
-            &blob_oid.to_string(),
+            &blob_oid,
             &ValueType::String,
             &email,
             ts,

@@ -4,8 +4,7 @@ use crate::context::CommandContext;
 use anyhow::{bail, Result};
 use git_meta_lib::db::Store;
 use git_meta_lib::list_value::{encode_entries, parse_timestamp_from_entry_name};
-use git_meta_lib::materialize::{find_remote_refs, MaterializeStrategy};
-use git_meta_lib::tree::format::parse_tree;
+use git_meta_lib::materialize::MaterializeStrategy;
 use git_meta_lib::tree::merge::{
     merge_list_tombstones, merge_set_member_tombstones, merge_tombstones, three_way_merge,
     two_way_merge_no_common_ancestor, ConflictDecision,
@@ -13,7 +12,6 @@ use git_meta_lib::tree::merge::{
 use git_meta_lib::tree::model::{Key, ParsedTree, Tombstone, TreeValue};
 use git_meta_lib::types::TargetType;
 use git_meta_lib::ListEntry;
-use gix::prelude::ObjectIdExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PlannedDbChange {
@@ -92,27 +90,23 @@ fn reindex_full_history(
     remote: Option<&str>,
     verbose: bool,
 ) -> Result<usize> {
-    let repo = ctx.session.repo();
-    let ns = ctx.session.namespace();
-    let remote_refs = find_remote_refs(repo, ns, remote)?;
+    let remote_refs = ctx.session.find_remote_refs(remote)?;
     let mut indexed = 0;
 
     for (ref_name, oid) in remote_refs {
         if verbose {
             eprintln!(
                 "[verbose] reindexing full history for {ref_name} from {}",
-                &oid.to_string()[..8]
+                &oid.clone()[..8]
             );
         }
-        indexed +=
-            git_meta_lib::sync::insert_promisor_entries(repo, ctx.session.store(), oid, None)?;
+        indexed += ctx.session.index_history_from_oid(&oid, None)?;
     }
 
     Ok(indexed)
 }
 
 fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Result<()> {
-    let repo = ctx.session.repo();
     let ns = ctx.session.namespace();
     let local_ref_name = format!("refs/{ns}/local/main");
 
@@ -128,7 +122,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
         );
     }
 
-    let remote_refs = find_remote_refs(repo, ns, remote)?;
+    let remote_refs = ctx.session.find_remote_refs(remote)?;
 
     if remote_refs.is_empty() {
         println!("no remote metadata refs found");
@@ -138,7 +132,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
     if verbose {
         eprintln!("[verbose] found {} remote ref(s):", remote_refs.len());
         for (ref_name, oid) in &remote_refs {
-            eprintln!("  {} -> {}", ref_name, &oid.to_string()[..8]);
+            eprintln!("  {} -> {}", ref_name, &oid[..8]);
         }
     }
 
@@ -147,24 +141,21 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
             eprintln!("\n[verbose] === processing {ref_name} ===");
         }
 
-        let remote_commit_obj = remote_oid.attach(repo).object()?.into_commit();
-        let remote_tree_id = remote_commit_obj.tree_id()?.detach();
-        let remote_entries = parse_tree(repo, remote_tree_id, "")?;
+        let remote_commit_info = ctx.session.commit_info(remote_oid)?;
+        let remote_entries = ctx
+            .session
+            .parse_metadata_tree(&remote_commit_info.tree_oid)?;
 
         if verbose {
             print_verbose_tree_info(&remote_entries);
         }
 
         // Get local commit (if any)
-        let local_commit_oid = repo
-            .find_reference(&local_ref_name)
-            .ok()
-            .and_then(|r| r.into_fully_peeled_id().ok())
-            .map(gix::Id::detach);
+        let local_commit_oid = ctx.session.find_ref_oid(&local_ref_name)?;
 
         if verbose {
             match &local_commit_oid {
-                Some(c) => eprintln!("[verbose] local commit: {}", &c.to_string()[..8]),
+                Some(c) => eprintln!("[verbose] local commit: {}", &c[..8]),
                 None => eprintln!("[verbose] no local commit"),
             }
         }
@@ -177,18 +168,18 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
                 true
             }
             Some(local_oid) => {
-                if *local_oid == *remote_oid {
+                if local_oid == remote_oid {
                     println!("dry-run: {ref_name} already up to date");
                     continue;
                 }
-                if let Ok(base_oid) = repo.merge_base(*local_oid, *remote_oid) {
-                    let is_ff = base_oid == *local_oid;
+                if let Some(base_oid) = ctx.session.merge_base_oid(local_oid, remote_oid)? {
+                    let is_ff = &base_oid == local_oid;
                     if verbose {
                         eprintln!(
                             "[verbose] merge base: {} (local={}, remote={})",
-                            &base_oid.to_string()[..8],
-                            &local_oid.to_string()[..8],
-                            &remote_oid.to_string()[..8]
+                            &base_oid[..8],
+                            &local_oid[..8],
+                            &remote_oid[..8]
                         );
                         if is_ff {
                             eprintln!("[verbose] local is ancestor of remote -> fast-forward");
@@ -220,7 +211,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
                 local_oid,
                 remote_oid,
                 &remote_entries,
-                &remote_commit_obj,
+                remote_commit_info.author_time_seconds,
                 verbose,
             )?;
         }
@@ -232,16 +223,13 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
 fn dry_run_fast_forward(
     ctx: &CommandContext,
     ref_name: &str,
-    local_commit_oid: Option<gix::ObjectId>,
+    local_commit_oid: Option<String>,
     remote_entries: &ParsedTree,
     verbose: bool,
 ) -> Result<()> {
-    let repo = ctx.session.repo();
-
     let local_entries = if let Some(local_oid) = local_commit_oid {
-        let lc = local_oid.attach(repo).object()?.into_commit();
-        let lt = lc.tree_id()?.detach();
-        parse_tree(repo, lt, "")?
+        let local_info = ctx.session.commit_info(&local_oid)?;
+        ctx.session.parse_metadata_tree(&local_info.tree_oid)?
     } else {
         ParsedTree::default()
     };
@@ -281,17 +269,16 @@ fn dry_run_fast_forward(
 fn dry_run_merge(
     ctx: &CommandContext,
     ref_name: &str,
-    local_oid: &gix::ObjectId,
-    remote_oid: &gix::ObjectId,
+    local_oid: &str,
+    remote_oid: &str,
     remote_entries: &ParsedTree,
-    remote_commit_obj: &gix::Commit<'_>,
+    remote_timestamp: i64,
     verbose: bool,
 ) -> Result<()> {
-    let repo = ctx.session.repo();
-
-    let local_commit_obj = local_oid.attach(repo).object()?.into_commit();
-    let local_tree_id = local_commit_obj.tree_id()?.detach();
-    let local_entries = parse_tree(repo, local_tree_id, "")?;
+    let local_commit_info = ctx.session.commit_info(local_oid)?;
+    let local_entries = ctx
+        .session
+        .parse_metadata_tree(&local_commit_info.tree_oid)?;
 
     if verbose {
         eprintln!(
@@ -303,20 +290,7 @@ fn dry_run_merge(
     }
 
     // Get commit timestamps for conflict resolution
-    let local_decoded = local_commit_obj.decode()?;
-    let local_timestamp = local_decoded
-        .author()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .time()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .seconds;
-    let remote_decoded = remote_commit_obj.decode()?;
-    let remote_timestamp = remote_decoded
-        .author()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .time()
-        .map_err(|e| anyhow::anyhow!("{e}"))?
-        .seconds;
+    let local_timestamp = local_commit_info.author_time_seconds;
 
     if verbose {
         eprintln!(
@@ -324,7 +298,7 @@ fn dry_run_merge(
         );
     }
 
-    let merge_base_oid = repo.merge_base(*local_oid, *remote_oid).ok();
+    let merge_base_oid = ctx.session.merge_base_oid(local_oid, remote_oid)?;
     let mut legacy_base_values: Option<BTreeMap<Key, TreeValue>> = None;
 
     let (
@@ -335,14 +309,13 @@ fn dry_run_merge(
         conflict_decisions,
         merge_strategy,
     ) = if let Some(base_oid) = merge_base_oid {
-        let base_commit_obj = base_oid.object()?.into_commit();
-        let base_tree_id = base_commit_obj.tree_id()?.detach();
-        let base_entries = parse_tree(repo, base_tree_id, "")?;
+        let base_info = ctx.session.commit_info(&base_oid)?;
+        let base_entries = ctx.session.parse_metadata_tree(&base_info.tree_oid)?;
 
         if verbose {
             eprintln!(
                 "[verbose] merge base {} tree: {} values, {} tombstones",
-                &base_oid.to_string()[..8],
+                &base_oid[..8],
                 base_entries.values.len(),
                 base_entries.tombstones.len()
             );

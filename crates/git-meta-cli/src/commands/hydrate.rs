@@ -1,6 +1,4 @@
 use anyhow::Result;
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
 
 use git_meta_lib::tree_paths;
 use git_meta_lib::types::{Target, TargetType, ValueType};
@@ -14,20 +12,18 @@ pub(super) fn hydrate_promised_entries(
     target_type: &TargetType,
     entries: &[(String, String)],
 ) -> Result<usize> {
-    let repo = session.repo();
     let db = session.store();
     let ns = session.namespace();
     let tracking_ref = format!("refs/{ns}/remotes/main");
 
-    let tip_commit = match repo.find_reference(&tracking_ref) {
-        Ok(r) => r.into_fully_peeled_id()?,
-        Err(_) => return Ok(0),
+    let Some(tip_commit) = session.find_ref_oid(&tracking_ref)? else {
+        return Ok(0);
     };
-    let tip_tree_id = tip_commit.object()?.into_commit().tree_id()?.detach();
+    let tip_tree_id = session.commit_info(&tip_commit)?.tree_oid;
 
     struct PendingEntry {
         idx: usize,
-        oids: Vec<gix::ObjectId>,
+        oids: Vec<String>,
         value_type: ValueType,
     }
 
@@ -38,9 +34,7 @@ pub(super) fn hydrate_promised_entries(
         let entry_target = entry_target(target_type, target_value);
 
         if let Ok(path) = tree_paths::tree_path(&entry_target, key) {
-            if let Some(oid) =
-                git_meta_lib::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &path)?
-            {
+            if let Some(oid) = session.find_blob_oid_in_tree(&tip_tree_id, &path)? {
                 pending.push(PendingEntry {
                     idx,
                     oids: vec![oid],
@@ -51,11 +45,8 @@ pub(super) fn hydrate_promised_entries(
         }
 
         if let Ok(path) = tree_paths::list_dir_path(&entry_target, key) {
-            if let Some(dir_oid) =
-                git_meta_lib::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &path)?
-            {
-                let list_tree = dir_oid.attach(repo).object()?.into_tree();
-                let oids = blob_oids_from_tree(&list_tree);
+            if let Some(dir_oid) = session.find_blob_oid_in_tree(&tip_tree_id, &path)? {
+                let oids = blob_oids_from_tree(session, &dir_oid)?;
                 if !oids.is_empty() {
                     pending.push(PendingEntry {
                         idx,
@@ -68,11 +59,8 @@ pub(super) fn hydrate_promised_entries(
         }
 
         if let Ok(set_path) = tree_paths::set_dir_path(&entry_target, key) {
-            if let Some(dir_oid) =
-                git_meta_lib::git_utils::find_blob_oid_in_tree(repo, tip_tree_id, &set_path)?
-            {
-                let set_tree = dir_oid.attach(repo).object()?.into_tree();
-                let oids = blob_oids_from_tree(&set_tree);
+            if let Some(dir_oid) = session.find_blob_oid_in_tree(&tip_tree_id, &set_path)? {
+                let oids = blob_oids_from_tree(session, &dir_oid)?;
                 if !oids.is_empty() {
                     pending.push(PendingEntry {
                         idx,
@@ -96,25 +84,25 @@ pub(super) fn hydrate_promised_entries(
         return Ok(0);
     }
 
-    let all_oids: Vec<gix::ObjectId> = pending
+    let all_oids: Vec<String> = pending
         .iter()
-        .flat_map(|p| p.oids.iter().copied())
+        .flat_map(|p| p.oids.iter().cloned())
         .collect();
-    let mut missing: Vec<gix::ObjectId> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
     for oid in &all_oids {
-        if oid.attach(repo).object().is_err() {
-            missing.push(*oid);
+        if session.read_blob_string(oid).is_err() {
+            missing.push(oid.clone());
         }
     }
 
     if !missing.is_empty() {
-        let remote_name = git_meta_lib::git_utils::resolve_meta_remote(repo, None)?;
+        let remote_name = session.resolve_remote(None)?;
         eprintln!(
             "Fetching {} blob{} from remote...",
             missing.len(),
             if missing.len() == 1 { "" } else { "s" }
         );
-        git_meta_lib::git_utils::fetch_blob_oids(repo, &remote_name, &missing)?;
+        session.fetch_blob_oids(&remote_name, &missing)?;
     }
 
     let mut hydrated = 0;
@@ -124,25 +112,18 @@ pub(super) fn hydrate_promised_entries(
 
         match entry.value_type {
             ValueType::String => {
-                let oid = entry.oids[0];
-                let blob = match oid.attach(repo).object() {
-                    Ok(b) => b.into_blob(),
-                    Err(_) => continue,
-                };
-                let Ok(content) = std::str::from_utf8(&blob.data) else {
+                let oid = &entry.oids[0];
+                let Ok(content) = session.read_blob_string(oid) else {
                     continue;
                 };
-                db.resolve_promised(&entry_target, key, content, &ValueType::String, false)?;
+                db.resolve_promised(&entry_target, key, &content, &ValueType::String, false)?;
                 hydrated += 1;
             }
             ValueType::List => {
                 let mut list_entries = Vec::new();
                 for oid in &entry.oids {
-                    if let Ok(obj) = oid.attach(repo).object() {
-                        let blob = obj.into_blob();
-                        if let Ok(s) = std::str::from_utf8(&blob.data) {
-                            list_entries.push(s.to_string());
-                        }
+                    if let Ok(s) = session.read_blob_string(oid) {
+                        list_entries.push(s);
                     }
                 }
                 let json_value = serde_json::to_string(&list_entries)?;
@@ -152,11 +133,8 @@ pub(super) fn hydrate_promised_entries(
             ValueType::Set => {
                 let mut set_members = Vec::new();
                 for oid in &entry.oids {
-                    if let Ok(obj) = oid.attach(repo).object() {
-                        let blob = obj.into_blob();
-                        if let Ok(s) = std::str::from_utf8(&blob.data) {
-                            set_members.push(s.to_string());
-                        }
+                    if let Ok(s) = session.read_blob_string(oid) {
+                        set_members.push(s);
                     }
                 }
                 set_members.sort();
@@ -179,15 +157,14 @@ fn entry_target(target_type: &TargetType, target_value: &str) -> Target {
     }
 }
 
-fn blob_oids_from_tree(tree: &gix::Tree<'_>) -> Vec<gix::ObjectId> {
-    tree.iter()
-        .filter_map(|e| {
-            let e = e.ok()?;
-            let name = e.filename().to_str().ok()?;
-            if name.starts_with("__") || !e.mode().is_blob() {
-                return None;
-            }
-            Some(e.object_id())
+fn blob_oids_from_tree(session: &git_meta_lib::Session, tree_oid: &str) -> Result<Vec<String>> {
+    Ok(session
+        .tree_entries(tree_oid)?
+        .into_iter()
+        .filter(|entry| {
+            !entry.name.starts_with("__")
+                && entry.kind == git_meta_lib::session::GitTreeEntryKind::Blob
         })
-        .collect()
+        .map(|entry| entry.oid)
+        .collect())
 }

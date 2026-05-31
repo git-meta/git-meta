@@ -1,5 +1,3 @@
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
 use std::collections::{BTreeSet, HashSet};
 use std::process::Command;
 
@@ -9,7 +7,7 @@ use serde_json::Value;
 
 use crate::context::CommandContext;
 use git_meta_lib::db::Store;
-use git_meta_lib::git_utils;
+use git_meta_lib::session::GitTreeEntryKind;
 use git_meta_lib::types::{Target, TargetType, ValueType, GIT_REF_THRESHOLD};
 use git_meta_lib::MetaValue;
 
@@ -713,7 +711,7 @@ struct ReleaseTag {
 }
 
 fn import_release_tags(ctx: &CommandContext, dry_run: bool) -> Result<u64> {
-    let tags = release_tags(ctx.session.repo())?;
+    let tags = release_tags(&ctx.session)?;
     if tags.is_empty() {
         return Ok(0);
     }
@@ -728,7 +726,7 @@ fn import_release_tags(ctx: &CommandContext, dry_run: bool) -> Result<u64> {
             continue;
         }
 
-        let commits = commits_between_tags(ctx.session.repo(), previous, tag)?;
+        let commits = commits_between_tags(&ctx.session, previous, tag)?;
         eprintln!(
             "mapping release tag {} to {} commits",
             tag.name,
@@ -754,17 +752,15 @@ fn import_release_tags(ctx: &CommandContext, dry_run: bool) -> Result<u64> {
     Ok(writes)
 }
 
-fn release_tags(repo: &gix::Repository) -> Result<Vec<ReleaseTag>> {
-    let output = git_utils::run_git(
-        repo,
-        &[
+fn release_tags(session: &git_meta_lib::Session) -> Result<Vec<ReleaseTag>> {
+    let output = session
+        .run_git(&[
             "for-each-ref",
             "--sort=creatordate",
             "--format=%(refname:short)",
             "refs/tags",
-        ],
-    )
-    .map_err(|e| anyhow::anyhow!("{e}"))?;
+        ])
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(output
         .lines()
         .map(str::trim)
@@ -776,7 +772,7 @@ fn release_tags(repo: &gix::Repository) -> Result<Vec<ReleaseTag>> {
 }
 
 fn commits_between_tags(
-    repo: &gix::Repository,
+    session: &git_meta_lib::Session,
     previous: Option<&ReleaseTag>,
     tag: &ReleaseTag,
 ) -> Result<Vec<String>> {
@@ -784,7 +780,8 @@ fn commits_between_tags(
         || tag.name.clone(),
         |prev| format!("{}..{}", prev.name, tag.name),
     );
-    let output = git_utils::run_git(repo, &["rev-list", "--reverse", &range])
+    let output = session
+        .run_git(&["rev-list", "--reverse", &range])
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(output
         .lines()
@@ -829,7 +826,7 @@ fn apply_released_in(
         )?;
     }
 
-    if let Some(change_id) = change_id_for_commit(ctx.session.repo(), db, commit_sha)? {
+    if let Some(change_id) = change_id_for_commit(&ctx.session, db, commit_sha)? {
         let change_target = Target::change_id(&change_id);
         writes += set_import_member(
             db,
@@ -853,7 +850,7 @@ fn get_string_value(db: &Store, target: &Target, key: &str) -> Result<Option<Str
 }
 
 fn change_id_for_commit(
-    repo: &gix::Repository,
+    session: &git_meta_lib::Session,
     db: &Store,
     commit_sha: &str,
 ) -> Result<Option<String>> {
@@ -862,7 +859,7 @@ fn change_id_for_commit(
         return Ok(Some(change_id));
     }
 
-    let Some(message) = commit_message(repo, commit_sha)? else {
+    let Some(message) = commit_message(session, commit_sha)? else {
         return Ok(None);
     };
     Ok(message.lines().rev().find_map(|line| {
@@ -874,16 +871,10 @@ fn change_id_for_commit(
     }))
 }
 
-fn commit_message(repo: &gix::Repository, commit_sha: &str) -> Result<Option<String>> {
-    let Ok(object_id) = gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
-        return Ok(None);
-    };
-    let Ok(object) = object_id.attach(repo).object() else {
-        return Ok(None);
-    };
-    let commit = object.into_commit();
-    let decoded = commit.decode()?;
-    Ok(Some(decoded.message.to_str_lossy().to_string()))
+fn commit_message(session: &git_meta_lib::Session, commit_sha: &str) -> Result<Option<String>> {
+    Ok(session
+        .maybe_commit_info(commit_sha)?
+        .map(|commit| commit.message))
 }
 
 fn import_timestamp_ms() -> i64 {
@@ -899,15 +890,14 @@ fn apply_gh_import(
 ) -> Result<u64> {
     let mut writes = 0u64;
     let db = ctx.session.store();
-    let repo = ctx.session.repo();
     let email = ctx.session.email();
     let branch_target = Target::branch(&pr.branch_id);
     let project_target = Target::project();
     let mut ts = pr.merged_timestamp_ms;
 
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &branch_target,
         "title",
@@ -917,8 +907,8 @@ fn apply_gh_import(
     )?;
     ts += 1;
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &branch_target,
         "description",
@@ -928,8 +918,8 @@ fn apply_gh_import(
     )?;
     ts += 1;
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &branch_target,
         "review:number",
@@ -939,8 +929,8 @@ fn apply_gh_import(
     )?;
     ts += 1;
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &branch_target,
         "review:url",
@@ -950,8 +940,8 @@ fn apply_gh_import(
     )?;
     ts += 1;
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &branch_target,
         "github:head-ref",
@@ -962,8 +952,8 @@ fn apply_gh_import(
     ts += 1;
     if let Some(base_ref) = &pr.base_ref {
         writes += set_import_string(
+            &ctx.session,
             db,
-            repo,
             dry_run,
             &branch_target,
             "github:base-ref",
@@ -1030,15 +1020,15 @@ fn apply_gh_import(
 
     let mut commit_stats = BranchCommitStats::default();
     for commit in &pr.commits {
-        let Some(local_commit) = local_commit_metadata(repo, &commit.oid)? else {
+        let Some(local_commit) = local_commit_metadata(&ctx.session, &commit.oid)? else {
             *missing_commits += 1;
             continue;
         };
         commit_stats.add(local_commit);
         let commit_target = Target::from_parts(TargetType::Commit, Some(commit.oid.clone()));
         writes += set_import_string(
+            &ctx.session,
             db,
-            repo,
             dry_run,
             &commit_target,
             "branch-id",
@@ -1098,8 +1088,8 @@ fn apply_gh_import(
     }
 
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &project_target,
         "github:repo",
@@ -1109,8 +1099,8 @@ fn apply_gh_import(
     )?;
     ts += 1;
     writes += set_import_string(
+        &ctx.session,
         db,
-        repo,
         dry_run,
         &project_target,
         "github:last-imported-merged-at",
@@ -1133,8 +1123,8 @@ fn apply_gh_import(
 }
 
 fn set_import_string(
+    session: &git_meta_lib::Session,
     db: &Store,
-    repo: &gix::Repository,
     dry_run: bool,
     target: &Target,
     key: &str,
@@ -1155,11 +1145,11 @@ fn set_import_string(
         return Ok(1);
     }
     if use_git_ref {
-        let blob_oid: gix::ObjectId = repo.write_blob(encoded.as_bytes())?.into();
+        let blob_oid = session.write_blob_string(&encoded)?;
         db.set_with_git_ref(
             target,
             key,
-            &blob_oid.to_string(),
+            &blob_oid,
             &ValueType::String,
             email,
             timestamp,
@@ -1231,22 +1221,16 @@ impl BranchCommitStats {
     }
 }
 
-fn local_commit_metadata(repo: &gix::Repository, oid: &str) -> Result<Option<LocalCommitMetadata>> {
-    let Ok(object_id) = gix::ObjectId::from_hex(oid.as_bytes()) else {
+fn local_commit_metadata(
+    session: &git_meta_lib::Session,
+    oid: &str,
+) -> Result<Option<LocalCommitMetadata>> {
+    let Some(commit) = session.maybe_commit_info(oid)? else {
         return Ok(None);
     };
-    let Ok(object) = object_id.attach(repo).object() else {
-        return Ok(None);
-    };
-    let commit = object.into_commit();
-    let decoded = commit.decode()?;
-    let author = decoded.author().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let name = author.name.to_str_lossy();
-    let email = author.email.to_str_lossy();
-    let author_time = author.time().map_err(|e| anyhow::anyhow!("{e}"))?.seconds;
     Ok(Some(LocalCommitMetadata {
-        author: format!("{name} <{email}>"),
-        author_time,
+        author: format!("{} <{}>", commit.author_name, commit.author_email),
+        author_time: commit.author_time_seconds,
     }))
 }
 
@@ -1327,7 +1311,6 @@ fn parse_rfc3339_seconds(value: &str) -> Result<i64> {
 
 fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
     let email = ctx.session.email();
     let fallback_ts = time::OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000;
 
@@ -1340,7 +1323,7 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     let mut imported_count = 0u64;
 
     // Resolve the checkpoints tree (local or remote)
-    let checkpoints_tree_id = resolve_entire_ref(repo, "entire/checkpoints/v1")?;
+    let checkpoints_tree_id = resolve_entire_ref(&ctx.session, "entire/checkpoints/v1")?;
     if checkpoints_tree_id.is_none() {
         eprintln!("No entire/checkpoints/v1 ref found (local or remote), skipping checkpoints");
     }
@@ -1362,14 +1345,20 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
         } else {
             eprintln!("Scanning commits for Entire-Checkpoint trailers...");
         }
-        imported_count +=
-            import_checkpoints_from_commits(repo, cp_tree_id, db, email, dry_run, since_epoch)?;
+        imported_count += import_checkpoints_from_commits(
+            &ctx.session,
+            &cp_tree_id,
+            db,
+            email,
+            dry_run,
+            since_epoch,
+        )?;
     }
 
     // Step 2: Import trails
-    if let Some(tree_id) = resolve_entire_ref(repo, "entire/trails/v1")? {
+    if let Some(tree_id) = resolve_entire_ref(&ctx.session, "entire/trails/v1")? {
         eprintln!("Processing entire/trails/v1...");
-        imported_count += import_trails(repo, tree_id, db, email, fallback_ts, dry_run)?;
+        imported_count += import_trails(&ctx.session, &tree_id, db, email, fallback_ts, dry_run)?;
     } else {
         eprintln!("No entire/trails/v1 ref found, skipping trails");
     }
@@ -1384,87 +1373,69 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
 }
 
 /// Resolve an entire ref to the tree OID of its tip commit.
-fn resolve_entire_ref(repo: &gix::Repository, refname: &str) -> Result<Option<gix::ObjectId>> {
-    let reference = repo
-        .find_reference(&format!("refs/heads/{refname}"))
-        .or_else(|_| repo.find_reference(&format!("refs/remotes/origin/{refname}")))
-        .or_else(|_| repo.find_reference(refname));
-
-    match reference {
-        Ok(r) => {
-            let refname_used = r.name().as_bstr().to_string();
-            eprintln!("  Resolved {refname} via {refname_used}");
-            let commit_id = r.into_fully_peeled_id()?.detach();
-            let commit_obj = commit_id.attach(repo).object()?.into_commit();
-            let tree_id = commit_obj.tree_id()?.detach();
-            Ok(Some(tree_id))
+fn resolve_entire_ref(session: &git_meta_lib::Session, refname: &str) -> Result<Option<String>> {
+    let candidates = [
+        format!("refs/{refname}"),
+        format!("refs/remotes/origin/{refname}"),
+        refname.to_string(),
+    ];
+    for candidate in candidates {
+        if let Some(commit_id) = session.find_ref_oid(&candidate)? {
+            eprintln!("  Resolved {refname} via {candidate}");
+            return Ok(Some(session.commit_info(&commit_id)?.tree_oid));
         }
-        Err(_) => Ok(None),
     }
+    Ok(None)
 }
 
 /// Walk all commits across all refs, find Entire-Checkpoint trailers,
 /// look up each checkpoint in the checkpoints tree, and import it.
 fn import_checkpoints_from_commits(
-    repo: &gix::Repository,
-    checkpoints_tree_id: gix::ObjectId,
+    session: &git_meta_lib::Session,
+    checkpoints_tree_id: &str,
     db: Option<&Store>,
     email: &str,
     dry_run: bool,
     since_epoch: Option<i64>,
 ) -> Result<u64> {
     let mut count = 0u64;
-    let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
+    let mut seen_commits: HashSet<String> = HashSet::new();
     let mut found = 0u64;
     let mut skipped = 0u64;
     let mut missing = 0u64;
 
     // Collect all ref tips to walk
-    let mut start_oids: Vec<gix::ObjectId> = Vec::new();
-    let platform = repo.references()?;
-    for r in platform.all()?.flatten() {
-        let name = r.name().as_bstr().to_string();
-        if name.contains("/entire/") {
+    let mut start_oids: Vec<String> = Vec::new();
+    for r in session.list_refs()? {
+        if r.name.contains("/entire/") {
             continue;
         }
-        if let Ok(id) = r.into_fully_peeled_id() {
-            start_oids.push(id.detach());
-        }
+        start_oids.push(r.oid);
     }
 
     // Walk each ref tip
     let mut scanned = 0u64;
     for start_oid in &start_oids {
-        let walk = repo.rev_walk(Some(*start_oid));
-        let Ok(iter) = walk.all() else {
+        let Ok(oids) = session.rev_walk_oids(start_oid) else {
             continue;
         };
 
-        for info_result in iter {
-            let Ok(info) = info_result else {
-                continue;
-            };
-            let oid = info.id;
-            if !seen_commits.insert(oid) {
+        for oid in oids {
+            if !seen_commits.insert(oid.clone()) {
                 continue;
             }
             scanned += 1;
 
-            let commit_obj = oid.attach(repo).object()?.into_commit();
-            let decoded = commit_obj.decode()?;
+            let commit = session.commit_info(&oid)?;
 
             // Skip commits older than --since date
             if let Some(cutoff) = since_epoch {
-                if {
-                    let a = decoded.author().map_err(|e| anyhow::anyhow!("{e}"))?;
-                    a.time().map_err(|e| anyhow::anyhow!("{e}"))?.seconds
-                } < cutoff
-                {
+                if commit.author_time_seconds < cutoff {
                     continue;
                 }
             }
 
-            let msg = decoded.message.to_str_lossy().to_string();
+            let msg = commit.message;
 
             // Look for Entire-Checkpoint trailer(s)
             for line in msg.lines() {
@@ -1477,7 +1448,7 @@ fn import_checkpoints_from_commits(
                     continue;
                 }
 
-                let commit_sha = oid.to_string();
+                let commit_sha = oid.clone();
 
                 // Skip if already imported
                 if let Some(db) = db {
@@ -1495,11 +1466,12 @@ fn import_checkpoints_from_commits(
                 let shard = &checkpoint_id[..2.min(checkpoint_id.len())];
                 let rest = &checkpoint_id[2.min(checkpoint_id.len())..];
 
-                let checkpoint_tree_id = (|| -> Result<Option<gix::ObjectId>> {
-                    let Some(shard_id) = entry_to_tree_id(repo, checkpoints_tree_id, shard)? else {
+                let checkpoint_tree_id = (|| -> Result<Option<String>> {
+                    let Some(shard_id) = entry_to_tree_id(session, checkpoints_tree_id, shard)?
+                    else {
                         return Ok(None);
                     };
-                    entry_to_tree_id(repo, shard_id, rest)
+                    entry_to_tree_id(session, &shard_id, rest)
                 })()?;
 
                 let Some(checkpoint_tree_id) = checkpoint_tree_id else {
@@ -1520,14 +1492,11 @@ fn import_checkpoints_from_commits(
                 );
 
                 // Use the commit's author date as the metadata timestamp
-                let mut ts = {
-                    let a = decoded.author().map_err(|e| anyhow::anyhow!("{e}"))?;
-                    a.time().map_err(|e| anyhow::anyhow!("{e}"))?.seconds
-                } * 1000;
+                let mut ts = { commit.author_time_seconds } * 1000;
 
                 // Store checkpoint ID
                 count += set_value(
-                    repo,
+                    session,
                     db,
                     dry_run,
                     &TargetType::Commit,
@@ -1541,7 +1510,8 @@ fn import_checkpoints_from_commits(
                 ts += 1;
 
                 // Import top-level metadata.json (checkpoint summary)
-                if let Some(content) = entry_to_blob(repo, checkpoint_tree_id, "metadata.json")? {
+                if let Some(content) = entry_to_blob(session, &checkpoint_tree_id, "metadata.json")?
+                {
                     let meta: Value = serde_json::from_str(&content).unwrap_or(Value::Null);
                     let checkpoint_fields: &[(&str, &[&str])] = &[
                         ("strategy", &["strategy"]),
@@ -1554,7 +1524,7 @@ fn import_checkpoints_from_commits(
                             let key = format!("agent:{git_meta_key}");
                             let json_val = json_encode_value(val)?;
                             count += set_value(
-                                repo,
+                                session,
                                 db,
                                 dry_run,
                                 &TargetType::Commit,
@@ -1575,7 +1545,7 @@ fn import_checkpoints_from_commits(
                 loop {
                     let slot_name = session_idx.to_string();
                     let Some(session_tree_id) =
-                        entry_to_tree_id(repo, checkpoint_tree_id, &slot_name)?
+                        entry_to_tree_id(session, &checkpoint_tree_id, &slot_name)?
                     else {
                         break;
                     };
@@ -1587,8 +1557,8 @@ fn import_checkpoints_from_commits(
                     };
 
                     count += import_session(
-                        repo,
-                        session_tree_id,
+                        session,
+                        &session_tree_id,
                         db,
                         &commit_sha,
                         &key_prefix,
@@ -1612,8 +1582,8 @@ fn import_checkpoints_from_commits(
 
 /// Import a single session slot's data.
 fn import_session(
-    repo: &gix::Repository,
-    session_tree_id: gix::ObjectId,
+    session: &git_meta_lib::Session,
+    session_tree_id: &str,
     db: Option<&Store>,
     commit_sha: &str,
     key_prefix: &str,
@@ -1624,7 +1594,7 @@ fn import_session(
     let mut count = 0u64;
 
     // Session metadata.json
-    if let Some(content) = entry_to_blob(repo, session_tree_id, "metadata.json")? {
+    if let Some(content) = entry_to_blob(session, session_tree_id, "metadata.json")? {
         let meta: Value =
             serde_json::from_str(&content).context("parsing session metadata.json")?;
 
@@ -1641,7 +1611,7 @@ fn import_session(
                 let key = format!("{key_prefix}:{git_meta_key}");
                 let json_val = json_encode_value(val)?;
                 count += set_value(
-                    repo,
+                    session,
                     db,
                     dry_run,
                     &TargetType::Commit,
@@ -1667,7 +1637,7 @@ fn import_session(
                 let key = format!("{key_prefix}:{git_meta_key}");
                 let json_val = json_encode_value(val)?;
                 count += set_value(
-                    repo,
+                    session,
                     db,
                     dry_run,
                     &TargetType::Commit,
@@ -1684,10 +1654,10 @@ fn import_session(
     }
 
     // prompt.txt
-    if let Some(content) = entry_to_blob(repo, session_tree_id, "prompt.txt")? {
+    if let Some(content) = entry_to_blob(session, session_tree_id, "prompt.txt")? {
         let key = format!("{key_prefix}:prompt");
         count += set_value(
-            repo,
+            session,
             db,
             dry_run,
             &TargetType::Commit,
@@ -1702,12 +1672,12 @@ fn import_session(
     }
 
     // full.jsonl
-    if let Some(content) = entry_to_blob(repo, session_tree_id, "full.jsonl")? {
+    if let Some(content) = entry_to_blob(session, session_tree_id, "full.jsonl")? {
         let key = format!("{key_prefix}:transcript");
         if !content.trim().is_empty() {
             let json_val = json_string(&content);
             count += set_value(
-                repo,
+                session,
                 db,
                 dry_run,
                 &TargetType::Commit,
@@ -1723,10 +1693,10 @@ fn import_session(
     }
 
     // content_hash.txt
-    if let Some(content) = entry_to_blob(repo, session_tree_id, "content_hash.txt")? {
+    if let Some(content) = entry_to_blob(session, session_tree_id, "content_hash.txt")? {
         let key = format!("{key_prefix}:content-hash");
         count += set_value(
-            repo,
+            session,
             db,
             dry_run,
             &TargetType::Commit,
@@ -1741,24 +1711,22 @@ fn import_session(
     }
 
     // tasks/ directory
-    if let Some(tasks_tree_id) = entry_to_tree_id(repo, session_tree_id, "tasks")? {
-        let tasks_tree = tasks_tree_id.attach(repo).object()?.into_tree();
-        for task_entry_result in tasks_tree.iter() {
-            let task_entry = task_entry_result?;
-            let tool_use_id = task_entry.filename().to_str_lossy().to_string();
-            if tool_use_id.is_empty() || !task_entry.mode().is_tree() {
+    if let Some(tasks_tree_id) = entry_to_tree_id(session, session_tree_id, "tasks")? {
+        for task_entry in session.tree_entries(&tasks_tree_id)? {
+            let tool_use_id = task_entry.name;
+            if tool_use_id.is_empty() || !matches!(task_entry.kind, GitTreeEntryKind::Tree) {
                 continue;
             }
-            let task_tree_id = task_entry.object_id();
+            let task_tree_id = task_entry.oid;
 
-            if let Some(content) = entry_to_blob(repo, task_tree_id, "checkpoint.json")? {
+            if let Some(content) = entry_to_blob(session, &task_tree_id, "checkpoint.json")? {
                 let key = format!(
                     "{}:tasks:{}:checkpoint",
                     key_prefix,
                     sanitize_key_segment(&tool_use_id)
                 );
                 count += set_value(
-                    repo,
+                    session,
                     db,
                     dry_run,
                     &TargetType::Commit,
@@ -1772,16 +1740,13 @@ fn import_session(
                 *ts += 1;
             }
 
-            let task_tree = task_tree_id.attach(repo).object()?.into_tree();
-            for agent_entry_result in task_tree.iter() {
-                let agent_entry = agent_entry_result?;
-                let name = agent_entry.filename().to_str_lossy().to_string();
+            for agent_entry in session.tree_entries(&task_tree_id)? {
+                let name = agent_entry.name;
                 if name.starts_with("agent-")
                     && name.ends_with(".jsonl")
-                    && agent_entry.mode().is_blob()
+                    && matches!(agent_entry.kind, GitTreeEntryKind::Blob)
                 {
-                    let blob = agent_entry.object_id().attach(repo).object()?.into_blob();
-                    let content = String::from_utf8_lossy(&blob.data);
+                    let content = session.read_blob_string(&agent_entry.oid)?;
                     let agent_id = name
                         .strip_prefix("agent-")
                         .unwrap_or(&name)
@@ -1805,7 +1770,7 @@ fn import_session(
                         }
                         let encoded = git_meta_lib::list_value::encode_entries(&entries)?;
                         count += set_value(
-                            repo,
+                            session,
                             db,
                             dry_run,
                             &TargetType::Commit,
@@ -1828,35 +1793,20 @@ fn import_session(
 
 /// Read a blob from a tree entry by name.
 fn entry_to_blob(
-    repo: &gix::Repository,
-    tree_id: gix::ObjectId,
+    session: &git_meta_lib::Session,
+    tree_id: &str,
     name: &str,
 ) -> Result<Option<String>> {
-    let tree = tree_id.attach(repo).object()?.into_tree();
-    for entry_result in tree.iter() {
-        let entry = entry_result?;
-        if entry.filename().to_str_lossy() == name && entry.mode().is_blob() {
-            let blob = entry.object_id().attach(repo).object()?.into_blob();
-            return Ok(Some(String::from_utf8_lossy(&blob.data).to_string()));
-        }
-    }
-    Ok(None)
+    session.tree_blob_string(tree_id, name).map_err(Into::into)
 }
 
 /// Read a subtree OID from a tree entry by name.
 fn entry_to_tree_id(
-    repo: &gix::Repository,
-    tree_id: gix::ObjectId,
+    session: &git_meta_lib::Session,
+    tree_id: &str,
     name: &str,
-) -> Result<Option<gix::ObjectId>> {
-    let tree = tree_id.attach(repo).object()?.into_tree();
-    for entry_result in tree.iter() {
-        let entry = entry_result?;
-        if entry.filename().to_str_lossy() == name && entry.mode().is_tree() {
-            return Ok(Some(entry.object_id()));
-        }
-    }
-    Ok(None)
+) -> Result<Option<String>> {
+    session.tree_subtree_oid(tree_id, name).map_err(Into::into)
 }
 
 /// Load the set of trail IDs that have already been imported.
@@ -1868,8 +1818,8 @@ fn load_imported_trail_ids(db: Option<&Store>) -> Result<HashSet<String>> {
 }
 
 fn import_trails(
-    repo: &gix::Repository,
-    root_tree_id: gix::ObjectId,
+    session: &git_meta_lib::Session,
+    root_tree_id: &str,
     db: Option<&Store>,
     email: &str,
     base_ts: i64,
@@ -1879,18 +1829,14 @@ fn import_trails(
     let mut ts = base_ts;
     let imported_trails = load_imported_trail_ids(db)?;
 
-    let root_tree = root_tree_id.attach(repo).object()?.into_tree();
-    for shard_entry_result in root_tree.iter() {
-        let shard_entry = shard_entry_result?;
-        let shard_name = shard_entry.filename().to_str_lossy().to_string();
-        if shard_name.len() != 2 || !shard_entry.mode().is_tree() {
+    for shard_entry in session.tree_entries(root_tree_id)? {
+        let shard_name = shard_entry.name;
+        if shard_name.len() != 2 || !matches!(shard_entry.kind, GitTreeEntryKind::Tree) {
             continue;
         }
 
-        let shard_tree = shard_entry.object_id().attach(repo).object()?.into_tree();
-        for item_entry_result in shard_tree.iter() {
-            let item_entry = item_entry_result?;
-            let rest_name = item_entry.filename().to_str_lossy().to_string();
+        for item_entry in session.tree_entries(&shard_entry.oid)? {
+            let rest_name = item_entry.name;
             let trail_id = format!("{shard_name}{rest_name}");
 
             if imported_trails.contains(&trail_id) {
@@ -1898,12 +1844,12 @@ fn import_trails(
                 continue;
             }
 
-            if !item_entry.mode().is_tree() {
+            if !matches!(item_entry.kind, GitTreeEntryKind::Tree) {
                 continue;
             }
-            let item_tree_id = item_entry.object_id();
+            let item_tree_id = item_entry.oid;
 
-            let Some(meta_content) = entry_to_blob(repo, item_tree_id, "metadata.json")? else {
+            let Some(meta_content) = entry_to_blob(session, &item_tree_id, "metadata.json")? else {
                 eprintln!("  Skipping trail {trail_id} (no metadata.json)");
                 continue;
             };
@@ -1927,7 +1873,7 @@ fn import_trails(
             eprintln!("  Trail {trail_id} (branch {branch_name}) -> branch:{branch_uuid}");
 
             count += set_value(
-                repo,
+                session,
                 db,
                 dry_run,
                 &TargetType::Branch,
@@ -1948,7 +1894,7 @@ fn import_trails(
                     let key = format!("review:{field}");
                     let json_val = json_encode_value(val)?;
                     count += set_value(
-                        repo,
+                        session,
                         db,
                         dry_run,
                         &TargetType::Branch,
@@ -1969,7 +1915,7 @@ fn import_trails(
                     let key = format!("review:{field}");
                     let json_val = json_encode_value(val)?;
                     count += set_value(
-                        repo,
+                        session,
                         db,
                         dry_run,
                         &TargetType::Branch,
@@ -1984,7 +1930,7 @@ fn import_trails(
                 }
             }
 
-            if let Some(content) = entry_to_blob(repo, item_tree_id, "checkpoints.json")? {
+            if let Some(content) = entry_to_blob(session, &item_tree_id, "checkpoints.json")? {
                 let arr: Vec<Value> = serde_json::from_str(&content).unwrap_or_default();
                 if !arr.is_empty() {
                     let mut entries = Vec::new();
@@ -1996,7 +1942,7 @@ fn import_trails(
                     }
                     let encoded = git_meta_lib::list_value::encode_entries(&entries)?;
                     count += set_value(
-                        repo,
+                        session,
                         db,
                         dry_run,
                         &TargetType::Branch,
@@ -2011,11 +1957,11 @@ fn import_trails(
                 }
             }
 
-            if let Some(content) = entry_to_blob(repo, item_tree_id, "discussion.json")? {
+            if let Some(content) = entry_to_blob(session, &item_tree_id, "discussion.json")? {
                 let disc: Value = serde_json::from_str(&content).unwrap_or(Value::Null);
                 if disc != Value::Null {
                     count += set_value(
-                        repo,
+                        session,
                         db,
                         dry_run,
                         &TargetType::Branch,
@@ -2039,7 +1985,7 @@ fn import_trails(
 /// Large string values (exceeding the configured object-size threshold, see
 /// `Store::object_max_size`) are stored as git blob refs.
 fn set_value(
-    repo: &gix::Repository,
+    session: &git_meta_lib::Session,
     db: Option<&Store>,
     dry_run: bool,
     target_type: &TargetType,
@@ -2078,16 +2024,8 @@ fn set_value(
             )
         };
         if use_git_ref {
-            let blob_oid: gix::ObjectId = repo.write_blob(value.as_bytes())?.into();
-            db.set_with_git_ref(
-                &target,
-                key,
-                &blob_oid.to_string(),
-                value_type,
-                email,
-                timestamp,
-                true,
-            )?;
+            let blob_oid = session.write_blob_string(value)?;
+            db.set_with_git_ref(&target, key, &blob_oid, value_type, email, timestamp, true)?;
         } else {
             db.set(&target, key, value, value_type, email, timestamp)?;
         }
@@ -2132,7 +2070,6 @@ const NOTES_REFS: &[&str] = &["refs/remotes/notes/ai", "refs/notes/ai"];
 
 fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     let ctx = CommandContext::open(None)?;
-    let repo = ctx.session.repo();
     let email = ctx.session.email();
 
     let db = if dry_run {
@@ -2142,12 +2079,17 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     };
 
     // Locate the notes ref
-    let notes_ref = NOTES_REFS
-        .iter()
-        .find(|&&r| repo.find_reference(r).is_ok())
-        .copied();
+    let mut notes_ref = None;
+    let mut notes_commit_id = None;
+    for candidate in NOTES_REFS {
+        if let Some(oid) = ctx.session.find_ref_oid(candidate)? {
+            notes_ref = Some(*candidate);
+            notes_commit_id = Some(oid);
+            break;
+        }
+    }
 
-    let Some(notes_ref) = notes_ref else {
+    let (Some(notes_ref), Some(notes_commit_id)) = (notes_ref, notes_commit_id) else {
         bail!(
             "no git-ai notes ref found; expected one of: {}",
             NOTES_REFS.join(", ")
@@ -2157,12 +2099,7 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     eprintln!("importing git-ai notes from {notes_ref}");
 
     // Resolve to the notes tree OID
-    let notes_commit_id = repo
-        .find_reference(notes_ref)?
-        .into_fully_peeled_id()?
-        .detach();
-    let notes_commit = notes_commit_id.attach(repo).object()?.into_commit();
-    let notes_tree_id = notes_commit.tree_id()?.detach();
+    let notes_tree_id = ctx.session.commit_info(&notes_commit_id)?.tree_oid;
 
     // Walk the two-level fanout tree
     let mut total = 0u64;
@@ -2171,72 +2108,37 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
     let mut skipped_exists = 0u64;
     let mut errors = 0u64;
 
-    let notes_tree = notes_tree_id.attach(repo).object()?.into_tree();
-    for shard_entry_result in notes_tree.iter() {
-        let Ok(shard_entry) = shard_entry_result else {
-            continue;
-        };
-        let shard_name = shard_entry.filename().to_str_lossy().to_string();
+    for shard_entry in ctx.session.tree_entries(&notes_tree_id)? {
+        let shard_name = shard_entry.name;
         // Only descend into two-char hex shard dirs.
         if shard_name.len() != 2 || !shard_name.chars().all(|c| c.is_ascii_hexdigit()) {
             continue;
         }
-        if !shard_entry.mode().is_tree() {
+        if !matches!(shard_entry.kind, GitTreeEntryKind::Tree) {
             continue;
         }
-        let Ok(shard_tree) = shard_entry.object_id().attach(repo).object() else {
-            continue;
-        };
-        let shard_tree = shard_tree.into_tree();
 
-        for note_entry_result in shard_tree.iter() {
-            let Ok(note_entry) = note_entry_result else {
-                continue;
-            };
-            let rest = note_entry.filename().to_str_lossy().to_string();
+        for note_entry in ctx.session.tree_entries(&shard_entry.oid)? {
+            let rest = note_entry.name;
             let commit_sha = format!("{shard_name}{rest}");
 
             // Verify the annotated commit exists and is within --since range.
-            let Ok(commit_oid) = gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
-                errors += 1;
-                continue;
-            };
-            let Ok(annotated_commit) = commit_oid.attach(repo).object() else {
-                errors += 1;
-                continue;
-            };
-            let annotated_commit = annotated_commit.into_commit();
-            let Ok(decoded) = annotated_commit.decode() else {
+            let Ok(Some(commit_info)) = ctx.session.maybe_commit_info(&commit_sha) else {
                 errors += 1;
                 continue;
             };
             if let Some(since) = since_epoch {
-                if {
-                    let a = decoded.author().map_err(|e| anyhow::anyhow!("{e}"))?;
-                    a.time().map_err(|e| anyhow::anyhow!("{e}"))?.seconds
-                } < since
-                {
+                if commit_info.author_time_seconds < since {
                     skipped_date += 1;
                     continue;
                 }
             }
-            let commit_ts = {
-                let a = decoded.author().map_err(|e| anyhow::anyhow!("{e}"))?;
-                a.time().map_err(|e| anyhow::anyhow!("{e}"))?.seconds
-            } * 1000;
+            let commit_ts = commit_info.author_time_seconds * 1000;
 
             total += 1;
 
             // Read the note blob.
-            let blob = if let Ok(o) = note_entry.object_id().attach(repo).object() {
-                o.into_blob()
-            } else {
-                errors += 1;
-                continue;
-            };
-            let note_text = if let Ok(s) = std::str::from_utf8(&blob.data) {
-                s.to_string()
-            } else {
+            let Ok(note_text) = ctx.session.read_blob_string(&note_entry.oid) else {
                 errors += 1;
                 continue;
             };
@@ -2285,8 +2187,8 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                 );
                 // agent.blame -- store as git blob ref if large
                 let (blame_val, is_ref) = if parsed.blame.len() > db.object_max_size()? {
-                    let oid: gix::ObjectId = repo.write_blob(parsed.blame.as_bytes())?.into();
-                    (oid.to_string(), true)
+                    let oid = ctx.session.write_blob_string(&parsed.blame)?;
+                    (oid, true)
                 } else {
                     (json_string(&parsed.blame), false)
                 };
