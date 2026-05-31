@@ -293,6 +293,14 @@ pub fn run_with_progress(
 
     // Route entries through filter rules to destinations
     let filter_rules = parse_filter_rules(&session.store)?;
+    let mut dest_changes: BTreeMap<String, Vec<(char, String, String)>> = BTreeMap::new();
+    for change in &changes {
+        if let Some(dests) = classify_key(&change.2, &filter_rules) {
+            for dest in dests {
+                dest_changes.entry(dest).or_default().push(change.clone());
+            }
+        }
+    }
 
     let mut dest_metadata: BTreeMap<String, Vec<SerializableEntry>> = BTreeMap::new();
     let mut dest_tombstones: BTreeMap<String, Vec<TombstoneRecord>> = BTreeMap::new();
@@ -378,6 +386,7 @@ pub fn run_with_progress(
 
     let mut refs_written = Vec::new();
     let mut auto_pruned = 0u64;
+    let empty_changes: Vec<(char, String, String)> = Vec::new();
 
     for dest in &all_dests {
         let ref_name = session.destination_ref(dest);
@@ -391,7 +400,16 @@ pub fn run_with_progress(
         let set_tombs = dest_set_tombstones.get(dest).unwrap_or(&empty_set_tomb);
         let list_tombs = dest_list_tombstones.get(dest).unwrap_or(&empty_list_tomb);
 
-        if meta.is_empty() && tombs.is_empty() && set_tombs.is_empty() && list_tombs.is_empty() {
+        let needs_dirty_main_rebuild = dest == MAIN_DEST
+            && dirty_target_bases
+                .as_ref()
+                .is_some_and(|dirty| !dirty.is_empty());
+        if meta.is_empty()
+            && tombs.is_empty()
+            && set_tombs.is_empty()
+            && list_tombs.is_empty()
+            && !needs_dirty_main_rebuild
+        {
             continue;
         }
         let dest_records = meta.len() + tombs.len() + set_tombs.len() + list_tombs.len();
@@ -432,7 +450,7 @@ pub fn run_with_progress(
         }
 
         let parents: Vec<gix::ObjectId> = parent_oid.into_iter().collect();
-        let commit_message = build_commit_message(&changes);
+        let commit_message = build_commit_message(dest_changes.get(dest).unwrap_or(&empty_changes));
         let commit = gix::objs::Commit {
             message: commit_message.into(),
             tree: tree_oid,

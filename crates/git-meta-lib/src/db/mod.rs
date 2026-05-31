@@ -4,6 +4,7 @@ mod config;
 mod lists;
 mod metadata;
 mod promised;
+mod publish;
 mod schema;
 mod sets;
 mod sync;
@@ -149,8 +150,8 @@ impl<'a> AutoSavepoint<'a> {
     }
 
     fn commit(mut self) -> Result<()> {
-        self.committed = true;
         self.conn.execute_batch(&format!("RELEASE {}", self.name))?;
+        self.committed = true;
         Ok(())
     }
 }
@@ -836,6 +837,296 @@ mod tests {
             )
             .unwrap();
         assert_eq!(batch_log_count, 0);
+    }
+
+    #[test]
+    fn test_publish_local_rejects_promised_set_member_destination() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.set_add(&target, "local:sessions", "s1", "a@b.com", 1000)
+            .unwrap();
+        db.insert_promised(&target, "sessions", &ValueType::Set)
+            .unwrap();
+        let members = vec!["s1".to_string()];
+
+        let result = db.publish_local(
+            &target,
+            [crate::LocalPublish::set_members(
+                "local:sessions",
+                "sessions",
+                &members,
+            )],
+            "a@b.com",
+            2000,
+        );
+
+        assert!(result.is_err());
+        let Some(crate::MetaValue::Set(local)) = db.get_value(&target, "local:sessions").unwrap()
+        else {
+            panic!("expected source set");
+        };
+        assert!(local.contains("s1"));
+    }
+
+    #[test]
+    fn test_publish_local_rejects_promised_set_member_source() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.insert_promised(&target, "local:sessions", &ValueType::Set)
+            .unwrap();
+        let members = vec!["s1".to_string()];
+
+        let result = db.publish_local(
+            &target,
+            [crate::LocalPublish::set_members(
+                "local:sessions",
+                "sessions",
+                &members,
+            )],
+            "a@b.com",
+            2000,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_publish_local_rejects_promised_key_prefix_rows() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.insert_promised(&target, "local:summary:title", &ValueType::String)
+            .unwrap();
+
+        let result = db.publish_local(
+            &target,
+            [crate::LocalPublish::key_prefix("local:summary", "summary")],
+            "a@b.com",
+            2000,
+        );
+
+        assert!(result.is_err());
+
+        let db = Store::open_in_memory().unwrap();
+        db.set(
+            &target,
+            "local:summary:title",
+            "\"draft\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.insert_promised(&target, "summary:title", &ValueType::String)
+            .unwrap();
+
+        let result = db.publish_local(
+            &target,
+            [crate::LocalPublish::key_prefix("local:summary", "summary")],
+            "a@b.com",
+            2000,
+        );
+
+        assert!(result.is_err());
+        assert!(db
+            .get_value(&target, "local:summary:title")
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn test_publish_local_preserves_collection_backing_rows() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        let list_value = crate::list_value::encode_entries(&[ListEntry {
+            value: "first".to_string(),
+            timestamp: 1000,
+        }])
+        .unwrap();
+        db.set(
+            &target,
+            "local:session:events",
+            &list_value,
+            &ValueType::List,
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        db.set_add(&target, "local:session:tags", "review", "a@b.com", 1001)
+            .unwrap();
+
+        let list_metadata_id: i64 = db
+            .conn
+            .query_row(
+                "SELECT rowid FROM metadata
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                 AND key = 'local:session:events'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let set_metadata_id: i64 = db
+            .conn
+            .query_row(
+                "SELECT rowid FROM metadata
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                 AND key = 'local:session:tags'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        db.publish_local(
+            &target,
+            [crate::LocalPublish::key_prefix("local:session", "session")],
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+
+        let published_list_metadata_id: i64 = db
+            .conn
+            .query_row(
+                "SELECT rowid FROM metadata
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                 AND key = 'session:events'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let published_set_metadata_id: i64 = db
+            .conn
+            .query_row(
+                "SELECT rowid FROM metadata
+                 WHERE target_type = 'commit' AND target_value = 'abc123'
+                 AND key = 'session:tags'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(published_list_metadata_id, list_metadata_id);
+        assert_eq!(published_set_metadata_id, set_metadata_id);
+
+        let list_rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM list_values WHERE metadata_id = ?1",
+                params![list_metadata_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(list_rows, 1);
+
+        let set_rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM set_values WHERE metadata_id = ?1",
+                params![set_metadata_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(set_rows, 1);
+    }
+
+    #[test]
+    fn test_publish_local_does_not_make_local_set_tombstones_public() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.set_add(&target, "local:sessions", "s1", "a@b.com", 1000)
+            .unwrap();
+        db.set_remove(&target, "local:sessions", "s1", "a@b.com", 1001)
+            .unwrap();
+        db.set_add(&target, "local:sessions", "s2", "a@b.com", 1002)
+            .unwrap();
+
+        db.publish_local(
+            &target,
+            [crate::LocalPublish::key_prefix(
+                "local:sessions",
+                "sessions",
+            )],
+            "a@b.com",
+            2000,
+        )
+        .unwrap();
+
+        let public_set_tombstones: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM tombstones
+                 WHERE tombstone_type = 'set_member'
+                 AND target_type = 'commit' AND target_value = 'abc123'
+                 AND key = 'sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(public_set_tombstones, 0);
+
+        let local_set_tombstones: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM tombstones
+                 WHERE tombstone_type = 'set_member'
+                 AND target_type = 'commit' AND target_value = 'abc123'
+                 AND key = 'local:sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(local_set_tombstones, 1);
+
+        let Some(crate::MetaValue::Set(public)) = db.get_value(&target, "sessions").unwrap() else {
+            panic!("expected published set");
+        };
+        assert!(!public.contains("s1"));
+        assert!(public.contains("s2"));
+    }
+
+    #[test]
+    fn test_publish_local_rolls_back_logs_and_tombstones() {
+        let db = Store::open_in_memory().unwrap();
+        let target = commit_target("abc123");
+        db.set(
+            &target,
+            "local:session:title",
+            "\"draft\"",
+            &ValueType::String,
+            "a@b.com",
+            1000,
+        )
+        .unwrap();
+        let members = vec!["s1".to_string()];
+
+        let result = db.publish_local(
+            &target,
+            [
+                crate::LocalPublish::key_prefix("local:session", "session"),
+                crate::LocalPublish::set_members("local:missing", "sessions", &members),
+            ],
+            "a@b.com",
+            2000,
+        );
+
+        assert!(result.is_err());
+        let publish_log_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM metadata_log WHERE timestamp = 2000",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(publish_log_count, 0);
+        let publish_tombstone_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM tombstones WHERE timestamp = 2000",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(publish_tombstone_count, 0);
     }
 
     #[test]
