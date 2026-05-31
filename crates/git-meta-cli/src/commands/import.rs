@@ -1,5 +1,5 @@
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::bstr::ByteSlice;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 use std::collections::{BTreeSet, HashSet};
 use std::process::Command;
 
@@ -754,7 +754,7 @@ fn import_release_tags(ctx: &CommandContext, dry_run: bool) -> Result<u64> {
     Ok(writes)
 }
 
-fn release_tags(repo: &gix::Repository) -> Result<Vec<ReleaseTag>> {
+fn release_tags(repo: &git_meta_lib::gix::Repository) -> Result<Vec<ReleaseTag>> {
     let output = git_utils::run_git(
         repo,
         &[
@@ -776,7 +776,7 @@ fn release_tags(repo: &gix::Repository) -> Result<Vec<ReleaseTag>> {
 }
 
 fn commits_between_tags(
-    repo: &gix::Repository,
+    repo: &git_meta_lib::gix::Repository,
     previous: Option<&ReleaseTag>,
     tag: &ReleaseTag,
 ) -> Result<Vec<String>> {
@@ -853,7 +853,7 @@ fn get_string_value(db: &Store, target: &Target, key: &str) -> Result<Option<Str
 }
 
 fn change_id_for_commit(
-    repo: &gix::Repository,
+    repo: &git_meta_lib::gix::Repository,
     db: &Store,
     commit_sha: &str,
 ) -> Result<Option<String>> {
@@ -874,8 +874,11 @@ fn change_id_for_commit(
     }))
 }
 
-fn commit_message(repo: &gix::Repository, commit_sha: &str) -> Result<Option<String>> {
-    let Ok(object_id) = gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
+fn commit_message(
+    repo: &git_meta_lib::gix::Repository,
+    commit_sha: &str,
+) -> Result<Option<String>> {
+    let Ok(object_id) = git_meta_lib::gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
         return Ok(None);
     };
     let Ok(object) = object_id.attach(repo).object() else {
@@ -1134,7 +1137,7 @@ fn apply_gh_import(
 
 fn set_import_string(
     db: &Store,
-    repo: &gix::Repository,
+    repo: &git_meta_lib::gix::Repository,
     dry_run: bool,
     target: &Target,
     key: &str,
@@ -1155,7 +1158,7 @@ fn set_import_string(
         return Ok(1);
     }
     if use_git_ref {
-        let blob_oid: gix::ObjectId = repo.write_blob(encoded.as_bytes())?.into();
+        let blob_oid: git_meta_lib::gix::ObjectId = repo.write_blob(encoded.as_bytes())?.into();
         db.set_with_git_ref(
             target,
             key,
@@ -1231,8 +1234,11 @@ impl BranchCommitStats {
     }
 }
 
-fn local_commit_metadata(repo: &gix::Repository, oid: &str) -> Result<Option<LocalCommitMetadata>> {
-    let Ok(object_id) = gix::ObjectId::from_hex(oid.as_bytes()) else {
+fn local_commit_metadata(
+    repo: &git_meta_lib::gix::Repository,
+    oid: &str,
+) -> Result<Option<LocalCommitMetadata>> {
+    let Ok(object_id) = git_meta_lib::gix::ObjectId::from_hex(oid.as_bytes()) else {
         return Ok(None);
     };
     let Ok(object) = object_id.attach(repo).object() else {
@@ -1384,7 +1390,10 @@ fn run_entire(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
 }
 
 /// Resolve an entire ref to the tree OID of its tip commit.
-fn resolve_entire_ref(repo: &gix::Repository, refname: &str) -> Result<Option<gix::ObjectId>> {
+fn resolve_entire_ref(
+    repo: &git_meta_lib::gix::Repository,
+    refname: &str,
+) -> Result<Option<git_meta_lib::gix::ObjectId>> {
     let reference = repo
         .find_reference(&format!("refs/heads/{refname}"))
         .or_else(|_| repo.find_reference(&format!("refs/remotes/origin/{refname}")))
@@ -1406,21 +1415,21 @@ fn resolve_entire_ref(repo: &gix::Repository, refname: &str) -> Result<Option<gi
 /// Walk all commits across all refs, find Entire-Checkpoint trailers,
 /// look up each checkpoint in the checkpoints tree, and import it.
 fn import_checkpoints_from_commits(
-    repo: &gix::Repository,
-    checkpoints_tree_id: gix::ObjectId,
+    repo: &git_meta_lib::gix::Repository,
+    checkpoints_tree_id: git_meta_lib::gix::ObjectId,
     db: Option<&Store>,
     email: &str,
     dry_run: bool,
     since_epoch: Option<i64>,
 ) -> Result<u64> {
     let mut count = 0u64;
-    let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
+    let mut seen_commits: HashSet<git_meta_lib::gix::ObjectId> = HashSet::new();
     let mut found = 0u64;
     let mut skipped = 0u64;
     let mut missing = 0u64;
 
     // Collect all ref tips to walk
-    let mut start_oids: Vec<gix::ObjectId> = Vec::new();
+    let mut start_oids: Vec<git_meta_lib::gix::ObjectId> = Vec::new();
     let platform = repo.references()?;
     for r in platform.all()?.flatten() {
         let name = r.name().as_bstr().to_string();
@@ -1495,7 +1504,7 @@ fn import_checkpoints_from_commits(
                 let shard = &checkpoint_id[..2.min(checkpoint_id.len())];
                 let rest = &checkpoint_id[2.min(checkpoint_id.len())..];
 
-                let checkpoint_tree_id = (|| -> Result<Option<gix::ObjectId>> {
+                let checkpoint_tree_id = (|| -> Result<Option<git_meta_lib::gix::ObjectId>> {
                     let Some(shard_id) = entry_to_tree_id(repo, checkpoints_tree_id, shard)? else {
                         return Ok(None);
                     };
@@ -1612,8 +1621,8 @@ fn import_checkpoints_from_commits(
 
 /// Import a single session slot's data.
 fn import_session(
-    repo: &gix::Repository,
-    session_tree_id: gix::ObjectId,
+    repo: &git_meta_lib::gix::Repository,
+    session_tree_id: git_meta_lib::gix::ObjectId,
     db: Option<&Store>,
     commit_sha: &str,
     key_prefix: &str,
@@ -1828,8 +1837,8 @@ fn import_session(
 
 /// Read a blob from a tree entry by name.
 fn entry_to_blob(
-    repo: &gix::Repository,
-    tree_id: gix::ObjectId,
+    repo: &git_meta_lib::gix::Repository,
+    tree_id: git_meta_lib::gix::ObjectId,
     name: &str,
 ) -> Result<Option<String>> {
     let tree = tree_id.attach(repo).object()?.into_tree();
@@ -1845,10 +1854,10 @@ fn entry_to_blob(
 
 /// Read a subtree OID from a tree entry by name.
 fn entry_to_tree_id(
-    repo: &gix::Repository,
-    tree_id: gix::ObjectId,
+    repo: &git_meta_lib::gix::Repository,
+    tree_id: git_meta_lib::gix::ObjectId,
     name: &str,
-) -> Result<Option<gix::ObjectId>> {
+) -> Result<Option<git_meta_lib::gix::ObjectId>> {
     let tree = tree_id.attach(repo).object()?.into_tree();
     for entry_result in tree.iter() {
         let entry = entry_result?;
@@ -1868,8 +1877,8 @@ fn load_imported_trail_ids(db: Option<&Store>) -> Result<HashSet<String>> {
 }
 
 fn import_trails(
-    repo: &gix::Repository,
-    root_tree_id: gix::ObjectId,
+    repo: &git_meta_lib::gix::Repository,
+    root_tree_id: git_meta_lib::gix::ObjectId,
     db: Option<&Store>,
     email: &str,
     base_ts: i64,
@@ -2039,7 +2048,7 @@ fn import_trails(
 /// Large string values (exceeding the configured object-size threshold, see
 /// `Store::object_max_size`) are stored as git blob refs.
 fn set_value(
-    repo: &gix::Repository,
+    repo: &git_meta_lib::gix::Repository,
     db: Option<&Store>,
     dry_run: bool,
     target_type: &TargetType,
@@ -2078,7 +2087,7 @@ fn set_value(
             )
         };
         if use_git_ref {
-            let blob_oid: gix::ObjectId = repo.write_blob(value.as_bytes())?.into();
+            let blob_oid: git_meta_lib::gix::ObjectId = repo.write_blob(value.as_bytes())?.into();
             db.set_with_git_ref(
                 &target,
                 key,
@@ -2197,7 +2206,8 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
             let commit_sha = format!("{shard_name}{rest}");
 
             // Verify the annotated commit exists and is within --since range.
-            let Ok(commit_oid) = gix::ObjectId::from_hex(commit_sha.as_bytes()) else {
+            let Ok(commit_oid) = git_meta_lib::gix::ObjectId::from_hex(commit_sha.as_bytes())
+            else {
                 errors += 1;
                 continue;
             };
@@ -2285,7 +2295,8 @@ fn run_git_ai(dry_run: bool, since_epoch: Option<i64>) -> Result<()> {
                 );
                 // agent.blame -- store as git blob ref if large
                 let (blame_val, is_ref) = if parsed.blame.len() > db.object_max_size()? {
-                    let oid: gix::ObjectId = repo.write_blob(parsed.blame.as_bytes())?.into();
+                    let oid: git_meta_lib::gix::ObjectId =
+                        repo.write_blob(parsed.blame.as_bytes())?.into();
                     (oid.to_string(), true)
                 } else {
                     (json_string(&parsed.blame), false)

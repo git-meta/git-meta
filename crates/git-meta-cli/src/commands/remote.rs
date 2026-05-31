@@ -2,7 +2,7 @@ use std::io::IsTerminal;
 
 use anyhow::{bail, Context, Result};
 use dialoguer::Confirm;
-use gix::refs::transaction::PreviousValue;
+use git_meta_lib::gix::refs::transaction::PreviousValue;
 
 use crate::commands::materialize;
 use crate::context::CommandContext;
@@ -104,7 +104,7 @@ fn ensure_local_meta_ref(
     ns: &str,
     origin_url: &str,
     meta_url: &str,
-) -> Result<gix::ObjectId> {
+) -> Result<git_meta_lib::gix::ObjectId> {
     let repo = ctx.session.repo();
     let local_ref = format!("refs/{ns}/local/main");
 
@@ -124,7 +124,7 @@ fn ensure_local_meta_ref(
     }
 
     let readme = meta_readme_content(origin_url, meta_url, ns);
-    let blob_oid: gix::ObjectId = repo
+    let blob_oid: git_meta_lib::gix::ObjectId = repo
         .write_blob(readme.as_bytes())
         .context("write README blob")?
         .into();
@@ -134,17 +134,21 @@ fn ensure_local_meta_ref(
             .edit()
             .context("create tree editor for README")?;
         editor
-            .upsert("README.md", gix::objs::tree::EntryKind::Blob, blob_oid)
+            .upsert(
+                "README.md",
+                git_meta_lib::gix::objs::tree::EntryKind::Blob,
+                blob_oid,
+            )
             .context("insert README into tree")?;
         editor.write().context("write README tree")?
     };
 
-    let sig = gix::actor::Signature {
+    let sig = git_meta_lib::gix::actor::Signature {
         name: ctx.session.name().into(),
         email: ctx.session.email().into(),
-        time: gix::date::Time::now_local_or_utc(),
+        time: git_meta_lib::gix::date::Time::now_local_or_utc(),
     };
-    let commit = gix::objs::Commit {
+    let commit = git_meta_lib::gix::objs::Commit {
         message: format!(
             "git-meta: initialize {ns} metadata\n\n\
              First commit on refs/{ns}/local/main, created by `git meta remote add --init`.\n\

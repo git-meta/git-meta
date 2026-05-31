@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 use serde_json::{json, Map, Value};
 
 use crate::commands::hydrate::hydrate_promised_entries;
@@ -108,8 +108,8 @@ pub(crate) fn run(
 }
 
 /// Resolve a git blob SHA to its content as a UTF-8 string.
-fn resolve_git_ref(repo: &gix::Repository, sha: &str) -> Result<String> {
-    let oid = gix::ObjectId::from_hex(sha.as_bytes())
+fn resolve_git_ref(repo: &git_meta_lib::gix::Repository, sha: &str) -> Result<String> {
+    let oid = git_meta_lib::gix::ObjectId::from_hex(sha.as_bytes())
         .with_context(|| format!("invalid git blob SHA: {sha}"))?;
     let obj = oid
         .attach(repo)

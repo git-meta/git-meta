@@ -31,23 +31,27 @@ pub(crate) fn run_readme(remote: Option<&str>, verbose: bool) -> Result<()> {
     }
 
     // Create blob -> tree -> commit
-    let blob_oid: gix::ObjectId = repo.write_blob(readme_content.as_bytes())?.into();
+    let blob_oid: git_meta_lib::gix::ObjectId = repo.write_blob(readme_content.as_bytes())?.into();
 
     let tree_oid = {
         let mut editor = repo.empty_tree().edit()?;
-        editor.upsert("README.md", gix::objs::tree::EntryKind::Blob, blob_oid)?;
+        editor.upsert(
+            "README.md",
+            git_meta_lib::gix::objs::tree::EntryKind::Blob,
+            blob_oid,
+        )?;
         editor.write()?
     };
 
     let name = ctx.session.name();
     let email = ctx.session.email();
-    let sig = gix::actor::Signature {
+    let sig = git_meta_lib::gix::actor::Signature {
         name: name.into(),
         email: email.into(),
-        time: gix::date::Time::now_local_or_utc(),
+        time: git_meta_lib::gix::date::Time::now_local_or_utc(),
     };
 
-    let commit = gix::objs::Commit {
+    let commit = git_meta_lib::gix::objs::Commit {
         message: "Initial metadata repository setup\n\nCreated by git meta to provide documentation for contributors.".into(),
         tree: tree_oid.into(),
         author: sig.clone(),

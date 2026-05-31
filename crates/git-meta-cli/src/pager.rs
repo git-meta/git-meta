@@ -70,7 +70,7 @@ impl Pager {
     /// or spawning the pager fails for any reason, this returns a
     /// `Pager` that writes directly to stdout — the caller never has
     /// to branch on whether paging is active.
-    pub(crate) fn start(repo: Option<&gix::Repository>) -> Self {
+    pub(crate) fn start(repo: Option<&git_meta_lib::gix::Repository>) -> Self {
         let pager = resolve_pager(
             io::stdout().is_terminal(),
             |key| std::env::var(key),
@@ -134,7 +134,7 @@ fn resolve_pager(
 ///
 /// Returns `None` if the key is unset or the value is empty after
 /// conversion to `String`.
-fn read_core_pager(repo: &gix::Repository) -> Option<String> {
+fn read_core_pager(repo: &git_meta_lib::gix::Repository) -> Option<String> {
     let config = repo.config_snapshot();
     config
         .string("core.pager")

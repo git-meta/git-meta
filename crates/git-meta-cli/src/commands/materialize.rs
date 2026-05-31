@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::context::CommandContext;
 use anyhow::{bail, Result};
 use git_meta_lib::db::Store;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 use git_meta_lib::list_value::{encode_entries, parse_timestamp_from_entry_name};
 use git_meta_lib::materialize::{find_remote_refs, MaterializeStrategy};
 use git_meta_lib::tree::format::parse_tree;
@@ -13,7 +14,6 @@ use git_meta_lib::tree::merge::{
 use git_meta_lib::tree::model::{Key, ParsedTree, Tombstone, TreeValue};
 use git_meta_lib::types::TargetType;
 use git_meta_lib::ListEntry;
-use gix::prelude::ObjectIdExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PlannedDbChange {
@@ -160,7 +160,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
             .find_reference(&local_ref_name)
             .ok()
             .and_then(|r| r.into_fully_peeled_id().ok())
-            .map(gix::Id::detach);
+            .map(git_meta_lib::gix::Id::detach);
 
         if verbose {
             match &local_commit_oid {
@@ -232,7 +232,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
 fn dry_run_fast_forward(
     ctx: &CommandContext,
     ref_name: &str,
-    local_commit_oid: Option<gix::ObjectId>,
+    local_commit_oid: Option<git_meta_lib::gix::ObjectId>,
     remote_entries: &ParsedTree,
     verbose: bool,
 ) -> Result<()> {
@@ -281,10 +281,10 @@ fn dry_run_fast_forward(
 fn dry_run_merge(
     ctx: &CommandContext,
     ref_name: &str,
-    local_oid: &gix::ObjectId,
-    remote_oid: &gix::ObjectId,
+    local_oid: &git_meta_lib::gix::ObjectId,
+    remote_oid: &git_meta_lib::gix::ObjectId,
     remote_entries: &ParsedTree,
-    remote_commit_obj: &gix::Commit<'_>,
+    remote_commit_obj: &git_meta_lib::gix::Commit<'_>,
     verbose: bool,
 ) -> Result<()> {
     let repo = ctx.session.repo();

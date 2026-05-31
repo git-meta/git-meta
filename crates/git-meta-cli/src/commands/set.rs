@@ -70,7 +70,7 @@ pub(crate) fn run(
         let repo = ctx.session.repo();
         let email = ctx.session.email().to_string();
         let ts = time::OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000;
-        let blob_oid: gix::ObjectId = repo.write_blob(raw_value.as_bytes())?.into();
+        let blob_oid: git_meta_lib::gix::ObjectId = repo.write_blob(raw_value.as_bytes())?.into();
         ctx.session.store().set_with_git_ref(
             &target,
             key,

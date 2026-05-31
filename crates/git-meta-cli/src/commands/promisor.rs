@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::bstr::ByteSlice;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 
 use crate::context::CommandContext;
 use git_meta_lib::types::{TargetType, ValueType};

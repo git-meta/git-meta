@@ -1,6 +1,6 @@
 use anyhow::Result;
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::bstr::ByteSlice;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 
 use git_meta_lib::tree_paths;
 use git_meta_lib::types::{Target, TargetType, ValueType};
@@ -27,7 +27,7 @@ pub(super) fn hydrate_promised_entries(
 
     struct PendingEntry {
         idx: usize,
-        oids: Vec<gix::ObjectId>,
+        oids: Vec<git_meta_lib::gix::ObjectId>,
         value_type: ValueType,
     }
 
@@ -96,11 +96,11 @@ pub(super) fn hydrate_promised_entries(
         return Ok(0);
     }
 
-    let all_oids: Vec<gix::ObjectId> = pending
+    let all_oids: Vec<git_meta_lib::gix::ObjectId> = pending
         .iter()
         .flat_map(|p| p.oids.iter().copied())
         .collect();
-    let mut missing: Vec<gix::ObjectId> = Vec::new();
+    let mut missing: Vec<git_meta_lib::gix::ObjectId> = Vec::new();
     for oid in &all_oids {
         if oid.attach(repo).object().is_err() {
             missing.push(*oid);
@@ -179,7 +179,7 @@ fn entry_target(target_type: &TargetType, target_value: &str) -> Target {
     }
 }
 
-fn blob_oids_from_tree(tree: &gix::Tree<'_>) -> Vec<gix::ObjectId> {
+fn blob_oids_from_tree(tree: &git_meta_lib::gix::Tree<'_>) -> Vec<git_meta_lib::gix::ObjectId> {
     tree.iter()
         .filter_map(|e| {
             let e = e.ok()?;

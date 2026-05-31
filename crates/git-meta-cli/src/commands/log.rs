@@ -10,8 +10,8 @@
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::bstr::ByteSlice;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 
 use crate::context::CommandContext;
 use crate::pager::Pager;
@@ -157,7 +157,10 @@ fn write_log<W: Write>(
     Ok(())
 }
 /// Resolve a ref name or commit-ish to an OID.  Falls back to HEAD.
-fn resolve_start(repo: &gix::Repository, start_ref: Option<&str>) -> Result<gix::ObjectId> {
+fn resolve_start(
+    repo: &git_meta_lib::gix::Repository,
+    start_ref: Option<&str>,
+) -> Result<git_meta_lib::gix::ObjectId> {
     let spec = start_ref.unwrap_or("HEAD");
     let obj = repo
         .rev_parse_single(spec)

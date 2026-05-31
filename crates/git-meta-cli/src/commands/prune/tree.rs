@@ -6,8 +6,8 @@
 //! metadata entries (string, list, set) older than the cutoff.
 
 use anyhow::Result;
-use gix::prelude::ObjectIdExt;
-use gix::refs::transaction::PreviousValue;
+use git_meta_lib::gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::refs::transaction::PreviousValue;
 
 use crate::context::CommandContext;
 use git_meta_lib::prune::parse_since_to_cutoff_ms;
@@ -56,7 +56,7 @@ pub(crate) fn run(dry_run: bool) -> Result<()> {
         .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.into_fully_peeled_id().ok())
-        .map(gix::Id::detach)
+        .map(git_meta_lib::gix::Id::detach)
     else {
         eprintln!("No serialized metadata found at {ref_name}. Run `git meta serialize` first.");
         return Ok(());
@@ -160,17 +160,17 @@ pub(crate) fn run(dry_run: bool) -> Result<()> {
     // Commit the pruned tree
     let name = ctx.session.name();
     let email = ctx.session.email();
-    let sig = gix::actor::Signature {
+    let sig = git_meta_lib::gix::actor::Signature {
         name: name.into(),
         email: email.into(),
-        time: gix::date::Time::now_local_or_utc(),
+        time: git_meta_lib::gix::date::Time::now_local_or_utc(),
     };
 
     let message = format!(
         "git-meta: prune --since={since}\n\npruned: true\nsince: {since}\nkeys-dropped: {keys_dropped}\nkeys-retained: {keys_retained}"
     );
 
-    let commit = gix::objs::Commit {
+    let commit = git_meta_lib::gix::objs::Commit {
         message: message.into(),
         tree: pruned_tree_oid,
         author: sig.clone(),

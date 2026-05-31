@@ -1,7 +1,7 @@
 //! `git meta show <commit-sha>` — display commit details with any associated metadata.
 
-use gix::bstr::ByteSlice;
-use gix::prelude::ObjectIdExt;
+use git_meta_lib::gix::bstr::ByteSlice;
+use git_meta_lib::gix::prelude::ObjectIdExt;
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -185,7 +185,7 @@ fn format_meta_value(value: &str, value_type: &ValueType) -> String {
 
 /// Get a change-id for a commit. First tries `but show --json`, then falls back
 /// to looking for a Change-Id trailer in the commit message.
-fn get_change_id(repo: &gix::Repository, sha: &str) -> Option<String> {
+fn get_change_id(repo: &git_meta_lib::gix::Repository, sha: &str) -> Option<String> {
     // Try GitButler CLI first
     let workdir = repo.workdir()?;
     let output = Command::new("but")
@@ -204,7 +204,7 @@ fn get_change_id(repo: &gix::Repository, sha: &str) -> Option<String> {
     }
 
     // Fall back: look for a Change-Id trailer in the commit message
-    let oid = gix::ObjectId::from_hex(sha.as_bytes()).ok()?;
+    let oid = git_meta_lib::gix::ObjectId::from_hex(sha.as_bytes()).ok()?;
     let commit_obj = oid.attach(repo).object().ok()?.into_commit();
     let decoded = commit_obj.decode().ok()?;
     let message = decoded.message.to_str_lossy();
