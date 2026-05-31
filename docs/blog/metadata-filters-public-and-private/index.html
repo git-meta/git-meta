@@ -57,12 +57,12 @@ git meta set commit:abc123 provenance:generator codegen-v2</code></pre>
 <p>That is the happy path. If a key is not special and no filter matches it, it goes to <code>main</code>.</p>
 <h2 id="local-only-keys">Local-only keys</h2>
 <p>There is one hard rule that does not need configuration:</p>
-<pre><code>meta:local:*</code></pre>
-<p>Anything under <code>meta:local:</code> is never serialized.</p>
+<pre><code>local:*</code></pre>
+<p>Anything under <code>local:</code> is never serialized, no matter which target it is attached to.</p>
 <p>For example:</p>
-<pre><code>git meta set project meta:local:last-viewed-branch sc/experiment
-git meta set path:src/api.rs meta:local:cursor-line 142</code></pre>
-<p>Those values stay in your local SQLite database. They are not written to any Git tree, even if you add a filter that tries to route them somewhere.</p>
+<pre><code>git meta set project local:last-viewed-branch sc/experiment
+git meta set path:src/api.rs local:cursor-line 142</code></pre>
+<p>Those values stay in your local SQLite database. They are not written to any Git tree, even if they are attached to a commit, branch, path, or project, and even if you add a filter that tries to route them somewhere.</p>
 <p>Use this namespace for personal state, caches, UI hints, and anything that would be noise or a leak if another clone saw it.</p>
 <h2 id="excluding-keys">Excluding keys</h2>
 <p>Sometimes a key is not purely local, but you still do not want it serialized. Add an <code>exclude</code> rule.</p>
@@ -91,13 +91,13 @@ git meta set project draft:review-notes &quot;too spicy&quot;</code></pre>
 <h2 id="shared-filters-vs-personal-filters">Shared filters vs personal filters</h2>
 <p>There are two places to put filter rules:</p>
 <pre><code>meta:filter
-meta:local:filter</code></pre>
+local:meta:filter</code></pre>
 <p>Use <code>meta:filter</code> for project policy. These rules are themselves shared metadata, so everyone can agree that <code>company:**</code> goes to the company-only destination.</p>
-<p>Use <code>meta:local:filter</code> for your own publishing preferences. Since it is under <code>meta:local:</code>, it is not serialized.</p>
+<p>Use <code>local:meta:filter</code> for your own publishing preferences. Since it is under <code>local:</code>, it is not serialized.</p>
 <p>For example, a company might share this rule:</p>
 <pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;</code></pre>
 <p>And you might locally add:</p>
-<pre><code>git meta set:add project meta:local:filter &quot;route me:** mine&quot;</code></pre>
+<pre><code>git meta set:add project local:meta:filter &quot;route me:** mine&quot;</code></pre>
 <p>Now company values go to the company destination, your personal values go to your private destination, and normal values still go to public <code>main</code>.</p>
 <h2 id="a-public-plus-company-workflow">A public plus company workflow</h2>
 <p>Imagine an open source project maintained by a company. The public repository should get useful metadata:</p>
@@ -138,10 +138,10 @@ provenance:*    public generation/provenance metadata
 owner           public ownership hint
 company:*       company-only metadata
 me:*            personal metadata routed by local preference
-meta:local:*    never serialized at all</code></pre>
+local:*    never serialized at all</code></pre>
 <p>Then the filters are easy to understand:</p>
 <pre><code>git meta set:add project meta:filter &quot;route company:** company&quot;
-git meta set:add project meta:local:filter &quot;route me:** mine&quot;</code></pre>
+git meta set:add project local:meta:filter &quot;route me:** mine&quot;</code></pre>
 <p>The result is boring in the good way: public metadata can be published publicly, company metadata can stay inside the company, and local metadata can remain local.</p>
 <p>That is the point of serialize filters. Not secrecy magic, not access control, not encryption. Just a clean way to avoid mixing audiences before the data ever gets pushed.</p>
           </div>

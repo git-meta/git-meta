@@ -6,22 +6,22 @@ This allows the user to split up project metadata into different references for 
 
 ## Design
 
-### Local-only keys via the `meta:local:` namespace
+### Local-only keys via the `local:` namespace
 
-Any key whose first segments are `meta:local` is **never serialized** to any ref. They are only available in the local storage.
+Any key whose first segment is `local` is **never serialized** to any ref, on any target. These keys are only available in local storage.
 
 Examples:
 
-- `meta:local:scratch`
-- `meta:local:editor:cursor`
-- `meta:local:build:last-status`
-- `meta:local:ai:draft-summary`
+- `local:scratch`
+- `local:editor:cursor`
+- `local:build:last-status`
+- `local:ai:draft-summary`
 
-The `meta:local:` prefix is a hard rule enforced by the serializer. No filter configuration is needed to make it work. Keys in this namespace are silently skipped during serialize and are never written into any git tree.
+The `local:` prefix is a hard rule enforced by the serializer. No filter configuration is needed to make it work. Keys in this namespace are silently skipped during serialize and are never written into any git tree.
 
 ### Filter rules
 
-Users can define filter rules that control serialization behavior. Filter rules are stored as set members on the **project** target under either `meta:filter` or `meta:local:filter`. The `meta:filter` rules are shared (corporate rules), the local ones are not (personal rules).
+Users can define filter rules that control serialization behavior. Filter rules are stored as set members on the **project** target under either `meta:filter` or `local:meta:filter`. The `meta:filter` rules are shared (corporate rules), the local ones are not (personal rules).
 
 Each set member is a rule string with the format:
 
@@ -84,9 +84,9 @@ The `<destination>` can be a comma delimited list of destinations and the matchi
 
 Rules are evaluated in order of specificity:
 
-1. `meta:local:` keys are never serialized regardless of any filter rules.
+1. `local:` keys are never serialized regardless of any filter rules.
 2. Filter rules are evaluated.
-   - Filters in `meta:local:filter` are evaluated first, then `meta:filter` rules.
+   - Filters in `local:meta:filter` are evaluated first, then `meta:filter` rules.
    - If multiple rules match the same key:
      - any `exclude` match applies and key value is not serialized anywhere
      - otherwise, _all_ `route` rules apply
@@ -105,9 +105,9 @@ The new flow becomes:
 
 1. Read all metadata from SQLite
 2. Read all tombstones
-3. Read filter rules from `meta:local:filter` on the project target
+3. Read filter rules from `local:meta:filter` on the project target
 4. For each key:
-   - If key starts with `meta:local:` -> skip entirely
+   - If key starts with `local:` -> skip entirely
    - If key matches an `exclude` rule -> skip entirely
    - If key matches a `route` rule -> add to the tree builder for that rule's destination
    - Otherwise -> add to the primary tree builder
@@ -122,11 +122,11 @@ No new commands are needed. Filter rules are managed with the existing `set` com
 ```sh
 # Add a filter rule
 git meta set:add project meta:filter "exclude draft:**"
-git meta set:add project meta:local:filter "route myteam:** private"
-git meta set:add project meta:local:filter "route acme:** vendor"
+git meta set:add project local:meta:filter "route myteam:** private"
+git meta set:add project local:meta:filter "route acme:** vendor"
 
 # View current filter rules
-git meta get project meta:local:filter
+git meta get project local:meta:filter
 
 # Remove a filter rule
 git meta set:rm project meta:filter "exclude draft:**"
@@ -137,7 +137,7 @@ git meta set:rm project meta:filter "exclude draft:**"
 ### Keep draft notes local
 
 ```sh
-git meta set:add project meta:local:filter "exclude draft:**"
+git meta set:add project local:meta:filter "exclude draft:**"
 git meta add commit:abc123 draft:summary "WIP: still thinking about this"
 git meta serialize   # draft:summary is not in the git tree
 ```
@@ -145,7 +145,7 @@ git meta serialize   # draft:summary is not in the git tree
 ### Route personal annotations to a separate ref
 
 ```sh
-git meta set:add project meta:local:filter "route myname:** mine"
+git meta set:add project local:meta:filter "route myname:** mine"
 git meta set commit:abc123 myname:review-note "looks good but check error handling"
 git meta serialize   # review-note goes to refs/meta/local/mine, not refs/meta/local/main
 ```
@@ -153,8 +153,8 @@ git meta serialize   # review-note goes to refs/meta/local/mine, not refs/meta/l
 ### Route different namespaces to different refs
 
 ```sh
-git meta set:add project meta:local:filter "route myname:** mine"
-git meta set:add project meta:local:filter "route acme:** vendor"
+git meta set:add project local:meta:filter "route myname:** mine"
+git meta set:add project local:meta:filter "route acme:** vendor"
 git meta serialize   # myname:* keys go to refs/meta/local/mine
                   # acme:* keys go to refs/meta/local/vendor
 ```
@@ -162,8 +162,8 @@ git meta serialize   # myname:* keys go to refs/meta/local/mine
 ### Always-local scratch space
 
 ```sh
-git meta set commit:abc123 meta:local:cursor-pos "line 42"
-git meta serialize   # meta:local:cursor-pos is never serialized, no filter needed
+git meta set commit:abc123 local:cursor-pos "line 42"
+git meta serialize   # local:cursor-pos is never serialized, no filter needed
 ```
 
 ## Non-goals

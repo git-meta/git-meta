@@ -48,7 +48,7 @@ The cutoff is not hardcoded policy anymore. You can set it with metadata too, wh
 There are two keys:
 
 - `meta:sqlite:object-max-size` sets the shared project default.
-- `meta:local:sqlite:object-max-size` sets your local override and wins if both are present.
+- `local:meta:sqlite:object-max-size` sets your local override and wins if both are present.
 
 Both accept plain byte counts or friendly sizes like `4k`, `64k`, or `1m`.
 

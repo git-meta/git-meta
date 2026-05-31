@@ -32,7 +32,7 @@ fn print_result(action: &str, key: &str, target: &Target, json: bool) {
 /// Either `value` or `file` must be provided. When the resulting payload
 /// exceeds the configured object-size threshold (see
 /// `Store::object_max_size`, default 1 KiB, overridable via
-/// `meta:sqlite:object-max-size` / `meta:local:sqlite:object-max-size`), the
+/// `meta:sqlite:object-max-size` / `local:meta:sqlite:object-max-size`), the
 /// value is stored as a Git blob and only its OID is recorded in the database.
 /// This applies to both inline values and `-F/--file` payloads.
 ///

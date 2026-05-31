@@ -58,7 +58,7 @@
 <h2 id="you-can-change-the-size">You can change the size</h2>
 <p>The cutoff is not hardcoded policy anymore. You can set it with metadata too, which is pleasingly recursive.</p>
 <p>There are two keys:</p>
-<ul><li><code>meta:sqlite:object-max-size</code> sets the shared project default.</li><li><code>meta:local:sqlite:object-max-size</code> sets your local override and wins if both are present.</li></ul>
+<ul><li><code>meta:sqlite:object-max-size</code> sets the shared project default.</li><li><code>local:meta:sqlite:object-max-size</code> sets your local override and wins if both are present.</li></ul>
 <p>Both accept plain byte counts or friendly sizes like <code>4k</code>, <code>64k</code>, or <code>1m</code>.</p>
 <p>Set it low if you want SQLite to stay lean. Set it high if you want more values inline for easier inspection. Set it to <code>0</code> if you want every non-empty string value to become a Git blob reference.</p>
 <p>Please do not set it to something ridiculous and then act surprised when the database becomes ridiculous. Computers are obedient, not wise.</p>
