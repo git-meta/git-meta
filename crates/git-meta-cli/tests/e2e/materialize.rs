@@ -936,6 +936,9 @@ fn side_history_ref_materializes_without_reserializing_into_main() {
         .assert()
         .success();
 
+    git_config(dir.path(), "remote.history.meta", "true");
+    git_config(dir.path(), "remote.history.metaside", "true");
+
     let repo = open_repo(dir.path());
     let initial_main = ref_to_commit_oid(&repo, "refs/meta/local/main");
     write_side_history_ref(&repo);
@@ -953,7 +956,10 @@ fn side_history_ref_materializes_without_reserializing_into_main() {
         .stdout(predicate::str::contains("old_value"));
 
     let (source_ref, last_timestamp) = side_history_metadata_row(dir.path());
-    assert_eq!(source_ref.as_deref(), Some("refs/meta/remote/history"));
+    assert_eq!(
+        source_ref.as_deref(),
+        Some("refs/meta/remotes/history/main")
+    );
     assert_eq!(last_timestamp, 1_704_067_200_000);
 
     harness::git_meta(dir.path())
@@ -1163,7 +1169,7 @@ fn write_side_history_ref(repo: &gix::Repository) {
         .expect("should write side history commit")
         .detach();
     repo.reference(
-        "refs/meta/remote/history",
+        "refs/meta/remotes/history/main",
         commit_oid,
         PreviousValue::Any,
         "side history ref",

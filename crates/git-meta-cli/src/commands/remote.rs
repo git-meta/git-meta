@@ -180,6 +180,14 @@ fn ensure_local_meta_ref(
     Ok(commit_oid)
 }
 
+fn has_primary_meta_remote(repo: &gix::Repository) -> bool {
+    let config = repo.config_snapshot();
+    repo.remote_names().iter().any(|name| {
+        config.boolean(&format!("remote.{name}.meta")) == Some(true)
+            && config.boolean(&format!("remote.{name}.metaside")) != Some(true)
+    })
+}
+
 /// Generate the README body for the initial metadata commit.
 fn meta_readme_content(origin_url: &str, meta_url: &str, namespace: &str) -> String {
     format!(
@@ -252,6 +260,7 @@ pub(crate) fn run_add(
     if config.string(&remote_url_key).is_some() {
         bail!("remote '{name}' already exists");
     }
+    let side_ref = has_primary_meta_remote(repo);
 
     // Check the remote for meta refs before configuring. If none are found
     // under the requested namespace and the user has opted in (either via
@@ -321,11 +330,19 @@ pub(crate) fn run_add(
 
     let prefix = format!("remote.{name}");
     run(&[&format!("{prefix}.url"), &url])?;
+    let configured_tracking_ref = if side_ref {
+        format!("refs/{ns}/remotes/{name}/main")
+    } else {
+        format!("refs/{ns}/remotes/main")
+    };
     run(&[
         &format!("{prefix}.fetch"),
-        &format!("+refs/{ns}/main:refs/{ns}/remotes/main"),
+        &format!("+refs/{ns}/main:{configured_tracking_ref}"),
     ])?;
     run(&[&format!("{prefix}.meta"), "true"])?;
+    if side_ref {
+        run(&[&format!("{prefix}.metaside"), "true"])?;
+    }
     run(&[&format!("{prefix}.promisor"), "true"])?;
     run(&[&format!("{prefix}.partialclonefilter"), "blob:none"])?;
 
@@ -334,7 +351,11 @@ pub(crate) fn run_add(
         run(&[&format!("{prefix}.metanamespace"), &ns])?;
     }
 
-    println!("{} meta remote '{name}' -> {url}", s_out.ok("Added"));
+    if side_ref {
+        println!("{} side meta remote '{name}' -> {url}", s_out.ok("Added"));
+    } else {
+        println!("{} meta remote '{name}' -> {url}", s_out.ok("Added"));
+    }
 
     // If we are initializing a fresh remote, create a starter commit on
     // `refs/{ns}/local/main` (or reuse one if it already exists) and push it
@@ -361,7 +382,12 @@ pub(crate) fn run_add(
     }
 
     // Initial blobless fetch
-    let fetch_refspec = format!("refs/{ns}/main:refs/{ns}/remotes/main");
+    let tracking_ref = if side_ref {
+        format!("refs/{ns}/remotes/{name}/main")
+    } else {
+        format!("refs/{ns}/remotes/main")
+    };
+    let fetch_refspec = format!("refs/{ns}/main:{tracking_ref}");
     eprint!("{} metadata (blobless)...", s_err.step("Fetching"));
     match git_meta_lib::git_utils::run_git(
         repo,
@@ -371,7 +397,11 @@ pub(crate) fn run_add(
             eprintln!(" {}", s_err.ok("done."));
 
             // Verify the tracking ref was created
-            let remote_ref = format!("{ns}/remotes/main");
+            let remote_ref = if side_ref {
+                format!("{ns}/remotes/{name}/main")
+            } else {
+                format!("{ns}/remotes/main")
+            };
             let tracking_ref_name = format!("refs/{remote_ref}");
             match repo.find_reference(&tracking_ref_name) {
                 Ok(r) => {
@@ -409,7 +439,11 @@ pub(crate) fn run_add(
             eprintln!(" {}", s_err.ok("done."));
 
             // Index historical keys as promisor entries
-            let tracking_ref_name = format!("refs/{ns}/remotes/main");
+            let tracking_ref_name = if side_ref {
+                format!("refs/{ns}/remotes/{name}/main")
+            } else {
+                format!("refs/{ns}/remotes/main")
+            };
             if let Ok(r) = repo.find_reference(&tracking_ref_name) {
                 if let Ok(tip_id) = r.into_fully_peeled_id() {
                     let count = git_meta_lib::sync::insert_promisor_entries(
@@ -463,6 +497,7 @@ pub(crate) fn run_remove(name: &str) -> Result<()> {
     unset(&format!("remote.{name}.url"));
     unset(&format!("remote.{name}.fetch"));
     unset(&format!("remote.{name}.meta"));
+    unset(&format!("remote.{name}.metaside"));
     unset(&format!("remote.{name}.promisor"));
     unset(&format!("remote.{name}.partialclonefilter"));
     unset(&format!("remote.{name}.metanamespace"));

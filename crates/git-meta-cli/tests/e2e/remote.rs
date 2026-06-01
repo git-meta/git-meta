@@ -250,6 +250,40 @@ fn remote_add_with_namespace_override() {
 }
 
 #[test]
+fn second_meta_remote_is_configured_as_side_ref() {
+    let (dir, _sha) = setup_repo();
+    let primary_dir = setup_bare_with_meta("meta");
+    let side_dir = setup_bare_with_meta("meta");
+    let primary_path = primary_dir.path().to_str().unwrap();
+    let side_path = side_dir.path().to_str().unwrap();
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", primary_path, "--name=meta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added meta remote 'meta'"));
+
+    harness::git_meta(dir.path())
+        .args(["remote", "add", side_path, "--name=history"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added side meta remote 'history'"));
+
+    let repo = open_repo(dir.path());
+    let config = repo.config_snapshot();
+    assert_eq!(config.boolean("remote.meta.metaside"), None);
+    assert_eq!(config.boolean("remote.history.metaside"), Some(true));
+
+    let fetch = config
+        .string("remote.history.fetch")
+        .expect("side remote fetch refspec should exist")
+        .to_string();
+    assert_eq!(fetch, "+refs/meta/main:refs/meta/remotes/history/main");
+
+    let _side_tip = ref_to_commit_oid(&repo, "refs/meta/remotes/history/main");
+}
+
+#[test]
 fn remote_add_shorthand_url_expansion() {
     let (dir, _sha) = setup_repo();
 

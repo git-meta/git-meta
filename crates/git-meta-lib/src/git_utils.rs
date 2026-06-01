@@ -339,15 +339,20 @@ pub fn resolve_meta_remote(repo: &gix::Repository, remote: Option<&str>) -> Resu
         return Err(Error::NoRemotes);
     }
 
-    match remote {
-        Some(name) => {
-            if meta_remotes.iter().any(|(n, _)| n == name) {
-                Ok(name.to_string())
-            } else {
-                Err(Error::RemoteNotFound(name.to_string()))
-            }
+    if let Some(name) = remote {
+        if meta_remotes.iter().any(|(n, _)| n == name) {
+            Ok(name.to_string())
+        } else {
+            Err(Error::RemoteNotFound(name.to_string()))
         }
-        None => Ok(meta_remotes[0].0.clone()),
+    } else {
+        let config = repo.config_snapshot();
+        meta_remotes
+            .iter()
+            .find(|(name, _)| config.boolean(&format!("remote.{name}.metaside")) != Some(true))
+            .or_else(|| meta_remotes.first())
+            .map(|(name, _)| name.clone())
+            .ok_or(Error::NoRemotes)
     }
 }
 
