@@ -97,7 +97,7 @@ impl Store {
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, ?4, 'string', ?5, ?6)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
-                     SET value = excluded.value, value_type = 'string', last_timestamp = excluded.last_timestamp, is_git_ref = excluded.is_git_ref, is_promised = 0",
+                     SET value = excluded.value, value_type = 'string', last_timestamp = excluded.last_timestamp, is_git_ref = excluded.is_git_ref, is_promised = 0, source_ref = NULL",
                     params![target_type_str, target_value, key, value, timestamp, git_ref_val],
                 )?;
 
@@ -124,7 +124,7 @@ impl Store {
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, '[]', 'list', ?4, 0)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
-                     SET value = '[]', value_type = 'list', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0",
+                     SET value = '[]', value_type = 'list', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0, source_ref = NULL",
                     params![target_type_str, target_value, key, timestamp],
                 )?;
 
@@ -160,7 +160,7 @@ impl Store {
                     "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref)
                      VALUES (?1, ?2, ?3, '[]', 'set', ?4, 0)
                      ON CONFLICT(target_type, target_value, key) DO UPDATE
-                     SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0",
+                     SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp, is_git_ref = 0, is_promised = 0, source_ref = NULL",
                     params![target_type_str, target_value, key, timestamp],
                 )?;
 

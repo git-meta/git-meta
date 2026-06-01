@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 /// Current schema version.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 /// Run all pending migrations on the database.
 pub(super) fn run_migrations(conn: &Connection) -> Result<()> {
@@ -11,6 +11,10 @@ pub(super) fn run_migrations(conn: &Connection) -> Result<()> {
 
     if version < 1 {
         conn.execute_batch(MIGRATION_1)?;
+        conn.pragma_update(None, "user_version", 1)?;
+    }
+    if version < 2 {
+        conn.execute_batch(MIGRATION_2)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }
 
@@ -81,4 +85,10 @@ CREATE INDEX IF NOT EXISTS idx_tombstones_target ON tombstones(tombstone_type, t
 CREATE INDEX IF NOT EXISTS idx_metadata_log_lookup ON metadata_log(target_type, target_value, key);
 CREATE INDEX IF NOT EXISTS idx_list_values_metadata_timestamp ON list_values(metadata_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_set_values_metadata ON set_values(metadata_id);
+";
+
+/// Migration 2: Track rows imported from non-primary metadata refs.
+const MIGRATION_2: &str = "
+ALTER TABLE metadata ADD COLUMN source_ref TEXT;
+CREATE INDEX IF NOT EXISTS idx_metadata_source_ref ON metadata(source_ref);
 ";

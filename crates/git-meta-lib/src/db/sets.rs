@@ -159,7 +159,7 @@ impl Store {
 
         self.conn.execute(
             "UPDATE metadata
-             SET value = '[]', value_type = 'set', last_timestamp = ?1
+             SET value = '[]', value_type = 'set', last_timestamp = ?1, source_ref = NULL
              WHERE rowid = ?2",
             params![timestamp, metadata_id],
         )?;
