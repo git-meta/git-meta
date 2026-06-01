@@ -54,15 +54,15 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/api.html</loc>
-    <lastmod>2026-05-30</lastmod>
+    <lastmod>2026-06-01</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/storage.html</loc>
-    <lastmod>2026-04-19</lastmod>
+    <lastmod>2026-06-01</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/cli.html</loc>
-    <lastmod>2026-05-07</lastmod>
+    <lastmod>2026-06-01</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/output.html</loc>
@@ -82,7 +82,7 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/remotes.html</loc>
-    <lastmod>2026-05-29</lastmod>
+    <lastmod>2026-06-01</lastmod>
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/auto-sync.html</loc>
@@ -90,6 +90,6 @@
   </url>
   <url>
     <loc>https://git-meta.com/spec/implementation/workflow.html</loc>
-    <lastmod>2026-04-19</lastmod>
+    <lastmod>2026-06-01</lastmod>
   </url>
 </urlset>

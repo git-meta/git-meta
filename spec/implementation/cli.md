@@ -131,11 +131,13 @@ git meta pull [<remote>]
 
 Behavior:
 
-- fetches `refs/<namespace>/main` from the remote into
-  `refs/<namespace>/remotes/main` and runs the equivalent of
-  `git meta materialize` to merge the new history into the local SQLite
-  database
-- if `<remote>` is omitted, the first configured metadata remote is used
+- fetches `refs/<namespace>/main` from the remote into that remote's
+  configured tracking ref and runs the equivalent of `git meta
+  materialize` to merge the new history into the local SQLite database
+- primary metadata remotes track `refs/<namespace>/remotes/main`; side
+  metadata remotes track `refs/<namespace>/remotes/<name>/main`
+- if `<remote>` is omitted, a primary configured metadata remote is used
+  in preference to side remotes
 - prints `Already up-to-date.` when the remote tip is unchanged
 
 ### Sync
@@ -202,9 +204,12 @@ Configures a new metadata remote for the current repository.
 Behavior:
 
 - writes git config entries for the remote: `remote.<name>.url`,
-  `remote.<name>.fetch = +refs/<ns>/main:refs/<ns>/remotes/main`,
-  `remote.<name>.meta = true`, plus partial-clone/promisor settings so
-  blobs are fetched on demand
+  `remote.<name>.fetch`, `remote.<name>.meta = true`, plus
+  partial-clone/promisor settings so blobs are fetched on demand
+- the first metadata remote is primary and fetches to
+  `refs/<ns>/remotes/main`; if a primary metadata remote already exists,
+  the new remote is marked with `remote.<name>.metaside = true` and
+  fetches to `refs/<ns>/remotes/<name>/main`
 - inspects the remote with `git ls-remote` to check that
   `refs/<ns>/main` exists, and on success runs an initial blobless
   fetch and `materialize` so values are immediately readable

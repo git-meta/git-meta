@@ -134,7 +134,7 @@ Possible patterns include:
 
 The important part is not the exact UI shape, but that the host tool treats git-meta as low-level plumbing and coordinates it at the same moments users already think about collaboration.
 
-## Multiple destinations
+## Multiple destinations and remotes
 
 An implementation may support multiple metadata destinations, such as:
 
@@ -148,6 +148,8 @@ In that case, the host system may:
 - apply key-based or namespace-based publish filters on serialize
 - fetch and materialize multiple remote metadata heads on pull
 - present the resulting local view as a union, subject to implementation policy
+
+Multiple metadata remotes should all use normal remote-tracking metadata refs under `refs/<namespace>/remotes/...`. A primary remote tracks `refs/<namespace>/remotes/main`; an additional side remote named `history` tracks `refs/<namespace>/remotes/history/main` and is marked in Git config with `remote.history.metaside = true`. Side remotes are materialized as readable sources but should not be reserialized into the primary local ref unless the imported values are edited locally.
 
 This is implementation-specific orchestration and does not change the core exchange format.
 

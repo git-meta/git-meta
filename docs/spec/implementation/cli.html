@@ -100,8 +100,10 @@ git meta push [&lt;remote&gt;] --readme</code></pre>
 <h3 id="pull">Pull</h3>
 <pre><code>git meta pull [&lt;remote&gt;]</code></pre>
 <p>Behavior:</p>
-<p><code>refs/&lt;namespace&gt;/remotes/main</code> and runs the equivalent of <code>git meta materialize</code> to merge the new history into the local SQLite database</p>
-<ul><li>fetches <code>refs/&lt;namespace&gt;/main</code> from the remote into</li><li>if <code>&lt;remote&gt;</code> is omitted, the first configured metadata remote is used</li><li>prints <code>Already up-to-date.</code> when the remote tip is unchanged</li></ul>
+<p>configured tracking ref and runs the equivalent of <code>git meta materialize</code> to merge the new history into the local SQLite database</p>
+<p>metadata remotes track <code>refs/&lt;namespace&gt;/remotes/&lt;name&gt;/main</code></p>
+<p>in preference to side remotes</p>
+<ul><li>fetches <code>refs/&lt;namespace&gt;/main</code> from the remote into that remote&#x27;s</li><li>primary metadata remotes track <code>refs/&lt;namespace&gt;/remotes/main</code>; side</li><li>if <code>&lt;remote&gt;</code> is omitted, a primary configured metadata remote is used</li><li>prints <code>Already up-to-date.</code> when the remote tip is unchanged</li></ul>
 <h3 id="sync">Sync</h3>
 <pre><code>git meta sync [&lt;remote&gt;]</code></pre>
 <p>Behavior:</p>
@@ -126,13 +128,14 @@ git meta push [&lt;remote&gt;] --readme</code></pre>
 <pre><code>git meta remote add &lt;url&gt; [--name &lt;name&gt;] [--namespace &lt;namespace&gt;] [--init]</code></pre>
 <p>Configures a new metadata remote for the current repository.</p>
 <p>Behavior:</p>
-<p><code>remote.&lt;name&gt;.fetch = +refs/&lt;ns&gt;/main:refs/&lt;ns&gt;/remotes/main</code>, <code>remote.&lt;name&gt;.meta = true</code>, plus partial-clone/promisor settings so blobs are fetched on demand</p>
+<p><code>remote.&lt;name&gt;.fetch</code>, <code>remote.&lt;name&gt;.meta = true</code>, plus partial-clone/promisor settings so blobs are fetched on demand</p>
+<p><code>refs/&lt;ns&gt;/remotes/main</code>; if a primary metadata remote already exists, the new remote is marked with <code>remote.&lt;name&gt;.metaside = true</code> and fetches to <code>refs/&lt;ns&gt;/remotes/&lt;name&gt;/main</code></p>
 <p><code>refs/&lt;ns&gt;/main</code> exists, and on success runs an initial blobless fetch and <code>materialize</code> so values are immediately readable</p>
 <p>starter README commit and pushes it to <code>refs/&lt;ns&gt;/main</code> on the remote</p>
 <p>confirmation and behaves as if <code>--init</code> had been passed when they accept</p>
 <p>hint to re-run with <code>--init</code></p>
 <p>hint to re-run with <code>--namespace=&lt;that-namespace&gt;</code></p>
-<ul><li>writes git config entries for the remote: <code>remote.&lt;name&gt;.url</code>,</li><li>inspects the remote with <code>git ls-remote</code> to check that</li><li>if no metadata refs are present on the remote:<ul><li>with <code>--init</code>, creates (or reuses) <code>refs/&lt;ns&gt;/local/main</code> with a</li><li>on an interactive terminal without <code>--init</code>, prompts the user for</li><li>in non-interactive contexts (CI, pipes), bails with an actionable</li></ul></li><li>if metadata refs are found under a different namespace, bails with a</li></ul>
+<ul><li>writes git config entries for the remote: <code>remote.&lt;name&gt;.url</code>,</li><li>the first metadata remote is primary and fetches to</li><li>inspects the remote with <code>git ls-remote</code> to check that</li><li>if no metadata refs are present on the remote:<ul><li>with <code>--init</code>, creates (or reuses) <code>refs/&lt;ns&gt;/local/main</code> with a</li><li>on an interactive terminal without <code>--init</code>, prompts the user for</li><li>in non-interactive contexts (CI, pipes), bails with an actionable</li></ul></li><li>if metadata refs are found under a different namespace, bails with a</li></ul>
 <p>Defaults:</p>
 <p><code>meta</code></p>
 <ul><li><code>--name</code>: <code>meta</code></li><li><code>--namespace</code>: from the <code>meta.namespace</code> git config, falling back to</li></ul>

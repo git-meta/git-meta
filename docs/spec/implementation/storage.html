@@ -83,8 +83,11 @@
 <p>The local serialized metadata head by default should be:</p>
 <ul><li><code>refs/meta/local/main</code></li></ul>
 <p>If <code>meta.namespace</code> Git config is set, that namespace should be used instead of <code>meta</code>.</p>
-<p>Fetched remote metadata heads should be stored under a remote-specific namespace, for example:</p>
-<ul><li><code>refs/meta/remotes/origin</code></li></ul>
+<p>Fetched remote metadata heads should be stored under <code>refs/&lt;namespace&gt;/remotes/...</code>. The primary metadata remote uses:</p>
+<ul><li><code>refs/meta/remotes/main</code></li></ul>
+<p>Additional side metadata remotes are identified by <code>remote.&lt;name&gt;.metaside = true</code> in Git config and use remote-specific tracking refs, for example:</p>
+<ul><li><code>refs/meta/remotes/history/main</code></li></ul>
+<p>Implementations should not use a separate <code>refs/meta/remote/*</code> namespace for side refs; side-ref status is configuration on the corresponding <code>remote.&lt;name&gt;</code> section.</p>
 <p>If user has filter rules that route keys to additional destinations, those destinations get their own refs:</p>
 <ul><li><code>refs/meta/local/main</code> (default, always present)</li><li><code>refs/meta/local/private</code></li><li><code>refs/meta/local/vendor</code></li></ul>
         </article>
