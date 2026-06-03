@@ -165,7 +165,7 @@ if push.non_fast_forward {
 }</code></pre>
 <p>Important workflow methods on <code>Session</code>:</p>
 <ul><li><code>serialize()</code> writes local metadata to the local metadata ref.</li><li><code>serialize_full()</code> rebuilds serialized state from the full SQLite store.</li><li><code>materialize(remote)</code> merges fetched metadata refs into the local store.</li><li><code>pull(remote)</code> fetches metadata from a configured metadata remote, materializes it, and indexes history for lazy loading.</li><li><code>push_once(remote)</code> serializes and attempts one push.</li><li><code>resolve_push_conflict(remote)</code> fetches and materializes remote changes after a non-fast-forward push rejection so the caller can retry.</li></ul>
-<p>The <code>remote</code> argument is <code>Option&lt;&amp;str&gt;</code>. Passing <code>None</code> uses the first configured metadata remote. Passing <code>Some(&quot;origin&quot;)</code> selects a specific metadata remote.</p>
+<p>The <code>remote</code> argument is <code>Option&lt;&amp;str&gt;</code>. Passing <code>None</code> uses a primary configured metadata remote in preference to side remotes. Passing <code>Some(&quot;origin&quot;)</code> selects a specific metadata remote, including a side remote when explicitly named.</p>
 <p>Long-running operations also have progress variants such as <code>serialize_with_progress</code>, <code>push_once_with_progress</code>, and <code>resolve_push_conflict_with_progress</code> for UI integration.</p>
 <h2 id="what-the-library-gives-an-application">What the library gives an application</h2>
 <p>If you are building a Rust system on top of git-meta, the main tools are:</p>

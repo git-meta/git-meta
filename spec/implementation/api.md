@@ -193,7 +193,7 @@ Important workflow methods on `Session`:
 - `push_once(remote)` serializes and attempts one push.
 - `resolve_push_conflict(remote)` fetches and materializes remote changes after a non-fast-forward push rejection so the caller can retry.
 
-The `remote` argument is `Option<&str>`. Passing `None` uses the first configured metadata remote. Passing `Some("origin")` selects a specific metadata remote.
+The `remote` argument is `Option<&str>`. Passing `None` uses a primary configured metadata remote in preference to side remotes. Passing `Some("origin")` selects a specific metadata remote, including a side remote when explicitly named.
 
 Long-running operations also have progress variants such as `serialize_with_progress`, `push_once_with_progress`, and `resolve_push_conflict_with_progress` for UI integration.
 

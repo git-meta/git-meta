@@ -107,6 +107,22 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
             .detach();
         let remote_entries = parse_tree(repo, remote_tree_id, "")?;
 
+        if is_side_remote_ref(repo, ns, ref_name) {
+            let remote_timestamp = extract_author_timestamp(&remote_commit_obj)? * 1000;
+            let changes = session.store.apply_tree_from_source_ref(
+                &remote_entries.values,
+                ref_name,
+                remote_timestamp,
+            )?;
+            results.push(MaterializeRefResult {
+                ref_name: ref_name.clone(),
+                strategy: MaterializeStrategy::FastForward,
+                changes,
+                conflicts: Vec::new(),
+            });
+            continue;
+        }
+
         // Get local commit (if any)
         let local_commit_oid = repo
             .find_reference(&local_ref_name)
@@ -183,6 +199,14 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
     session.store.set_last_materialized(now)?;
 
     Ok(MaterializeOutput { results })
+}
+
+fn is_side_remote_ref(repo: &gix::Repository, ns: &str, ref_name: &str) -> bool {
+    let config = repo.config_snapshot();
+    repo.remote_names().iter().any(|name| {
+        config.boolean(&format!("remote.{name}.metaside")) == Some(true)
+            && ref_name == format!("refs/{ns}/remotes/{name}/main")
+    })
 }
 
 /// Apply a fast-forward materialization: parse the remote tree and apply

@@ -1,18 +1,20 @@
 # Remote Management
 
-Some implementation examples of how we would ideally do remote mangement and serialization/materialization coordination.
+Some implementation examples of how implementations should manage metadata remotes and coordinate serialization/materialization.
 
 ## Adding a remote meta source
 
-The workflow starts by adding a remote source. This could be automatically done by GitButler if we see it's setup (via local .gitmeta or something).
+The workflow starts by adding a remote source. This could be automatically done by a host tool if it sees project setup, such as a local `.git-meta` file.
 
-```
+```bash
 $ git meta remote add (url)
 ```
 
-Could `ls-remote` the server and look for `refs/meta/*`, but should generally be `refs/meta/main`. Setup a fetch spec.
+The implementation should inspect the server for `refs/<namespace>/main`, where the default namespace is `meta`, and set up a normal Git remote that is marked as metadata-aware in `.git/config`.
 
-```
+For the first metadata remote, the local tracking ref is the primary remote-tracking metadata ref:
+
+```ini
 [remote "meta"]
         url = git@github.com:schacon/entire-meta.git
         fetch = +refs/meta/main:refs/meta/remotes/main
@@ -22,15 +24,13 @@ Could `ls-remote` the server and look for `refs/meta/*`, but should generally be
         partialclonefilter = blob:none
 ```
 
-We will use the fetchspec for mapping remote ref to local ref. If there are multiple fetchspecs, we have multiple sources on one remote (a history branch).
+The `remote.<name>.meta = true` boolean identifies this Git remote as a metadata remote. The URL may be the same as an existing code remote, but implementations may keep metadata remotes separate so they can use independent fetch refspecs, partial clone settings, and permissions.
 
-We'll add the `meta` boolean so it's easy to see which are our meta sources. The URL _could_ be the same as an "origin" remote, but we'll keep it separate anyhow.
+The `serialize = [name]` entry tells the implementation where serialized values for a destination should be pushed. If serialization filters write to different destinations, such as `internal` or `mine`, each serialized local ref head should have a remote entry with a matching value. This is also how the implementation constructs push refspecs.
 
-We also add the `serialize = [name]` entry so we know where to write serialized values. If you have serialization filters writing to different destinations (ie, `internal` or `mine`), we will need this value to know to which remote to push them. Each serialized local ref head should have a remote entry with a matching value. This is also how we construct the push refspec.
+After checking the source and setting up the Git remote, the implementation should do an initial blobless fetch of the metadata ref:
 
-After checking the source and setting up the Git remote, we do an initial blobless fetch of the ref.
-
-```
+```bash
 git fetch --filter=blob:none meta refs/meta/main:refs/meta/remotes/main
 ```
 
@@ -38,7 +38,7 @@ Next we need to do the equivalent of a `git checkout` on that head, so Git will 
 
 The best way to do this that I can find is to get all the blobs with `ls-tree` and pipe the list into `fetch` (with some complicated options) which seems to do what we want. The OID list must be sent in bounded batches, not as one giant request, because large metadata trees can otherwise exceed smart-HTTP request limits.
 
-```
+```bash
 git ls-tree -r --object-only meta/remotes/main > tip-oids
 
 # For each bounded chunk from tip-oids:
@@ -47,23 +47,69 @@ git -c fetch.negotiationAlgorithm=noop fetch meta --no-tags --no-write-fetch-hea
 
 Now we have the tip tree data and can do some fast metadata lookups for recent stuff. If we need to get other blobs, we can do the same basic trick - figure out the list of blobs you need from the commit tree history, run them through `fetch` to get a packfile of them.
 
-It doesn't have to be a top level tree, we could look up any set of blob values we want and send them to `fetch` this way. Imagine wanting all the metadata for a range of commits - we walk the history past prune metadata commits to the last times we've seen any of these SHAs and walk the subtress to see what all blobs are referenced in any of them and then _just_ ask for those dozens of content blobs.
+It doesn't have to be a top level tree, we could look up any set of blob values we want and send them to `fetch` this way. Imagine wanting all the metadata for a range of commits - we walk the history past prune metadata commits to the last times we've seen any of these SHAs and walk the subtrees to see what all blobs are referenced in any of them and then _just_ ask for those dozens of content blobs.
+
+## Multiple metadata remotes and side refs
+
+All fetched metadata refs should live under the normal `refs/<namespace>/remotes/...` area. Implementations should not use a separate `refs/<namespace>/remote/...` namespace to distinguish side refs from primary refs.
+
+A metadata remote is a **primary** remote unless its Git config section has a side-ref flag:
+
+```ini
+[remote "history"]
+        url = git@github.com:schacon/history-meta.git
+        fetch = +refs/meta/main:refs/meta/remotes/history/main
+        meta = true
+        metaside = true
+        promisor = true
+        partialclonefilter = blob:none
+```
+
+The `remote.<name>.metaside = true` flag means the remote is readable/materializable but is not a default publication target. Its fetched ref is stored at:
+
+```text
+refs/<namespace>/remotes/<name>/main
+```
+
+For example:
+
+```bash
+git fetch --filter=blob:none history refs/meta/main:refs/meta/remotes/history/main
+```
+
+When `git meta remote add` is run and a primary metadata remote already exists, the newly added metadata remote should automatically be configured as a side ref by setting `remote.<name>.metaside = true` and by using a remote-specific tracking ref such as `refs/meta/remotes/<name>/main`.
+
+When resolving a metadata remote implicitly, implementations should prefer primary remotes. A side remote should still be accepted when explicitly named, for example `git meta pull history`.
+
+Materialization should treat configured side refs as additional readable metadata sources. Values imported from side refs should be marked as originating from that source and should not be reserialized into `refs/<namespace>/local/main` unless they are edited locally. A local edit clears the side-ref origin, making the value publishable according to normal serialization rules.
 
 ## Pushing and Pulling
 
-Eventually we'll need to incorporate some automatic version of this into GitButler itself, but as a mid-level plumbing solution, we can do a `git meta push` and `git meta pull` that could be called by something else (like Git hooks or whatever).
+Eventually we'll need to incorporate some automatic version of this into GitButler itself, but as a mid-level plumbing solution, we can do a `git meta push` and `git meta pull` that could be called by something else, such as Git hooks.
 
 ### Pushing
 
-So `git meta push` would rely on the `fetch` and `serialize` config values on the `meta` tagged remote (there should only be one, but fallback would be to choose the first one).
+`git meta push` relies on the `fetch` and `serialize` config values on a primary `meta` tagged remote. If more than one metadata remote exists, implicit push should prefer a primary remote and should not push to side remotes unless explicitly configured to do so.
 
-The simplest outcome of a `git meta push` would be to serialize a new tree and commit on the metadata history and push it upstream as a fast-forward.
+The simplest outcome of a `git meta push` is to serialize a new tree and commit on the metadata history and push it upstream as a fast-forward.
 
 The more complex case is that there is data we have not seen yet upstream, so we need to pull that down, serialize our own tree, merge the trees, materialize the outcome, then write a new tree and commit on top and try to push again. If we weren't fast enough and there is new data upstream again, we repeat. It should _always_ result in a single new commit written locally, even if we had to try several times.
 
 ### Pulling
 
-A `git meta pull` should simply do the first part of the complex push process. Fetch the new data, serialize our side if we have new data and use Git to merge the trees with `ours` strategy, then materialize the new tree locally.
+A `git meta pull` should fetch the selected remote's `refs/<namespace>/main` into that remote's configured local tracking ref, serialize our side if we have new data, merge the trees, and materialize the new tree locally.
+
+For a primary remote, the default tracking ref is:
+
+```text
+refs/<namespace>/remotes/main
+```
+
+For a side remote named `history`, the tracking ref is:
+
+```text
+refs/<namespace>/remotes/history/main
+```
 
 ### Serializing for Push
 
@@ -77,7 +123,7 @@ There are two commit message formats:
 
 **Normal** (up to 1000 changes):
 
-```
+```text
 git-meta: serialize (3 changes)
 
 A	commit:abc123...	agent:model
@@ -89,7 +135,7 @@ Each change line is: `A`/`M`/`D` (add/modify/delete), a tab, the target, a tab, 
 
 **Large** (over 1000 changes):
 
-```
+```text
 git-meta: serialize (5432 changes)
 
 changes-omitted: true
@@ -102,6 +148,8 @@ When the change count exceeds 1000, the individual lines are omitted to keep com
 
 A user may want to get rid of a meta source they are no longer using.
 
-`git meta remote remove [name]`
+```bash
+git meta remote remove [name]
+```
 
-It should remove the `.git/config` entry for that remote, any `refs/meta/local/*` and any `refs/meta/remotes/*` pointers.
+It should remove the `.git/config` entry for that remote, including `remote.<name>.meta`, `remote.<name>.metaside`, promisor settings, and fetch refspecs. It should also remove local metadata refs owned by that remote, such as `refs/<namespace>/remotes/main` for a primary remote or `refs/<namespace>/remotes/<name>/main` for a side remote. Removing a remote should not delete unrelated `refs/<namespace>/local/*` refs that belong to local serialization destinations.

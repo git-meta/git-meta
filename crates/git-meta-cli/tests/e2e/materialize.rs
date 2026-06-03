@@ -924,6 +924,109 @@ fn dry_run_reports_concurrent_add_conflict_resolution() {
 }
 
 #[test]
+fn side_history_ref_materializes_without_reserializing_into_main() {
+    let (dir, _sha) = setup_repo();
+
+    harness::git_meta(dir.path())
+        .args(["set", "project", "current", "keep"])
+        .assert()
+        .success();
+    harness::git_meta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success();
+
+    git_config(dir.path(), "remote.history.meta", "true");
+    git_config(dir.path(), "remote.history.metaside", "true");
+
+    let repo = open_repo(dir.path());
+    let initial_main = ref_to_commit_oid(&repo, "refs/meta/local/main");
+    write_side_history_ref(&repo);
+    drop(repo);
+
+    harness::git_meta(dir.path())
+        .args(["materialize"])
+        .assert()
+        .success();
+
+    harness::git_meta(dir.path())
+        .args(["get", "project", "old_key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("old_value"));
+
+    let (source_ref, last_timestamp) = side_history_metadata_row(dir.path());
+    assert_eq!(
+        source_ref.as_deref(),
+        Some("refs/meta/remotes/history/main")
+    );
+    assert_eq!(last_timestamp, 1_704_067_200_000);
+
+    harness::git_meta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no metadata to serialize"));
+
+    let repo = open_repo(dir.path());
+    let after_serialize = ref_to_commit_oid(&repo, "refs/meta/local/main");
+    assert_eq!(
+        initial_main, after_serialize,
+        "side history materialization should not rewrite refs/meta/local/main"
+    );
+
+    let commit_obj = after_serialize
+        .attach(&repo)
+        .object()
+        .unwrap()
+        .into_commit();
+    let tree = commit_obj.tree().unwrap();
+    let mut results = Vec::new();
+    walk_tree(&repo, tree.id, "", &mut results);
+
+    assert!(
+        results
+            .iter()
+            .any(|(path, content)| { path == "project/current/__value" && content == "keep" }),
+        "current local key should remain in local main: {results:?}"
+    );
+    assert!(
+        results
+            .iter()
+            .all(|(path, _)| path != "project/old_key/__value"),
+        "side history key should stay out of local main: {results:?}"
+    );
+
+    harness::git_meta(dir.path())
+        .args(["set", "project", "old_key", "locally edited"])
+        .assert()
+        .success();
+    let (source_ref, _last_timestamp) = side_history_metadata_row(dir.path());
+    assert_eq!(
+        source_ref, None,
+        "local edits should make the row publishable"
+    );
+
+    harness::git_meta(dir.path())
+        .args(["serialize"])
+        .assert()
+        .success();
+
+    let repo = open_repo(dir.path());
+    let edited_oid = ref_to_commit_oid(&repo, "refs/meta/local/main");
+    let commit_obj = edited_oid.attach(&repo).object().unwrap().into_commit();
+    let tree = commit_obj.tree().unwrap();
+    let mut results = Vec::new();
+    walk_tree(&repo, tree.id, "", &mut results);
+    assert!(
+        results.iter().any(|(path, content)| {
+            path == "project/old_key/__value" && content == "locally edited"
+        }),
+        "locally edited history key should serialize: {results:?}"
+    );
+}
+
+#[test]
 fn no_common_ancestor_uses_two_way_merge_remote_wins() {
     let bare_dir = TempDir::new().unwrap();
     {
@@ -1018,6 +1121,60 @@ fn no_common_ancestor_uses_two_way_merge_remote_wins() {
         .assert()
         .success()
         .stdout(predicate::str::contains("keep-too"));
+}
+
+fn side_history_metadata_row(repo_path: &std::path::Path) -> (Option<String>, i64) {
+    let db_path = repo_path.join(".git/git-meta.sqlite");
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    conn.query_row(
+        "SELECT source_ref, last_timestamp FROM metadata
+         WHERE target_type = 'project' AND target_value = '' AND key = 'old_key'",
+        [],
+        |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?)),
+    )
+    .unwrap()
+}
+
+fn write_side_history_ref(repo: &gix::Repository) {
+    let blob_oid = repo
+        .write_blob(b"old_value")
+        .expect("should create side history blob")
+        .detach();
+    let mut editor = repo.empty_tree().edit().expect("should create tree editor");
+    editor
+        .upsert(
+            "project/old_key/__value",
+            gix::objs::tree::EntryKind::Blob,
+            blob_oid,
+        )
+        .expect("should insert old_key");
+    let tree_oid = editor.write().expect("should write side tree").detach();
+
+    let sig = gix::actor::Signature {
+        name: "History Import".into(),
+        email: "history@example.com".into(),
+        time: gix::date::Time::new(1_704_067_200, 0),
+    };
+    let commit = gix::objs::Commit {
+        message: "git-meta: serialize (1 changes)\n\nA\tproject\told_key".into(),
+        tree: tree_oid,
+        author: sig.clone(),
+        committer: sig,
+        encoding: None,
+        parents: Default::default(),
+        extra_headers: Default::default(),
+    };
+    let commit_oid = repo
+        .write_object(&commit)
+        .expect("should write side history commit")
+        .detach();
+    repo.reference(
+        "refs/meta/remotes/history/main",
+        commit_oid,
+        PreviousValue::Any,
+        "side history ref",
+    )
+    .expect("should write side history ref");
 }
 
 /// Recursively walk a tree, collecting `(path, blob_content)` pairs.

@@ -18,7 +18,7 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT rowid, target_type, target_value, key, value, value_type, last_timestamp, is_git_ref
              FROM metadata
-             WHERE is_promised = 0
+             WHERE is_promised = 0 AND source_ref IS NULL
              ORDER BY target_type, target_value, key",
         )?;
 
@@ -283,6 +283,144 @@ impl Store {
         }
 
         Ok(())
+    }
+
+    /// Apply a non-primary metadata ref as imported local data.
+    ///
+    /// Imported rows are readable from SQLite, keep the source commit timestamp,
+    /// and are excluded from normal serialization until a local write touches
+    /// the same key and clears `source_ref`.
+    pub fn apply_tree_from_source_ref(
+        &self,
+        values: &BTreeMap<Key, TreeValue>,
+        source_ref: &str,
+        source_timestamp: i64,
+    ) -> Result<usize> {
+        let sp = self.savepoint()?;
+        let mut changes = 0;
+        for (key, value) in values {
+            if !self.should_apply_source_value(key, source_ref)? {
+                continue;
+            }
+            self.apply_source_value(key, value, source_ref, source_timestamp)?;
+            changes += 1;
+        }
+        sp.commit()?;
+        Ok(changes)
+    }
+
+    fn should_apply_source_value(&self, key: &Key, source_ref: &str) -> Result<bool> {
+        let existing: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT source_ref FROM metadata
+                 WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+                params![key.target_type.as_str(), &key.target_value, &key.key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(match existing {
+            None => true,
+            Some(Some(existing_source)) => existing_source == source_ref,
+            Some(None) => false,
+        })
+    }
+
+    fn apply_source_value(
+        &self,
+        key: &Key,
+        value: &TreeValue,
+        source_ref: &str,
+        source_timestamp: i64,
+    ) -> Result<()> {
+        let target_type = key.target_type.as_str();
+        match value {
+            TreeValue::String(content) => {
+                let json_value = serde_json::to_string(content)?;
+                self.conn.execute(
+                    "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref, is_promised, source_ref)
+                     VALUES (?1, ?2, ?3, ?4, 'string', ?5, 0, 0, ?6)
+                     ON CONFLICT(target_type, target_value, key) DO UPDATE
+                     SET value = excluded.value, value_type = 'string', last_timestamp = excluded.last_timestamp,
+                         is_git_ref = 0, is_promised = 0, source_ref = excluded.source_ref",
+                    params![target_type, &key.target_value, &key.key, json_value, source_timestamp, source_ref],
+                )?;
+                let metadata_id = self.metadata_rowid(key)?;
+                self.conn.execute(
+                    "DELETE FROM list_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                self.conn.execute(
+                    "DELETE FROM set_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+            }
+            TreeValue::List(entries) => {
+                self.conn.execute(
+                    "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref, is_promised, source_ref)
+                     VALUES (?1, ?2, ?3, '[]', 'list', ?4, 0, 0, ?5)
+                     ON CONFLICT(target_type, target_value, key) DO UPDATE
+                     SET value = '[]', value_type = 'list', last_timestamp = excluded.last_timestamp,
+                         is_git_ref = 0, is_promised = 0, source_ref = excluded.source_ref",
+                    params![target_type, &key.target_value, &key.key, source_timestamp, source_ref],
+                )?;
+                let metadata_id = self.metadata_rowid(key)?;
+                self.conn.execute(
+                    "DELETE FROM list_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                self.conn.execute(
+                    "DELETE FROM set_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                for (entry_name, content) in entries {
+                    let timestamp =
+                        parse_timestamp_from_entry_name(entry_name).unwrap_or(source_timestamp);
+                    self.conn.execute(
+                        "INSERT INTO list_values (metadata_id, value, timestamp, is_git_ref)
+                         VALUES (?1, ?2, ?3, 0)",
+                        params![metadata_id, content, timestamp],
+                    )?;
+                }
+            }
+            TreeValue::Set(members) => {
+                self.conn.execute(
+                    "INSERT INTO metadata (target_type, target_value, key, value, value_type, last_timestamp, is_git_ref, is_promised, source_ref)
+                     VALUES (?1, ?2, ?3, '[]', 'set', ?4, 0, 0, ?5)
+                     ON CONFLICT(target_type, target_value, key) DO UPDATE
+                     SET value = '[]', value_type = 'set', last_timestamp = excluded.last_timestamp,
+                         is_git_ref = 0, is_promised = 0, source_ref = excluded.source_ref",
+                    params![target_type, &key.target_value, &key.key, source_timestamp, source_ref],
+                )?;
+                let metadata_id = self.metadata_rowid(key)?;
+                self.conn.execute(
+                    "DELETE FROM list_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                self.conn.execute(
+                    "DELETE FROM set_values WHERE metadata_id = ?1",
+                    params![metadata_id],
+                )?;
+                for member in members.values() {
+                    self.conn.execute(
+                        "INSERT INTO set_values (metadata_id, member_id, value, timestamp)
+                         VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT(metadata_id, member_id) DO UPDATE
+                         SET value = excluded.value, timestamp = excluded.timestamp",
+                        params![metadata_id, set_member_id(member), member, source_timestamp],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn metadata_rowid(&self, key: &Key) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "SELECT rowid FROM metadata WHERE target_type = ?1 AND target_value = ?2 AND key = ?3",
+            params![key.target_type.as_str(), &key.target_value, &key.key],
+            |row| row.get(0),
+        )?)
     }
 
     fn list_has_git_ref_entries(&self, key: &Key) -> Result<bool> {
