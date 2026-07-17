@@ -13,7 +13,7 @@ use ratatui::Frame;
 
 use git_meta_lib::types::{MetaValue, TargetType};
 
-use super::data::{format_relative, format_timestamp, DetailData};
+use super::data::{format_relative, format_timestamp, join_prefix, DetailData, KeyTreeRow};
 use super::state::{App, DetailRequest, InputMode, PaneFocus, View};
 use crate::commands::inspect::format_value_oneline;
 
@@ -57,13 +57,20 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
             View::KeyList {
                 target_type,
                 target_value,
+                prefix,
                 ..
             } => {
                 spans.push(Span::styled(" › ", DIM_STYLE));
-                if *target_type == TargetType::Project {
-                    spans.push(Span::styled("project", TYPE_STYLE));
-                } else {
-                    spans.push(Span::styled(target_value.clone(), VALUE_STYLE));
+                // The root key level names the target; each deeper level
+                // names its namespace segment.
+                match prefix.rsplit(':').next() {
+                    Some(segment) if !prefix.is_empty() => {
+                        spans.push(Span::styled(segment.to_string(), KEY_STYLE));
+                    }
+                    _ if *target_type == TargetType::Project => {
+                        spans.push(Span::styled("project", TYPE_STYLE));
+                    }
+                    _ => spans.push(Span::styled(target_value.clone(), VALUE_STYLE)),
                 }
             }
             View::Search { .. } => {
@@ -81,6 +88,7 @@ fn draw_nav(frame: &mut Frame, area: Rect, app: &App) {
     let title = match app.view() {
         View::Overview { .. } => "target types".to_string(),
         View::TargetList { target_type, .. } => format!("{target_type} targets"),
+        View::KeyList { prefix, .. } if !prefix.is_empty() => prefix.clone(),
         View::KeyList { .. } => "keys".to_string(),
         View::Search { .. } => "search".to_string(),
     };
@@ -102,6 +110,7 @@ fn draw_nav(frame: &mut Frame, area: Rect, app: &App) {
         View::KeyList {
             target_type,
             target_value,
+            prefix,
             selected,
             filter,
         } => draw_key_list(
@@ -110,6 +119,7 @@ fn draw_nav(frame: &mut Frame, area: Rect, app: &App) {
             app,
             target_type,
             target_value,
+            prefix,
             *selected,
             filter,
         ),
@@ -184,21 +194,36 @@ fn draw_key_list(
     app: &App,
     target_type: &TargetType,
     target_value: &str,
+    prefix: &str,
     selected: usize,
     filter: &str,
 ) {
     let rows: Vec<Row> = app
         .snapshot
-        .key_rows(target_type, target_value, filter)
+        .key_tree_rows(target_type, target_value, prefix, filter)
         .into_iter()
-        .map(|row| {
-            Row::new(vec![
-                Cell::from(Span::styled(row.key, KEY_STYLE)),
+        .map(|row| match row {
+            KeyTreeRow::Namespace {
+                segment,
+                key_count,
+                last_timestamp,
+            } => Row::new(vec![
+                Cell::from(Line::from(vec![
+                    Span::styled(segment, TYPE_PREFIX_STYLE),
+                    Span::styled(format!(" ▸ {key_count}"), DIM_STYLE),
+                ])),
+                Cell::from(Span::styled(
+                    format_relative(last_timestamp, app.now_ms),
+                    DIM_STYLE,
+                )),
+            ]),
+            KeyTreeRow::Leaf { segment, row } => Row::new(vec![
+                Cell::from(Span::styled(segment, KEY_STYLE)),
                 Cell::from(Span::styled(
                     format_relative(row.last_timestamp, app.now_ms),
                     DIM_STYLE,
                 )),
-            ])
+            ]),
         })
         .collect();
 
@@ -277,22 +302,51 @@ fn draw_side(frame: &mut Frame, area: Rect, app: &App) {
                 .border_style(border);
             let inner = block.inner(area);
             frame.render_widget(block, area);
-            draw_keys_preview(frame, inner, app, target_type, &target);
+            draw_keys_preview(frame, inner, app, target_type, &target, "");
         }
-        View::KeyList { .. } | View::Search { .. } => {
-            let title = app
-                .detail()
-                .map_or_else(|| "value".to_string(), |(request, _)| request.key.clone());
-            let block = Block::bordered().title(title).border_style(border);
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            match app.detail() {
-                Some((request, detail)) => {
-                    draw_detail(frame, inner, app, request, detail, app.detail_scroll);
-                }
-                None => frame.render_widget(Span::styled("no value selected", DIM_STYLE), inner),
+        View::KeyList {
+            target_type,
+            target_value,
+            prefix,
+            selected,
+            filter,
+        } => {
+            // A selected namespace previews its children; a selected leaf
+            // (or nothing) shows the loaded value.
+            if let Some(KeyTreeRow::Namespace { segment, .. }) = app
+                .snapshot
+                .key_tree_rows(target_type, target_value, prefix, filter)
+                .into_iter()
+                .nth(*selected)
+            {
+                let child_prefix = join_prefix(prefix, &segment);
+                let block = Block::bordered()
+                    .title(child_prefix.clone())
+                    .border_style(border);
+                let inner = block.inner(area);
+                frame.render_widget(block, area);
+                draw_keys_preview(frame, inner, app, target_type, target_value, &child_prefix);
+            } else {
+                draw_value_pane(frame, area, app, border);
             }
         }
+        View::Search { .. } => draw_value_pane(frame, area, app, border),
+    }
+}
+
+/// The loaded detail (or a placeholder) inside a titled block.
+fn draw_value_pane(frame: &mut Frame, area: Rect, app: &App, border: Style) {
+    let title = app
+        .detail()
+        .map_or_else(|| "value".to_string(), |(request, _)| request.key.clone());
+    let block = Block::bordered().title(title).border_style(border);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    match app.detail() {
+        Some((request, detail)) => {
+            draw_detail(frame, inner, app, request, detail, app.detail_scroll);
+        }
+        None => frame.render_widget(Span::styled("no value selected", DIM_STYLE), inner),
     }
 }
 
@@ -302,7 +356,7 @@ fn draw_type_preview(frame: &mut Frame, area: Rect, app: &App, selected: usize) 
         return;
     };
     if type_row.target_type == TargetType::Project {
-        draw_keys_preview(frame, area, app, &TargetType::Project, "");
+        draw_keys_preview(frame, area, app, &TargetType::Project, "", "");
         return;
     }
 
@@ -336,26 +390,43 @@ fn draw_type_preview(frame: &mut Frame, area: Rect, app: &App, selected: usize) 
     frame.render_widget(table, area);
 }
 
-/// Preview for a selected target: its keys with one-line value previews.
+/// Preview of one key-namespace level: namespaces with counts, leaf keys
+/// with one-line value previews.
 fn draw_keys_preview(
     frame: &mut Frame,
     area: Rect,
     app: &App,
     target_type: &TargetType,
     target_value: &str,
+    prefix: &str,
 ) {
     let width = area.width as usize;
     let rows: Vec<Row> = app
         .snapshot
-        .key_rows(target_type, target_value, "")
+        .key_tree_rows(target_type, target_value, prefix, "")
         .into_iter()
-        .map(|row| {
-            let preview = format_value_oneline(&row.value, &row.value_type, width, row.key.len());
-            Row::new(vec![Cell::from(Line::from(vec![
-                Span::styled(row.key, KEY_STYLE),
-                Span::raw("  "),
-                Span::styled(preview, DIM_STYLE),
-            ]))])
+        .map(|row| match row {
+            KeyTreeRow::Namespace {
+                segment, key_count, ..
+            } => Row::new(vec![Cell::from(Line::from(vec![
+                Span::styled(segment, TYPE_PREFIX_STYLE),
+                Span::styled(
+                    format!(
+                        " ▸ {key_count} key{}",
+                        if key_count == 1 { "" } else { "s" }
+                    ),
+                    DIM_STYLE,
+                ),
+            ]))]),
+            KeyTreeRow::Leaf { segment, row } => {
+                let preview =
+                    format_value_oneline(&row.value, &row.value_type, width, segment.len());
+                Row::new(vec![Cell::from(Line::from(vec![
+                    Span::styled(segment, KEY_STYLE),
+                    Span::raw("  "),
+                    Span::styled(preview, DIM_STYLE),
+                ]))])
+            }
         })
         .collect();
     let table = Table::new(rows, [Constraint::Min(0)]);
@@ -494,9 +565,13 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             if !filter.is_empty() {
                 hints.push_str(&format!("filter: {filter} · "));
             }
-            hints.push_str(
-                "j/k move · enter/tab value pane · / filter · s search · esc back · q quit",
-            );
+            if app.wanted_detail().is_some() {
+                hints.push_str(
+                    "j/k move · enter/tab value pane · / filter · s search · esc back · q quit",
+                );
+            } else {
+                hints.push_str("j/k move · enter open · / filter · s search · esc back · q quit");
+            }
         }
     }
     frame.render_widget(Line::from(Span::styled(hints, DIM_STYLE)), area);
@@ -576,9 +651,25 @@ mod tests {
     }
 
     #[test]
+    fn key_list_shows_namespace_groups_with_children_preview() {
+        let mut app = app();
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Enter);
+        let text = rendered_text(&app);
+        // Left pane: namespace groups, not full truncated keys.
+        assert!(text.contains("agent ▸ 1"));
+        assert!(text.contains("review ▸ 1"));
+        // Right pane previews the selected namespace's children.
+        assert!(text.contains("model  claude"));
+        assert!(text.contains("enter open"));
+    }
+
+    #[test]
     fn key_list_shows_value_and_metadata_in_side_pane() {
         let mut app = app();
         press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Enter);
+        // Descend into the agent namespace to reach the leaf.
         press(&mut app, KeyCode::Enter);
         let request = app.wanted_detail().unwrap();
         app.set_detail(

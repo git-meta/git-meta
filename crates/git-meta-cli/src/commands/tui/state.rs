@@ -10,7 +10,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use git_meta_lib::types::{MetaValue, TargetType};
 
-use super::data::{DetailData, MetaSnapshot};
+use super::data::{join_prefix, DetailData, KeyTreeRow, MetaSnapshot};
 
 /// Whether keystrokes navigate or edit the current view's filter.
 pub(super) enum InputMode {
@@ -39,6 +39,9 @@ pub(super) enum View {
     KeyList {
         target_type: TargetType,
         target_value: String,
+        /// Key namespace being browsed; empty at the root. Each deeper
+        /// level is its own stacked `KeyList`.
+        prefix: String,
         selected: usize,
         filter: String,
     },
@@ -123,20 +126,24 @@ impl App {
             View::KeyList {
                 target_type,
                 target_value,
+                prefix,
                 selected,
                 filter,
-            } => self
+            } => match self
                 .snapshot
-                .key_rows(target_type, target_value, filter)
+                .key_tree_rows(target_type, target_value, prefix, filter)
                 .into_iter()
                 .nth(*selected)
-                .map(|row| DetailRequest {
+            {
+                Some(KeyTreeRow::Leaf { row, .. }) => Some(DetailRequest {
                     target_type: target_type.clone(),
                     target_value: target_value.clone(),
                     key: row.key,
                     is_git_ref: row.is_git_ref,
                     last_timestamp: row.last_timestamp,
                 }),
+                _ => None,
+            },
             View::Search { query, selected } => self
                 .snapshot
                 .search_rows(query)
@@ -202,7 +209,7 @@ impl App {
             KeyCode::Char('G') => self.jump_to(usize::MAX),
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.descend(),
             KeyCode::Tab => {
-                if matches!(self.view(), View::KeyList { .. }) {
+                if self.wanted_detail().is_some() {
                     self.focus = PaneFocus::Detail;
                 }
             }
@@ -328,11 +335,12 @@ impl App {
             View::KeyList {
                 target_type,
                 target_value,
+                prefix,
                 filter,
                 ..
             } => self
                 .snapshot
-                .key_rows(target_type, target_value, filter)
+                .key_tree_rows(target_type, target_value, prefix, filter)
                 .len(),
             View::Search { query, .. } => self.snapshot.search_rows(query).len(),
         }
@@ -411,6 +419,7 @@ impl App {
                         View::KeyList {
                             target_type: row.target_type,
                             target_value: String::new(),
+                            prefix: String::new(),
                             selected: 0,
                             filter: String::new(),
                         }
@@ -437,6 +446,7 @@ impl App {
                     push = Some(View::KeyList {
                         target_type: target_type.clone(),
                         target_value: row.target_value,
+                        prefix: String::new(),
                         selected: 0,
                         filter: String::new(),
                     });
@@ -445,13 +455,28 @@ impl App {
             View::KeyList {
                 target_type,
                 target_value,
+                prefix,
+                selected,
                 filter,
-                ..
             } => {
-                focus_detail = !self
+                match self
                     .snapshot
-                    .key_rows(target_type, target_value, filter)
-                    .is_empty();
+                    .key_tree_rows(target_type, target_value, prefix, filter)
+                    .into_iter()
+                    .nth(*selected)
+                {
+                    Some(KeyTreeRow::Namespace { segment, .. }) => {
+                        push = Some(View::KeyList {
+                            target_type: target_type.clone(),
+                            target_value: target_value.clone(),
+                            prefix: join_prefix(prefix, &segment),
+                            selected: 0,
+                            filter: String::new(),
+                        });
+                    }
+                    Some(KeyTreeRow::Leaf { .. }) => focus_detail = true,
+                    None => {}
+                }
             }
             View::Search { .. } => {}
         }
@@ -498,18 +523,32 @@ impl App {
             });
         }
 
-        let key_index = self
-            .snapshot
-            .key_rows(&row.target_type, &row.target_value, "")
-            .iter()
-            .position(|r| r.key == row.key)
-            .unwrap_or(0);
-        stack.push(View::KeyList {
-            target_type: row.target_type,
-            target_value: row.target_value,
-            selected: key_index,
-            filter: String::new(),
-        });
+        // One stacked key list per namespace level of the key, each with
+        // the next segment (or the final leaf) selected.
+        let segments: Vec<&str> = row.key.split(':').collect();
+        let mut prefix = String::new();
+        for (i, segment) in segments.iter().enumerate() {
+            let is_last = i == segments.len() - 1;
+            let level_index = self
+                .snapshot
+                .key_tree_rows(&row.target_type, &row.target_value, &prefix, "")
+                .iter()
+                .position(|r| match r {
+                    KeyTreeRow::Namespace { segment: s, .. } => !is_last && s == segment,
+                    KeyTreeRow::Leaf { segment: s, .. } => is_last && s == segment,
+                })
+                .unwrap_or(0);
+            stack.push(View::KeyList {
+                target_type: row.target_type.clone(),
+                target_value: row.target_value.clone(),
+                prefix: prefix.clone(),
+                selected: level_index,
+                filter: String::new(),
+            });
+            if !is_last {
+                prefix = join_prefix(&prefix, segment);
+            }
+        }
 
         self.stack = stack;
         self.focus = PaneFocus::Nav;
@@ -712,18 +751,30 @@ mod tests {
     }
 
     #[test]
-    fn wanted_detail_follows_key_selection() {
+    fn wanted_detail_appears_only_on_leaf_keys() {
         let mut app = app();
         assert!(app.wanted_detail().is_none());
 
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Enter);
+        // Root key level of bbb222: namespaces agent and review, no leaves.
+        assert!(app.wanted_detail().is_none());
+
+        // Descend into the agent namespace: its leaf is selected.
+        press(&mut app, KeyCode::Enter);
+        match app.view() {
+            View::KeyList { prefix, .. } => assert_eq!(prefix, "agent"),
+            _ => panic!("expected key list"),
+        }
         let request = app.wanted_detail().unwrap();
         assert_eq!(request.target_value, "bbb222");
         assert_eq!(request.key, "agent:model");
 
+        // Back up and into the review namespace instead.
+        press(&mut app, KeyCode::Esc);
         press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
         let request = app.wanted_detail().unwrap();
         assert_eq!(request.key, "review:status");
         assert_eq!(request.last_timestamp, 3_000);
@@ -734,6 +785,12 @@ mod tests {
         let mut app = app();
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        // Tab on a namespace row does nothing — there is no value yet.
+        press(&mut app, KeyCode::Tab);
+        assert!(matches!(app.focus, PaneFocus::Nav));
+
+        // Descend to the leaf; enter then focuses the value pane.
         press(&mut app, KeyCode::Enter);
         let request = app.wanted_detail().unwrap();
         app.set_detail(request, loaded_detail());
@@ -749,12 +806,18 @@ mod tests {
         press(&mut app, KeyCode::Char('g'));
         assert_eq!(app.detail_scroll, 0);
 
-        // Tab returns to the navigation pane; j moves the key selection.
+        // Tab returns to the navigation pane; Esc pops back to the root
+        // key level with the namespace still selected.
         press(&mut app, KeyCode::Tab);
         assert!(matches!(app.focus, PaneFocus::Nav));
-        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Esc);
         match app.view() {
-            View::KeyList { selected, .. } => assert_eq!(*selected, 1),
+            View::KeyList {
+                prefix, selected, ..
+            } => {
+                assert_eq!(prefix, "");
+                assert_eq!(*selected, 0);
+            }
             _ => panic!("expected key list"),
         }
     }
@@ -773,17 +836,29 @@ mod tests {
         assert_eq!(request.key, "review:status");
 
         press(&mut app, KeyCode::Enter);
-        // Stack is rebuilt to overview → targets → keys with the result
-        // selected at each level.
-        assert_eq!(app.stack().len(), 3);
+        // Stack is rebuilt to overview → targets → one key level per
+        // namespace segment, with the result selected at each level.
+        assert_eq!(app.stack().len(), 4);
+        match &app.stack()[2] {
+            View::KeyList {
+                prefix, selected, ..
+            } => {
+                assert_eq!(prefix, "");
+                // Root key level of bbb222: agent, then review.
+                assert_eq!(*selected, 1);
+            }
+            _ => panic!("expected key list"),
+        }
         match app.view() {
             View::KeyList {
                 target_value,
+                prefix,
                 selected,
                 ..
             } => {
                 assert_eq!(target_value, "bbb222");
-                assert_eq!(*selected, 1);
+                assert_eq!(prefix, "review");
+                assert_eq!(*selected, 0);
             }
             _ => panic!("expected key list"),
         }
@@ -798,13 +873,19 @@ mod tests {
             press(&mut app, KeyCode::Char(c));
         }
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.stack().len(), 2);
+        assert_eq!(app.stack().len(), 3);
         match app.view() {
-            View::KeyList { target_type, .. } => {
+            View::KeyList {
+                target_type,
+                prefix,
+                ..
+            } => {
                 assert_eq!(*target_type, TargetType::Project);
+                assert_eq!(prefix, "ci");
             }
             _ => panic!("expected key list"),
         }
+        assert_eq!(app.wanted_detail().unwrap().key, "ci:url");
     }
 
     #[test]

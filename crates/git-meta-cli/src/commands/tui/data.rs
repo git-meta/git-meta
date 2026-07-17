@@ -124,32 +124,116 @@ impl MetaSnapshot {
             .collect()
     }
 
-    /// Keys of one target, optionally fuzzy-filtered on key name or string
-    /// value content (same match rule as `git meta inspect`).
-    pub(super) fn key_rows(
+    /// One level of a target's key namespace tree.
+    ///
+    /// Keys are colon-namespaced paths; this renders the level below
+    /// `prefix` (empty = root): sibling keys become [`KeyTreeRow::Leaf`]
+    /// rows, deeper keys are grouped by their next segment into
+    /// [`KeyTreeRow::Namespace`] rows. A segment that is both a key and a
+    /// namespace parent yields both rows.
+    ///
+    /// The filter fuzzy-matches the key path below `prefix` or (for
+    /// string values) the value content, same as `git meta inspect`.
+    pub(super) fn key_tree_rows(
         &self,
         target_type: &TargetType,
         target_value: &str,
+        prefix: &str,
         filter: &str,
-    ) -> Vec<KeyRow> {
+    ) -> Vec<KeyTreeRow> {
         let term = filter.to_lowercase();
-        self.entries
+        let prefix_colon = if prefix.is_empty() {
+            String::new()
+        } else {
+            format!("{prefix}:")
+        };
+
+        #[derive(Default)]
+        struct Slot {
+            leaf: Option<KeyRow>,
+            child_keys: usize,
+            last_timestamp: i64,
+            matched: bool,
+        }
+        let mut by_segment: BTreeMap<String, Slot> = BTreeMap::new();
+
+        for e in self
+            .entries
             .iter()
             .filter(|e| &e.target_type == target_type && e.target_value == target_value)
-            .filter(|e| {
-                term.is_empty()
-                    || fuzzy_matches(&term, &e.key)
-                    || (e.value_type == ValueType::String
-                        && fuzzy_matches(&term, &decode_string_value(&e.value)))
-            })
-            .map(|e| KeyRow {
-                key: e.key.clone(),
-                value: e.value.clone(),
-                value_type: e.value_type.clone(),
-                is_git_ref: e.is_git_ref,
-                last_timestamp: e.last_timestamp,
-            })
-            .collect()
+        {
+            let Some(rest) = e.key.strip_prefix(&prefix_colon) else {
+                continue;
+            };
+            let matched = term.is_empty()
+                || fuzzy_matches(&term, rest)
+                || (e.value_type == ValueType::String
+                    && fuzzy_matches(&term, &decode_string_value(&e.value)));
+            let (segment, is_leaf) = match rest.split_once(':') {
+                Some((segment, _)) => (segment, false),
+                None => (rest, true),
+            };
+            let slot = by_segment.entry(segment.to_string()).or_default();
+            slot.matched |= matched;
+            slot.last_timestamp = slot.last_timestamp.max(e.last_timestamp);
+            if is_leaf {
+                slot.leaf = Some(KeyRow {
+                    key: e.key.clone(),
+                    value: e.value.clone(),
+                    value_type: e.value_type.clone(),
+                    is_git_ref: e.is_git_ref,
+                    last_timestamp: e.last_timestamp,
+                });
+            } else {
+                slot.child_keys += 1;
+            }
+        }
+
+        let mut rows = Vec::new();
+        for (segment, slot) in by_segment {
+            if !slot.matched {
+                continue;
+            }
+            if let Some(row) = slot.leaf {
+                rows.push(KeyTreeRow::Leaf {
+                    segment: segment.clone(),
+                    row,
+                });
+            }
+            if slot.child_keys > 0 {
+                rows.push(KeyTreeRow::Namespace {
+                    segment,
+                    key_count: slot.child_keys,
+                    last_timestamp: slot.last_timestamp,
+                });
+            }
+        }
+        rows
+    }
+}
+
+/// One row of a key-namespace level: a browsable namespace or a real key.
+pub(super) enum KeyTreeRow {
+    Namespace {
+        segment: String,
+        /// Number of keys anywhere below this namespace.
+        key_count: usize,
+        /// Most recent update among those keys.
+        last_timestamp: i64,
+    },
+    Leaf {
+        /// The key's final path segment, for display at this level.
+        segment: String,
+        row: KeyRow,
+    },
+}
+
+/// Extend a key namespace prefix by one segment.
+pub(super) fn join_prefix(prefix: &str, segment: &str) -> String {
+    if prefix.is_empty() {
+        segment.to_string()
+    } else {
+        format!("{prefix}:{segment}")
     }
 }
 
@@ -396,15 +480,79 @@ mod tests {
     }
 
     #[test]
-    fn key_rows_filter_matches_key_or_string_value() {
+    fn key_tree_groups_by_namespace_level() {
         let snap = snapshot();
-        let rows = snap.key_rows(&TargetType::Commit, "aaa111", "");
-        assert_eq!(rows.len(), 2);
 
-        // Matches the decoded string value "approved".
-        let rows = snap.key_rows(&TargetType::Commit, "aaa111", "approved");
+        // Root of aaa111: two namespace groups, no leaves.
+        let rows = snap.key_tree_rows(&TargetType::Commit, "aaa111", "", "");
+        assert_eq!(rows.len(), 2);
+        match &rows[0] {
+            KeyTreeRow::Namespace {
+                segment, key_count, ..
+            } => {
+                assert_eq!(segment, "agent");
+                assert_eq!(*key_count, 1);
+            }
+            KeyTreeRow::Leaf { .. } => panic!("expected namespace row"),
+        }
+
+        // Drilling into a namespace exposes its leaf keys.
+        let rows = snap.key_tree_rows(&TargetType::Commit, "aaa111", "agent", "");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].key, "review:status");
+        match &rows[0] {
+            KeyTreeRow::Leaf { segment, row } => {
+                assert_eq!(segment, "model");
+                assert_eq!(row.key, "agent:model");
+            }
+            KeyTreeRow::Namespace { .. } => panic!("expected leaf row"),
+        }
+    }
+
+    #[test]
+    fn key_tree_segment_can_be_both_leaf_and_namespace() {
+        let snap = MetaSnapshot {
+            entries: vec![
+                entry(
+                    TargetType::Project,
+                    "",
+                    "ci",
+                    "\"top\"",
+                    ValueType::String,
+                    1,
+                ),
+                entry(
+                    TargetType::Project,
+                    "",
+                    "ci:url",
+                    "\"https://ci.example\"",
+                    ValueType::String,
+                    2,
+                ),
+            ],
+            promised_counts: BTreeMap::new(),
+        };
+        let rows = snap.key_tree_rows(&TargetType::Project, "", "", "");
+        assert_eq!(rows.len(), 2);
+        assert!(matches!(&rows[0], KeyTreeRow::Leaf { row, .. } if row.key == "ci"));
+        assert!(
+            matches!(&rows[1], KeyTreeRow::Namespace { segment, key_count, last_timestamp }
+                if segment == "ci" && *key_count == 1 && *last_timestamp == 2)
+        );
+    }
+
+    #[test]
+    fn key_tree_filter_matches_key_path_or_string_value() {
+        let snap = snapshot();
+
+        // Matches the decoded string value "approved" of review:status.
+        let rows = snap.key_tree_rows(&TargetType::Commit, "aaa111", "", "approved");
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(&rows[0], KeyTreeRow::Namespace { segment, .. } if segment == "review"));
+
+        // Matches the key path below the prefix.
+        let rows = snap.key_tree_rows(&TargetType::Commit, "aaa111", "", "status");
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(&rows[0], KeyTreeRow::Namespace { segment, .. } if segment == "review"));
     }
 
     #[test]
