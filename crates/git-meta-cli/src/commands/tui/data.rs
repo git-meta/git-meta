@@ -153,6 +153,55 @@ impl MetaSnapshot {
     }
 }
 
+/// One global-search result: a key addressed by its full path.
+pub(super) struct SearchRow {
+    pub(super) target_type: TargetType,
+    pub(super) target_value: String,
+    pub(super) key: String,
+    pub(super) is_git_ref: bool,
+    pub(super) last_timestamp: i64,
+    /// Display path the query matched against, e.g. `commit:abc123 agent:model`.
+    pub(super) path: String,
+}
+
+/// The display path of a key: `type:value key`, or `project key` for the
+/// implicit project target.
+pub(super) fn key_path(target_type: &TargetType, target_value: &str, key: &str) -> String {
+    if *target_type == TargetType::Project {
+        format!("project {key}")
+    } else {
+        format!("{target_type}:{target_value} {key}")
+    }
+}
+
+impl MetaSnapshot {
+    /// All keys whose full path fuzzy-matches the query, in snapshot order.
+    /// Whitespace splits the query into words that must each match
+    /// independently (in any order), so `agent bbb` finds
+    /// `commit:bbb222 agent:model`. An empty query matches everything.
+    pub(super) fn search_rows(&self, query: &str) -> Vec<SearchRow> {
+        let lowered = query.to_lowercase();
+        let words: Vec<&str> = lowered.split_whitespace().collect();
+        self.entries
+            .iter()
+            .filter_map(|e| {
+                let path = key_path(&e.target_type, &e.target_value, &e.key);
+                words
+                    .iter()
+                    .all(|word| fuzzy_matches(word, &path))
+                    .then(|| SearchRow {
+                        target_type: e.target_type.clone(),
+                        target_value: e.target_value.clone(),
+                        key: e.key.clone(),
+                        is_git_ref: e.is_git_ref,
+                        last_timestamp: e.last_timestamp,
+                        path,
+                    })
+            })
+            .collect()
+    }
+}
+
 /// Fully decoded value plus provenance for the detail view.
 pub(super) struct DetailData {
     pub(super) value: MetaValue,
@@ -356,6 +405,28 @@ mod tests {
         let rows = snap.key_rows(&TargetType::Commit, "aaa111", "approved");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].key, "review:status");
+    }
+
+    #[test]
+    fn search_rows_match_full_key_paths() {
+        let snap = snapshot();
+        assert_eq!(snap.search_rows("").len(), 4);
+
+        // Words match independently, in any order.
+        for query in ["aaa review", "review aaa"] {
+            let rows = snap.search_rows(query);
+            assert_eq!(rows.len(), 1, "query {query:?}");
+            assert_eq!(rows[0].key, "review:status");
+            assert_eq!(rows[0].path, "commit:aaa111 review:status");
+        }
+
+        // Project keys use the bare `project` prefix.
+        let rows = snap.search_rows("proj ci");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].target_type, TargetType::Project);
+        assert_eq!(rows[0].path, "project ci:url");
+
+        assert!(snap.search_rows("no-such-thing").is_empty());
     }
 
     #[test]

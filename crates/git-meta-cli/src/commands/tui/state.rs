@@ -1,9 +1,10 @@
-//! TUI state machine: a stack of views plus key handling.
+//! TUI state machine: a stack of navigation views plus key handling.
 //!
-//! This module owns navigation and selection but performs no I/O. The one
-//! action that needs the database — opening a key's detail view — is
-//! returned as a [`Command`] for the event loop to execute, which keeps
-//! everything here drivable by unit tests with a synthetic snapshot.
+//! This module owns navigation, selection, and pane focus but performs no
+//! I/O. The detail pane's content is described by [`App::wanted_detail`];
+//! the event loop loads it (a per-key database read) and hands it back via
+//! [`App::set_detail`], which keeps everything here drivable by unit tests
+//! with a synthetic snapshot.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -17,8 +18,15 @@ pub(super) enum InputMode {
     Filter,
 }
 
-/// One level of the browsing hierarchy. Each view owns its selection and
-/// filter, so popping back restores them automatically.
+/// Which pane receives navigation keys: the left navigation list or the
+/// right value pane (where j/k scroll the value).
+pub(super) enum PaneFocus {
+    Nav,
+    Detail,
+}
+
+/// One level of the browsing hierarchy, shown in the left pane. Each view
+/// owns its selection and filter, so popping back restores them.
 pub(super) enum View {
     Overview {
         selected: usize,
@@ -34,22 +42,21 @@ pub(super) enum View {
         selected: usize,
         filter: String,
     },
-    Detail {
-        key: String,
-        detail: DetailData,
-        scroll: usize,
+    /// Global fuzzy search over full key paths (`type:value key`).
+    Search {
+        query: String,
+        selected: usize,
     },
 }
 
-/// An effect the event loop must perform against the session.
-pub(super) enum Command {
-    OpenDetail {
-        target_type: TargetType,
-        target_value: String,
-        key: String,
-        is_git_ref: bool,
-        last_timestamp: i64,
-    },
+/// Coordinates of the key whose value belongs in the detail pane.
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct DetailRequest {
+    pub(super) target_type: TargetType,
+    pub(super) target_value: String,
+    pub(super) key: String,
+    pub(super) is_git_ref: bool,
+    pub(super) last_timestamp: i64,
 }
 
 const ROOT_VIEW: View = View::Overview { selected: 0 };
@@ -61,11 +68,15 @@ pub(super) struct App {
     /// Never empty; `stack[0]` is always the overview.
     stack: Vec<View>,
     pub(super) input_mode: InputMode,
+    pub(super) focus: PaneFocus,
     should_quit: bool,
     /// Transient message shown in the footer (e.g. a detail load failure).
     pub(super) status: Option<String>,
     /// Rows visible in the body area, for half-page scrolling.
     viewport_rows: usize,
+    /// The loaded detail pane content, keyed by the request it answers.
+    detail: Option<(DetailRequest, DetailData)>,
+    pub(super) detail_scroll: usize,
 }
 
 impl App {
@@ -75,9 +86,12 @@ impl App {
             now_ms,
             stack: vec![ROOT_VIEW],
             input_mode: InputMode::Normal,
+            focus: PaneFocus::Nav,
             should_quit: false,
             status: None,
             viewport_rows: 20,
+            detail: None,
+            detail_scroll: 0,
         }
     }
 
@@ -102,83 +116,172 @@ impl App {
         self.status = Some(message);
     }
 
-    pub(super) fn push_detail(&mut self, key: String, detail: DetailData) {
-        self.stack.push(View::Detail {
-            key,
-            detail,
-            scroll: 0,
-        });
-    }
-
-    pub(super) fn handle_key(&mut self, key: KeyEvent) -> Option<Command> {
-        self.status = None;
-        match self.input_mode {
-            InputMode::Filter => {
-                self.handle_filter_key(key);
-                None
-            }
-            InputMode::Normal => self.handle_normal_key(key),
+    /// The key the detail pane should currently show, if any: the selected
+    /// row of a key list or of the search results.
+    pub(super) fn wanted_detail(&self) -> Option<DetailRequest> {
+        match self.view() {
+            View::KeyList {
+                target_type,
+                target_value,
+                selected,
+                filter,
+            } => self
+                .snapshot
+                .key_rows(target_type, target_value, filter)
+                .into_iter()
+                .nth(*selected)
+                .map(|row| DetailRequest {
+                    target_type: target_type.clone(),
+                    target_value: target_value.clone(),
+                    key: row.key,
+                    is_git_ref: row.is_git_ref,
+                    last_timestamp: row.last_timestamp,
+                }),
+            View::Search { query, selected } => self
+                .snapshot
+                .search_rows(query)
+                .into_iter()
+                .nth(*selected)
+                .map(|row| DetailRequest {
+                    target_type: row.target_type,
+                    target_value: row.target_value,
+                    key: row.key,
+                    is_git_ref: row.is_git_ref,
+                    last_timestamp: row.last_timestamp,
+                }),
+            _ => None,
         }
     }
 
-    fn handle_normal_key(&mut self, key: KeyEvent) -> Option<Command> {
+    pub(super) fn detail_matches(&self, request: &DetailRequest) -> bool {
+        self.detail.as_ref().is_some_and(|(r, _)| r == request)
+    }
+
+    pub(super) fn detail(&self) -> Option<(&DetailRequest, &DetailData)> {
+        self.detail.as_ref().map(|(r, d)| (r, d))
+    }
+
+    pub(super) fn set_detail(&mut self, request: DetailRequest, data: DetailData) {
+        self.detail = Some((request, data));
+        self.detail_scroll = 0;
+    }
+
+    pub(super) fn clear_detail(&mut self) {
+        self.detail = None;
+        self.detail_scroll = 0;
+        self.focus = PaneFocus::Nav;
+    }
+
+    pub(super) fn handle_key(&mut self, key: KeyEvent) {
+        self.status = None;
+        if matches!(self.input_mode, InputMode::Filter) {
+            self.handle_filter_key(key);
+            return;
+        }
+        if matches!(self.view(), View::Search { .. }) {
+            self.handle_search_key(key);
+            return;
+        }
+        match self.focus {
+            PaneFocus::Detail => self.handle_detail_key(key),
+            PaneFocus::Nav => self.handle_nav_key(key),
+        }
+    }
+
+    fn handle_nav_key(&mut self, key: KeyEvent) {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let half_page = (self.viewport_rows / 2).max(1) as isize;
         match key.code {
-            KeyCode::Char('c') if ctrl => {
-                self.should_quit = true;
-                None
-            }
-            KeyCode::Char('q') => {
-                self.should_quit = true;
-                None
-            }
-            KeyCode::Char('d') if ctrl => {
-                self.move_selection(half_page);
-                None
-            }
-            KeyCode::Char('u') if ctrl => {
-                self.move_selection(-half_page);
-                None
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.move_selection(1);
-                None
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.move_selection(-1);
-                None
-            }
-            KeyCode::Char('g') => {
-                self.jump_to(0);
-                None
-            }
-            KeyCode::Char('G') => {
-                self.jump_to(usize::MAX);
-                None
-            }
+            KeyCode::Char('c') if ctrl => self.should_quit = true,
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('d') if ctrl => self.move_selection(half_page),
+            KeyCode::Char('u') if ctrl => self.move_selection(-half_page),
+            KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
+            KeyCode::Char('g') => self.jump_to(0),
+            KeyCode::Char('G') => self.jump_to(usize::MAX),
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.descend(),
+            KeyCode::Tab => {
+                if matches!(self.view(), View::KeyList { .. }) {
+                    self.focus = PaneFocus::Detail;
+                }
+            }
             KeyCode::Esc => {
                 if self.stack.len() > 1 {
                     self.stack.pop();
                 } else {
                     self.should_quit = true;
                 }
-                None
             }
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace => {
                 if self.stack.len() > 1 {
                     self.stack.pop();
                 }
-                None
             }
             KeyCode::Char('/') => {
                 if matches!(self.view(), View::TargetList { .. } | View::KeyList { .. }) {
                     self.input_mode = InputMode::Filter;
                 }
-                None
             }
-            _ => None,
+            KeyCode::Char('s') => self.stack.push(View::Search {
+                query: String::new(),
+                selected: 0,
+            }),
+            _ => {}
+        }
+    }
+
+    /// Keys while the value pane is focused: scroll the value, or return
+    /// focus to the navigation pane.
+    fn handle_detail_key(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let half_page = (self.viewport_rows / 2).max(1) as isize;
+        match key.code {
+            KeyCode::Char('c') if ctrl => self.should_quit = true,
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('d') if ctrl => self.scroll_detail(half_page),
+            KeyCode::Char('u') if ctrl => self.scroll_detail(-half_page),
+            KeyCode::Char('j') | KeyCode::Down => self.scroll_detail(1),
+            KeyCode::Char('k') | KeyCode::Up => self.scroll_detail(-1),
+            KeyCode::Char('g') => self.detail_scroll = 0,
+            KeyCode::Char('G') => {
+                self.detail_scroll = self.detail_line_count().saturating_sub(1);
+            }
+            KeyCode::Tab | KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
+                self.focus = PaneFocus::Nav;
+            }
+            _ => {}
+        }
+    }
+
+    /// Keys while searching: printable characters edit the query (including
+    /// `q`, so quitting from here is Ctrl-C or Esc), arrows move through the
+    /// results, Enter jumps to the selected key.
+    fn handle_search_key(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Char('c') if ctrl => self.should_quit = true,
+            KeyCode::Esc => {
+                self.stack.pop();
+            }
+            KeyCode::Enter => self.jump_to_search_result(),
+            KeyCode::Down => self.move_selection(1),
+            KeyCode::Up => self.move_selection(-1),
+            KeyCode::Char('n') if ctrl => self.move_selection(1),
+            KeyCode::Char('p') if ctrl => self.move_selection(-1),
+            KeyCode::Backspace => {
+                if let Some(View::Search { query, .. }) = self.stack.last_mut() {
+                    query.pop();
+                }
+                self.clamp_selection();
+            }
+            KeyCode::Char(c) if !ctrl => {
+                if let Some(View::Search { query, .. }) = self.stack.last_mut() {
+                    query.push(c);
+                }
+                self.clamp_selection();
+            }
+            _ => {}
         }
     }
 
@@ -213,7 +316,7 @@ impl App {
         }
     }
 
-    /// Rows in the current view: list length, or scrollable lines in detail.
+    /// Rows in the current navigation view.
     fn row_count(&self) -> usize {
         match self.view() {
             View::Overview { .. } => self.snapshot.type_rows().len(),
@@ -231,12 +334,26 @@ impl App {
                 .snapshot
                 .key_rows(target_type, target_value, filter)
                 .len(),
-            View::Detail { detail, .. } => match &detail.value {
-                MetaValue::String(s) => s.lines().count(),
-                MetaValue::List(entries) => entries.len(),
-                MetaValue::Set(members) => members.len(),
-                _ => 0,
-            },
+            View::Search { query, .. } => self.snapshot.search_rows(query).len(),
+        }
+    }
+
+    /// Scrollable lines in the loaded detail value.
+    fn detail_line_count(&self) -> usize {
+        match self.detail.as_ref().map(|(_, d)| &d.value) {
+            Some(MetaValue::String(s)) => s.lines().count(),
+            Some(MetaValue::List(entries)) => entries.len(),
+            Some(MetaValue::Set(members)) => members.len(),
+            _ => 0,
+        }
+    }
+
+    fn selected_mut(&mut self) -> Option<&mut usize> {
+        match self.stack.last_mut()? {
+            View::Overview { selected }
+            | View::TargetList { selected, .. }
+            | View::KeyList { selected, .. }
+            | View::Search { selected, .. } => Some(selected),
         }
     }
 
@@ -245,15 +362,8 @@ impl App {
         if count == 0 {
             return;
         }
-        let max = count - 1;
-        if let Some(view) = self.stack.last_mut() {
-            let position = match view {
-                View::Overview { selected }
-                | View::TargetList { selected, .. }
-                | View::KeyList { selected, .. } => selected,
-                View::Detail { scroll, .. } => scroll,
-            };
-            *position = position.saturating_add_signed(delta).min(max);
+        if let Some(selected) = self.selected_mut() {
+            *selected = selected.saturating_add_signed(delta).min(count - 1);
         }
     }
 
@@ -263,34 +373,34 @@ impl App {
             return;
         }
         let clamped = target.min(count - 1);
-        if let Some(view) = self.stack.last_mut() {
-            match view {
-                View::Overview { selected }
-                | View::TargetList { selected, .. }
-                | View::KeyList { selected, .. } => *selected = clamped,
-                View::Detail { scroll, .. } => *scroll = clamped,
-            }
+        if let Some(selected) = self.selected_mut() {
+            *selected = clamped;
         }
     }
 
     fn clamp_selection(&mut self) {
         let count = self.row_count();
-        if let Some(view) = self.stack.last_mut() {
-            let position = match view {
-                View::Overview { selected }
-                | View::TargetList { selected, .. }
-                | View::KeyList { selected, .. } => selected,
-                View::Detail { scroll, .. } => scroll,
-            };
-            *position = (*position).min(count.saturating_sub(1));
+        if let Some(selected) = self.selected_mut() {
+            *selected = (*selected).min(count.saturating_sub(1));
         }
     }
 
-    /// Enter the selected row: push the next view down, or emit a command
-    /// when opening a detail view (which needs the database).
-    fn descend(&mut self) -> Option<Command> {
+    fn scroll_detail(&mut self, delta: isize) {
+        let count = self.detail_line_count();
+        if count == 0 {
+            return;
+        }
+        self.detail_scroll = self
+            .detail_scroll
+            .saturating_add_signed(delta)
+            .min(count - 1);
+    }
+
+    /// Enter the selected row: push the next view down, or move focus to
+    /// the value pane when a key is already selected.
+    fn descend(&mut self) {
         let mut push: Option<View> = None;
-        let mut command: Option<Command> = None;
+        let mut focus_detail = false;
 
         match self.view() {
             View::Overview { selected } => {
@@ -335,31 +445,74 @@ impl App {
             View::KeyList {
                 target_type,
                 target_value,
-                selected,
                 filter,
+                ..
             } => {
-                if let Some(row) = self
+                focus_detail = !self
                     .snapshot
                     .key_rows(target_type, target_value, filter)
-                    .into_iter()
-                    .nth(*selected)
-                {
-                    command = Some(Command::OpenDetail {
-                        target_type: target_type.clone(),
-                        target_value: target_value.clone(),
-                        key: row.key,
-                        is_git_ref: row.is_git_ref,
-                        last_timestamp: row.last_timestamp,
-                    });
-                }
+                    .is_empty();
             }
-            View::Detail { .. } => {}
+            View::Search { .. } => {}
         }
 
         if let Some(view) = push {
             self.stack.push(view);
         }
-        command
+        if focus_detail {
+            self.focus = PaneFocus::Detail;
+        }
+    }
+
+    /// Replace the navigation stack with the path to the selected search
+    /// result, leaving its key selected so the detail pane follows.
+    fn jump_to_search_result(&mut self) {
+        let Some(View::Search { query, selected }) = self.stack.last() else {
+            return;
+        };
+        let Some(row) = self.snapshot.search_rows(query).into_iter().nth(*selected) else {
+            return;
+        };
+
+        let type_index = self
+            .snapshot
+            .type_rows()
+            .iter()
+            .position(|r| r.target_type == row.target_type)
+            .unwrap_or(0);
+        let mut stack = vec![View::Overview {
+            selected: type_index,
+        }];
+
+        if row.target_type != TargetType::Project {
+            let target_index = self
+                .snapshot
+                .target_rows(&row.target_type, "")
+                .iter()
+                .position(|r| r.target_value == row.target_value)
+                .unwrap_or(0);
+            stack.push(View::TargetList {
+                target_type: row.target_type.clone(),
+                selected: target_index,
+                filter: String::new(),
+            });
+        }
+
+        let key_index = self
+            .snapshot
+            .key_rows(&row.target_type, &row.target_value, "")
+            .iter()
+            .position(|r| r.key == row.key)
+            .unwrap_or(0);
+        stack.push(View::KeyList {
+            target_type: row.target_type,
+            target_value: row.target_value,
+            selected: key_index,
+            filter: String::new(),
+        });
+
+        self.stack = stack;
+        self.focus = PaneFocus::Nav;
     }
 }
 
@@ -417,12 +570,20 @@ mod tests {
         App::new(snapshot(), 10_000)
     }
 
-    fn press(app: &mut App, code: KeyCode) -> Option<Command> {
-        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn press(app: &mut App, code: KeyCode) {
+        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
     }
 
-    fn press_ctrl(app: &mut App, code: KeyCode) -> Option<Command> {
-        app.handle_key(KeyEvent::new(code, KeyModifiers::CONTROL))
+    fn press_ctrl(app: &mut App, code: KeyCode) {
+        app.handle_key(KeyEvent::new(code, KeyModifiers::CONTROL));
+    }
+
+    fn loaded_detail() -> DetailData {
+        DetailData {
+            value: MetaValue::String("a\nb\nc\nd".to_string()),
+            last_timestamp: 0,
+            authorship: None,
+        }
     }
 
     #[test]
@@ -534,10 +695,6 @@ mod tests {
             }
             _ => panic!("expected target list"),
         }
-        assert_eq!(
-            app.snapshot.target_rows(&TargetType::Commit, "aaa").len(),
-            1
-        );
 
         // Enter keeps the filter; a second `/` + Esc clears it.
         press(&mut app, KeyCode::Enter);
@@ -555,70 +712,115 @@ mod tests {
     }
 
     #[test]
-    fn open_detail_command_carries_coordinates() {
+    fn wanted_detail_follows_key_selection() {
         let mut app = app();
-        press(&mut app, KeyCode::Enter);
-        press(&mut app, KeyCode::Char('j'));
-        press(&mut app, KeyCode::Enter);
-        press(&mut app, KeyCode::Char('j'));
-        let cmd = press(&mut app, KeyCode::Enter);
-        match cmd {
-            Some(Command::OpenDetail {
-                target_type,
-                target_value,
-                key,
-                is_git_ref,
-                last_timestamp,
-            }) => {
-                assert_eq!(target_type, TargetType::Commit);
-                assert_eq!(target_value, "bbb222");
-                assert_eq!(key, "review:status");
-                assert!(!is_git_ref);
-                assert_eq!(last_timestamp, 3_000);
-            }
-            _ => panic!("expected OpenDetail command"),
-        }
-        // The view does not change until the loop pushes the loaded detail.
-        assert!(matches!(app.view(), View::KeyList { .. }));
+        assert!(app.wanted_detail().is_none());
 
-        app.push_detail(
-            "review:status".to_string(),
-            DetailData {
-                value: MetaValue::String("approved".to_string()),
-                last_timestamp: 3_000,
-                authorship: None,
-            },
-        );
-        assert!(matches!(app.view(), View::Detail { scroll: 0, .. }));
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        let request = app.wanted_detail().unwrap();
+        assert_eq!(request.target_value, "bbb222");
+        assert_eq!(request.key, "agent:model");
+
+        press(&mut app, KeyCode::Char('j'));
+        let request = app.wanted_detail().unwrap();
+        assert_eq!(request.key, "review:status");
+        assert_eq!(request.last_timestamp, 3_000);
     }
 
     #[test]
-    fn detail_scrolls_by_lines() {
+    fn enter_or_tab_focuses_value_pane_and_scrolls() {
         let mut app = app();
-        app.push_detail(
-            "notes".to_string(),
-            DetailData {
-                value: MetaValue::String("a\nb\nc\nd".to_string()),
-                last_timestamp: 0,
-                authorship: None,
-            },
-        );
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        let request = app.wanted_detail().unwrap();
+        app.set_detail(request, loaded_detail());
+
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.focus, PaneFocus::Detail));
+
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Char('j'));
-        match app.view() {
-            View::Detail { scroll, .. } => assert_eq!(*scroll, 2),
-            _ => panic!("expected detail"),
-        }
+        assert_eq!(app.detail_scroll, 2);
         press(&mut app, KeyCode::Char('G'));
-        match app.view() {
-            View::Detail { scroll, .. } => assert_eq!(*scroll, 3),
-            _ => panic!("expected detail"),
-        }
+        assert_eq!(app.detail_scroll, 3);
         press(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.detail_scroll, 0);
+
+        // Tab returns to the navigation pane; j moves the key selection.
+        press(&mut app, KeyCode::Tab);
+        assert!(matches!(app.focus, PaneFocus::Nav));
+        press(&mut app, KeyCode::Char('j'));
         match app.view() {
-            View::Detail { scroll: 0, .. } => {}
-            _ => panic!("expected detail scrolled to top"),
+            View::KeyList { selected, .. } => assert_eq!(*selected, 1),
+            _ => panic!("expected key list"),
         }
+    }
+
+    #[test]
+    fn search_narrows_and_jumps_to_key() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('s'));
+        assert!(matches!(app.view(), View::Search { .. }));
+
+        for c in "rev".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        assert_eq!(app.snapshot.search_rows("rev").len(), 1);
+        let request = app.wanted_detail().unwrap();
+        assert_eq!(request.key, "review:status");
+
+        press(&mut app, KeyCode::Enter);
+        // Stack is rebuilt to overview → targets → keys with the result
+        // selected at each level.
+        assert_eq!(app.stack().len(), 3);
+        match app.view() {
+            View::KeyList {
+                target_value,
+                selected,
+                ..
+            } => {
+                assert_eq!(target_value, "bbb222");
+                assert_eq!(*selected, 1);
+            }
+            _ => panic!("expected key list"),
+        }
+        assert_eq!(app.wanted_detail().unwrap().key, "review:status");
+    }
+
+    #[test]
+    fn search_jump_to_project_key_skips_target_list() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('s'));
+        for c in "ci:url".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.stack().len(), 2);
+        match app.view() {
+            View::KeyList { target_type, .. } => {
+                assert_eq!(*target_type, TargetType::Project);
+            }
+            _ => panic!("expected key list"),
+        }
+    }
+
+    #[test]
+    fn search_typing_q_edits_query_instead_of_quitting() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('s'));
+        press(&mut app, KeyCode::Char('q'));
+        assert!(!app.should_quit());
+        match app.view() {
+            View::Search { query, .. } => assert_eq!(query, "q"),
+            _ => panic!("expected search"),
+        }
+
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.should_quit());
+        assert!(matches!(app.view(), View::Overview { .. }));
     }
 
     #[test]

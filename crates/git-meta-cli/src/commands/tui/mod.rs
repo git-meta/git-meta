@@ -1,9 +1,11 @@
 //! `git meta tui` — interactive full-screen browser for metadata.
 //!
-//! Navigation: overview of target types → targets of a type → keys of a
-//! target → full value detail. `state` owns the (unit-tested) state
-//! machine, `data` the snapshot/detail loading, `ui` the rendering; this
-//! module owns the terminal lifecycle and event loop.
+//! Two panes: the left navigates (target types → targets → keys, plus a
+//! global fuzzy search over key paths), the right shows the selected
+//! level's preview or the selected key's value and metadata. `state` owns
+//! the (unit-tested) state machine, `data` the snapshot/detail loading,
+//! `ui` the rendering; this module owns the terminal lifecycle and event
+//! loop.
 
 mod data;
 mod state;
@@ -19,7 +21,7 @@ use git_meta_lib::Session;
 
 use crate::context::CommandContext;
 use data::MetaSnapshot;
-use state::{App, Command};
+use state::App;
 
 pub(crate) fn run() -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
@@ -57,12 +59,12 @@ fn event_loop(
             if key.kind != KeyEventKind::Press {
                 continue;
             }
-            // Header and footer each take one row; the rest is the body.
-            let body_rows = terminal.size()?.height.saturating_sub(2);
+            // Header, footer, and pane borders take four rows; the rest
+            // is the navigation list.
+            let body_rows = terminal.size()?.height.saturating_sub(4);
             app.set_viewport_rows(body_rows as usize);
-            if let Some(command) = app.handle_key(key) {
-                execute(session, app, command);
-            }
+            app.handle_key(key);
+            reconcile_detail(session, app);
         }
 
         if app.should_quit() {
@@ -71,28 +73,30 @@ fn event_loop(
     }
 }
 
-/// Run a state-machine command against the session. Failures become a
-/// footer status message rather than tearing down the UI.
-fn execute(session: &Session, app: &mut App, command: Command) {
-    match command {
-        Command::OpenDetail {
-            target_type,
-            target_value,
-            key,
-            is_git_ref,
-            last_timestamp,
-        } => {
-            match data::load_detail(
-                session,
-                &target_type,
-                &target_value,
-                &key,
-                is_git_ref,
-                last_timestamp,
-            ) {
-                Ok(detail) => app.push_detail(key, detail),
-                Err(e) => app.set_status(format!("failed to load {key}: {e}")),
-            }
+/// Keep the detail pane in sync with the navigation selection: load the
+/// selected key's value when it changed. Failures become a footer status
+/// message rather than tearing down the UI.
+fn reconcile_detail(session: &Session, app: &mut App) {
+    let Some(request) = app.wanted_detail() else {
+        app.clear_detail();
+        return;
+    };
+    if app.detail_matches(&request) {
+        return;
+    }
+    match data::load_detail(
+        session,
+        &request.target_type,
+        &request.target_value,
+        &request.key,
+        request.is_git_ref,
+        request.last_timestamp,
+    ) {
+        Ok(detail) => app.set_detail(request, detail),
+        Err(e) => {
+            let key = request.key.clone();
+            app.clear_detail();
+            app.set_status(format!("failed to load {key}: {e}"));
         }
     }
 }
