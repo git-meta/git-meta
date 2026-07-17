@@ -21,4 +21,5 @@ mod remote;
 mod serialize;
 mod set_get;
 mod setup;
+mod tui;
 mod version;

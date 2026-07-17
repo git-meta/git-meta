@@ -159,6 +159,8 @@ fn main() -> Result<()> {
 
         Commands::Stats => commands::stats::run(),
 
+        Commands::Tui => commands::tui::run(),
+
         Commands::Log {
             start_ref,
             count,

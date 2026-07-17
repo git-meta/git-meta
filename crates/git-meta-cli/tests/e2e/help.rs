@@ -24,6 +24,7 @@ const VISIBLE_COMMANDS: &[&str] = &[
     "set:add",
     "show",
     "inspect",
+    "tui",
     "log",
     "blame",
     "stats",

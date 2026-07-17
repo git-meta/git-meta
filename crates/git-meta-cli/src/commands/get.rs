@@ -108,7 +108,7 @@ pub(crate) fn run(
 }
 
 /// Resolve a git blob SHA to its content as a UTF-8 string.
-fn resolve_git_ref(repo: &gix::Repository, sha: &str) -> Result<String> {
+pub(crate) fn resolve_git_ref(repo: &gix::Repository, sha: &str) -> Result<String> {
     let oid = gix::ObjectId::from_hex(sha.as_bytes())
         .with_context(|| format!("invalid git blob SHA: {sha}"))?;
     let obj = oid

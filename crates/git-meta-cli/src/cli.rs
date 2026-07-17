@@ -207,6 +207,10 @@ pub(crate) enum Commands {
         metadata_only: bool,
     },
 
+    /// Browse metadata interactively in a full-screen terminal UI
+    #[command(display_order = 25)]
+    Tui,
+
     /// Serialize metadata to Git ref
     #[command(display_order = 30)]
     Serialize {
@@ -528,7 +532,7 @@ const HELP_GROUPS: &[HelpGroup] = &[
             },
             HelpSection {
                 label: None,
-                commands: &["inspect", "log", "stats"],
+                commands: &["inspect", "tui", "log", "stats"],
             },
         ],
     },

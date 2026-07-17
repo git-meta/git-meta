@@ -292,7 +292,7 @@ fn run_timeline(db: &Store) -> Result<()> {
 }
 
 /// Format a value for one-line display, fitting within available width.
-fn format_value_oneline(
+pub(crate) fn format_value_oneline(
     value: &str,
     value_type: &git_meta_lib::types::ValueType,
     term_width: usize,
@@ -341,12 +341,12 @@ fn format_value_oneline(
 }
 
 /// Decode a JSON-encoded string value, falling back to raw.
-fn decode_string_value(value: &str) -> String {
+pub(crate) fn decode_string_value(value: &str) -> String {
     serde_json::from_str::<String>(value).unwrap_or_else(|_| value.to_string())
 }
 
 /// Simple fuzzy match: all characters of the term appear in order in the haystack.
-fn fuzzy_matches(term: &str, haystack: &str) -> bool {
+pub(crate) fn fuzzy_matches(term: &str, haystack: &str) -> bool {
     let haystack_lower = haystack.to_lowercase();
     let mut hay_chars = haystack_lower.chars();
     for tc in term.chars() {
