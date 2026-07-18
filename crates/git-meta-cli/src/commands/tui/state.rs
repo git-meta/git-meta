@@ -10,7 +10,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use git_meta_lib::types::{MetaValue, TargetType};
 
-use super::data::{join_prefix, DetailData, KeyTreeRow, MetaSnapshot};
+use super::data::{join_prefix, DetailData, KeyTreeRow, MetaSnapshot, OverviewStats};
 
 /// Whether keystrokes navigate or edit the current view's filter.
 pub(super) enum InputMode {
@@ -66,6 +66,8 @@ const ROOT_VIEW: View = View::Overview { selected: 0 };
 
 pub(super) struct App {
     pub(super) snapshot: MetaSnapshot,
+    /// Aggregate numbers for the overview's statistics panel.
+    pub(super) stats: OverviewStats,
     /// Wall-clock time captured at startup, for relative timestamps.
     pub(super) now_ms: i64,
     /// Never empty; `stack[0]` is always the overview.
@@ -84,8 +86,10 @@ pub(super) struct App {
 
 impl App {
     pub(super) fn new(snapshot: MetaSnapshot, now_ms: i64) -> Self {
+        let stats = OverviewStats::compute(&snapshot, now_ms);
         Self {
             snapshot,
+            stats,
             now_ms,
             stack: vec![ROOT_VIEW],
             input_mode: InputMode::Normal,
@@ -117,6 +121,12 @@ impl App {
 
     pub(super) fn set_status(&mut self, message: String) {
         self.status = Some(message);
+    }
+
+    /// Record the main branch's name and commit count once the event
+    /// loop has walked the repository history.
+    pub(super) fn set_main_branch(&mut self, name: String, commits: usize) {
+        self.stats.main_branch = Some((name, commits));
     }
 
     /// The key the detail pane should currently show, if any: the selected

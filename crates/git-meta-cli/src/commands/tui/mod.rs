@@ -40,11 +40,42 @@ pub(crate) fn run() -> Result<()> {
 
     let now_ms = (OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64;
     let mut app = App::new(snapshot, now_ms);
+    if let Some((name, commits)) = count_main_branch_commits(ctx.session.repo()) {
+        app.set_main_branch(name, commits);
+    }
 
     let mut terminal = ratatui::try_init()?;
     let result = event_loop(&mut terminal, &mut app, &ctx.session);
     ratatui::restore();
     result
+}
+
+/// Commits reachable from the repository's main branch (`main`, then
+/// `master`, then HEAD), capped so a huge history cannot stall startup.
+/// `None` means the walk failed (e.g. an unborn branch) — the stats
+/// panel then omits the commit line rather than erroring.
+fn count_main_branch_commits(repo: &gix::Repository) -> Option<(String, usize)> {
+    const MAX_COMMITS: usize = 100_000;
+    let (name, id) = ["main", "master"]
+        .iter()
+        .find_map(|name| {
+            repo.rev_parse_single(*name)
+                .ok()
+                .map(|id| ((*name).to_string(), id.detach()))
+        })
+        .or_else(|| {
+            repo.head_id()
+                .ok()
+                .map(|id| ("HEAD".to_string(), id.detach()))
+        })?;
+    let count = repo
+        .rev_walk(Some(id))
+        .all()
+        .ok()?
+        .take(MAX_COMMITS)
+        .filter(Result::is_ok)
+        .count();
+    Some((name, count))
 }
 
 fn event_loop(

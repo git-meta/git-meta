@@ -13,7 +13,9 @@ use ratatui::Frame;
 
 use git_meta_lib::types::{MetaValue, TargetType};
 
-use super::data::{format_relative, format_timestamp, join_prefix, DetailData, KeyTreeRow};
+use super::data::{
+    format_bytes, format_relative, format_timestamp, join_prefix, DetailData, KeyTreeRow,
+};
 use super::state::{App, DetailRequest, InputMode, PaneFocus, View};
 use crate::commands::inspect::format_value_oneline;
 
@@ -270,6 +272,9 @@ fn draw_side(frame: &mut Frame, area: Rect, app: &App) {
 
     match app.view() {
         View::Overview { selected } => {
+            let [preview_area, stats_area] =
+                Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .areas(area);
             let title = app
                 .snapshot
                 .type_rows()
@@ -278,9 +283,10 @@ fn draw_side(frame: &mut Frame, area: Rect, app: &App) {
                 .map(|row| row.target_type.to_string())
                 .unwrap_or_default();
             let block = Block::bordered().title(title).border_style(border);
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
+            let inner = block.inner(preview_area);
+            frame.render_widget(block, preview_area);
             draw_type_preview(frame, inner, app, *selected);
+            draw_stats(frame, stats_area, app);
         }
         View::TargetList {
             target_type,
@@ -348,6 +354,115 @@ fn draw_value_pane(frame: &mut Frame, area: Rect, app: &App, border: Style) {
         }
         None => frame.render_widget(Span::styled("no value selected", DIM_STYLE), inner),
     }
+}
+
+/// Statistics panel on the overview: aggregate counts, repository
+/// coverage, and a weekly activity sparkline.
+fn draw_stats(frame: &mut Frame, area: Rect, app: &App) {
+    let stats = &app.stats;
+    let block = Block::bordered()
+        .title("statistics")
+        .border_style(UNFOCUSED_BORDER);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let label = |text: &str| Span::styled(format!("{text:<10}"), DIM_STYLE);
+    let mut lines = vec![
+        Line::from(vec![
+            label("keys"),
+            Span::raw(format!("{} total", stats.total_keys)),
+            Span::styled(
+                format!(
+                    " · {} pending · {} as git blobs",
+                    stats.promised_keys, stats.git_ref_keys
+                ),
+                DIM_STYLE,
+            ),
+        ]),
+        Line::from(vec![
+            label("values"),
+            Span::raw(format!(
+                "{} strings · {} lists · {} sets",
+                stats.strings, stats.lists, stats.sets
+            )),
+        ]),
+        Line::from(vec![
+            label("targets"),
+            Span::raw(format!(
+                "{} across {} type{}",
+                stats.distinct_targets,
+                stats.target_types,
+                if stats.target_types == 1 { "" } else { "s" }
+            )),
+        ]),
+    ];
+
+    match &stats.main_branch {
+        Some((name, commits)) => {
+            let percent = if *commits > 0 {
+                (stats.commits_with_meta * 100) / commits
+            } else {
+                0
+            };
+            lines.push(Line::from(vec![
+                label(name),
+                Span::raw(format!(
+                    "{commits} commits · {} with metadata ({percent}%)",
+                    stats.commits_with_meta
+                )),
+            ]));
+        }
+        None => lines.push(Line::from(vec![
+            label("commits"),
+            Span::raw(format!("{} with metadata", stats.commits_with_meta)),
+        ])),
+    }
+
+    lines.push(Line::from(vec![
+        label("activity"),
+        Span::styled(sparkline(&stats.weekly), VALUE_STYLE),
+        Span::styled(
+            format!("  keys/week, last {}w", stats.weekly.len()),
+            DIM_STYLE,
+        ),
+    ]));
+
+    let newest = stats
+        .last_update_ms
+        .map(|ms| format!(" · newest {}", format_relative(ms, app.now_ms)))
+        .unwrap_or_default();
+    lines.push(Line::from(vec![
+        label("stored"),
+        Span::raw(format!("{} of values", format_bytes(stats.value_bytes))),
+        Span::styled(newest, DIM_STYLE),
+    ]));
+
+    if let Some((namespace, count)) = &stats.top_namespace {
+        lines.push(Line::from(vec![
+            label("top ns"),
+            Span::styled(namespace.clone(), KEY_STYLE),
+            Span::styled(format!(" · {count} keys"), DIM_STYLE),
+        ]));
+    }
+
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Render weekly counts as a compact bar sparkline, oldest first.
+fn sparkline(weekly: &[u64]) -> String {
+    const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let max = weekly.iter().copied().max().unwrap_or(0);
+    weekly
+        .iter()
+        .map(|&count| {
+            if count == 0 {
+                '·'
+            } else {
+                let index = ((count as usize * BARS.len()).div_ceil(max as usize)).min(BARS.len());
+                BARS[index - 1]
+            }
+        })
+        .collect()
 }
 
 /// Preview for a selected target type: its targets (or keys for project).
@@ -648,6 +763,27 @@ mod tests {
         // Right pane previews the selected type's targets.
         assert!(text.contains("aaa111"));
         assert!(text.contains("q quit"));
+    }
+
+    #[test]
+    fn overview_stats_panel_shows_aggregates() {
+        let mut app = app();
+        app.set_main_branch("main".to_string(), 40);
+        let text = rendered_text(&app);
+        assert!(text.contains("statistics"));
+        assert!(text.contains("2 total"));
+        assert!(text.contains("2 pending"));
+        assert!(text.contains("2 strings · 0 lists · 0 sets"));
+        assert!(text.contains("40 commits · 1 with metadata (2%)"));
+        assert!(text.contains("keys/week"));
+        assert!(text.contains("of values"));
+        assert!(text.contains("top ns"));
+    }
+
+    #[test]
+    fn sparkline_scales_counts_to_bars() {
+        assert_eq!(sparkline(&[0, 1, 4, 8]), "·▁▄█");
+        assert_eq!(sparkline(&[0, 0]), "··");
     }
 
     #[test]

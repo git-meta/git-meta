@@ -237,6 +237,110 @@ pub(super) fn join_prefix(prefix: &str, segment: &str) -> String {
     }
 }
 
+/// Weeks covered by the overview activity sparkline.
+pub(super) const ACTIVITY_WEEKS: usize = 12;
+
+/// Aggregate statistics shown in the overview's statistics panel.
+pub(super) struct OverviewStats {
+    pub(super) total_keys: usize,
+    pub(super) promised_keys: u64,
+    /// Keys whose value is stored as a git blob reference.
+    pub(super) git_ref_keys: usize,
+    pub(super) strings: usize,
+    pub(super) lists: usize,
+    pub(super) sets: usize,
+    pub(super) distinct_targets: usize,
+    pub(super) target_types: usize,
+    /// Total size of inline stored values.
+    pub(super) value_bytes: usize,
+    pub(super) last_update_ms: Option<i64>,
+    /// Keys updated per week over [`ACTIVITY_WEEKS`], oldest first.
+    pub(super) weekly: Vec<u64>,
+    /// Top-level key namespace with the most keys.
+    pub(super) top_namespace: Option<(String, usize)>,
+    /// Distinct commits carrying commit-target metadata.
+    pub(super) commits_with_meta: usize,
+    /// Branch name and commit count of the repository's main history;
+    /// filled in by the event loop because it needs the repository.
+    pub(super) main_branch: Option<(String, usize)>,
+}
+
+impl OverviewStats {
+    pub(super) fn compute(snapshot: &MetaSnapshot, now_ms: i64) -> Self {
+        let week_ms = time::Duration::weeks(1).whole_milliseconds() as i64;
+        let mut weekly = vec![0u64; ACTIVITY_WEEKS];
+        let mut targets: BTreeSet<(&TargetType, &str)> = BTreeSet::new();
+        let mut commits: BTreeSet<&str> = BTreeSet::new();
+        let mut namespaces: BTreeMap<&str, usize> = BTreeMap::new();
+        let (mut strings, mut lists, mut sets, mut git_refs, mut bytes) = (0, 0, 0, 0, 0);
+        let mut last_update_ms = None;
+
+        for e in &snapshot.entries {
+            match e.value_type {
+                ValueType::String => strings += 1,
+                ValueType::List => lists += 1,
+                ValueType::Set => sets += 1,
+                _ => {}
+            }
+            if e.is_git_ref {
+                git_refs += 1;
+            }
+            bytes += e.value.len();
+            targets.insert((&e.target_type, e.target_value.as_str()));
+            if e.target_type == TargetType::Commit {
+                commits.insert(e.target_value.as_str());
+            }
+            if let Some(namespace) = e.key.split(':').next() {
+                *namespaces.entry(namespace).or_default() += 1;
+            }
+            last_update_ms = last_update_ms.max(Some(e.last_timestamp));
+
+            let weeks_ago = now_ms.saturating_sub(e.last_timestamp) / week_ms.max(1);
+            if (weeks_ago as usize) < ACTIVITY_WEEKS {
+                weekly[ACTIVITY_WEEKS - 1 - weeks_ago as usize] += 1;
+            }
+        }
+
+        let target_types = targets
+            .iter()
+            .map(|(target_type, _)| *target_type)
+            .collect::<BTreeSet<_>>()
+            .len();
+        let top_namespace = namespaces
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(namespace, count)| (namespace.to_string(), count));
+
+        Self {
+            total_keys: snapshot.entries.len(),
+            promised_keys: snapshot.promised_counts.values().sum(),
+            git_ref_keys: git_refs,
+            strings,
+            lists,
+            sets,
+            distinct_targets: targets.len(),
+            target_types,
+            value_bytes: bytes,
+            last_update_ms,
+            weekly,
+            top_namespace,
+            commits_with_meta: commits.len(),
+            main_branch: None,
+        }
+    }
+}
+
+/// Human-readable size: `812 B`, `4.3 KB`, `1.2 MB`.
+pub(super) fn format_bytes(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
 /// One global-search result: a key addressed by its full path.
 pub(super) struct SearchRow {
     pub(super) target_type: TargetType,
@@ -575,6 +679,68 @@ mod tests {
         assert_eq!(rows[0].path, "project ci:url");
 
         assert!(snap.search_rows("no-such-thing").is_empty());
+    }
+
+    #[test]
+    fn overview_stats_aggregate_snapshot() {
+        let week = time::Duration::weeks(1).whole_milliseconds() as i64;
+        let now = week * 100;
+        let snap = MetaSnapshot {
+            entries: vec![
+                entry(
+                    TargetType::Commit,
+                    "aaa111",
+                    "agent:model",
+                    "\"claude\"",
+                    ValueType::String,
+                    now - week / 2,
+                ),
+                entry(
+                    TargetType::Commit,
+                    "bbb222",
+                    "agent:prompt",
+                    "\"fix it\"",
+                    ValueType::String,
+                    now - week - week / 2,
+                ),
+                entry(
+                    TargetType::Project,
+                    "",
+                    "ci:runs",
+                    "[]",
+                    ValueType::List,
+                    now - week * 50,
+                ),
+            ],
+            promised_counts: BTreeMap::from([(TargetType::Branch, 3)]),
+        };
+        let stats = OverviewStats::compute(&snap, now);
+
+        assert_eq!(stats.total_keys, 3);
+        assert_eq!(stats.promised_keys, 3);
+        assert_eq!(stats.strings, 2);
+        assert_eq!(stats.lists, 1);
+        assert_eq!(stats.sets, 0);
+        assert_eq!(stats.distinct_targets, 3);
+        assert_eq!(stats.target_types, 2);
+        assert_eq!(stats.commits_with_meta, 2);
+        assert_eq!(stats.top_namespace, Some(("agent".to_string(), 2)));
+        assert_eq!(stats.last_update_ms, Some(now - week / 2));
+        assert_eq!(stats.value_bytes, 8 + 8 + 2);
+
+        // Newest entry lands in the current (last) week bucket, the older
+        // one a week earlier; the 50-week-old entry is outside the window.
+        assert_eq!(stats.weekly.len(), ACTIVITY_WEEKS);
+        assert_eq!(stats.weekly[ACTIVITY_WEEKS - 1], 1);
+        assert_eq!(stats.weekly[ACTIVITY_WEEKS - 2], 1);
+        assert_eq!(stats.weekly.iter().sum::<u64>(), 2);
+    }
+
+    #[test]
+    fn bytes_format_scales_units() {
+        assert_eq!(format_bytes(812), "812 B");
+        assert_eq!(format_bytes(4404), "4.3 KB");
+        assert_eq!(format_bytes(1_300_000), "1.2 MB");
     }
 
     #[test]
