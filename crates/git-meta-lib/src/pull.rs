@@ -173,7 +173,7 @@ fn local_ref_contains_tip(
     local_tip == remote_tip
         || repo
             .merge_base(local_tip, remote_tip)
-            .is_ok_and(|base| base == remote_tip)
+            .is_ok_and(|base| base.is_some_and(|base| base == remote_tip))
 }
 
 /// Count commits reachable from `new` but not from `old`.
@@ -199,8 +199,8 @@ mod tests {
     #[test]
     fn local_ref_contains_tip_when_local_descends_from_remote() {
         let (_dir, repo) = setup_repo();
-        let remote_tip = write_commit(&repo, Vec::new());
-        let local_tip = write_commit(&repo, vec![remote_tip]);
+        let remote_tip = write_commit(&repo, Vec::new(), "remote metadata");
+        let local_tip = write_commit(&repo, vec![remote_tip], "local metadata");
         repo.reference(
             "refs/meta/local/main",
             local_tip,
@@ -219,8 +219,28 @@ mod tests {
     #[test]
     fn local_ref_does_not_contain_newer_remote_tip() {
         let (_dir, repo) = setup_repo();
-        let local_tip = write_commit(&repo, Vec::new());
-        let remote_tip = write_commit(&repo, vec![local_tip]);
+        let local_tip = write_commit(&repo, Vec::new(), "local metadata");
+        let remote_tip = write_commit(&repo, vec![local_tip], "remote metadata");
+        repo.reference(
+            "refs/meta/local/main",
+            local_tip,
+            PreviousValue::Any,
+            "local metadata",
+        )
+        .unwrap();
+
+        assert!(!local_ref_contains_tip(
+            &repo,
+            "refs/meta/local/main",
+            Some(remote_tip)
+        ));
+    }
+
+    #[test]
+    fn local_ref_does_not_contain_unrelated_remote_tip() {
+        let (_dir, repo) = setup_repo();
+        let local_tip = write_commit(&repo, Vec::new(), "local metadata");
+        let remote_tip = write_commit(&repo, Vec::new(), "remote metadata");
         repo.reference(
             "refs/meta/local/main",
             local_tip,
@@ -249,7 +269,11 @@ mod tests {
         (dir, repo)
     }
 
-    fn write_commit(repo: &gix::Repository, parents: Vec<gix::ObjectId>) -> gix::ObjectId {
+    fn write_commit(
+        repo: &gix::Repository,
+        parents: Vec<gix::ObjectId>,
+        message: &str,
+    ) -> gix::ObjectId {
         let tree_oid = repo.empty_tree().edit().unwrap().write().unwrap().detach();
         let sig = gix::actor::Signature {
             name: "Test User".into(),
@@ -257,7 +281,7 @@ mod tests {
             time: gix::date::Time::new(946684800, 0),
         };
         let commit = gix::objs::Commit {
-            message: "metadata".into(),
+            message: message.into(),
             tree: tree_oid,
             author: sig.clone(),
             committer: sig,
