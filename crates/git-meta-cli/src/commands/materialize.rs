@@ -181,7 +181,7 @@ fn run_dry_run(ctx: &CommandContext, remote: Option<&str>, verbose: bool) -> Res
                     println!("dry-run: {ref_name} already up to date");
                     continue;
                 }
-                if let Ok(base_oid) = repo.merge_base(*local_oid, *remote_oid) {
+                if let Ok(Some(base_oid)) = repo.merge_base(*local_oid, *remote_oid) {
                     let is_ff = base_oid == *local_oid;
                     if verbose {
                         eprintln!(
@@ -324,7 +324,7 @@ fn dry_run_merge(
         );
     }
 
-    let merge_base_oid = repo.merge_base(*local_oid, *remote_oid).ok();
+    let merge_base_oid = repo.merge_base(*local_oid, *remote_oid).ok().flatten();
     let mut legacy_base_values: Option<BTreeMap<Key, TreeValue>> = None;
 
     let (

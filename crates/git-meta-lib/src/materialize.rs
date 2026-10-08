@@ -145,8 +145,8 @@ pub fn run(session: &Session, remote: Option<&str>, now: i64) -> Result<Material
                     continue;
                 }
                 match repo.merge_base(*local_oid, *remote_oid) {
-                    Ok(base_oid) => base_oid == *local_oid,
-                    Err(_) => false,
+                    Ok(Some(base_oid)) => base_oid == *local_oid,
+                    Ok(None) | Err(_) => false,
                 }
             }
         };
@@ -288,7 +288,7 @@ fn materialize_merge(
     let local_timestamp = extract_author_timestamp(&local_commit_obj)?;
     let remote_timestamp = extract_author_timestamp(remote_commit_obj)?;
 
-    let merge_base_oid = repo.merge_base(*local_oid, *remote_oid).ok();
+    let merge_base_oid = repo.merge_base(*local_oid, *remote_oid).ok().flatten();
 
     let (
         merged_values,
