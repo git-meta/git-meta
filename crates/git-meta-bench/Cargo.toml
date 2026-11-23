@@ -3,6 +3,7 @@ name = "git-meta-bench"
 description = "Scale benchmarks for git-meta: large metadata histories, prune settings, and sparse fetch."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

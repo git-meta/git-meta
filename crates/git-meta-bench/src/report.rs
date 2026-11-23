@@ -23,9 +23,7 @@ pub(crate) struct Storage {
 /// Measure the on-disk footprint of a generated repository.
 pub(crate) fn storage_snapshot(repo_dir: &Path, pack: bool) -> Result<Storage> {
     let git = git_dir(repo_dir);
-    let sqlite_bytes = std::fs::metadata(git.join("git-meta.sqlite"))
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let sqlite_bytes = std::fs::metadata(git.join("git-meta.sqlite")).map_or(0, |m| m.len());
     let loose_objects = loose_object_count(&git);
     let objects_bytes = dir_size(&git.join("objects"));
     let packed_bytes = if pack {

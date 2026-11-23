@@ -218,10 +218,8 @@ impl App {
             KeyCode::Char('g') => self.jump_to(0),
             KeyCode::Char('G') => self.jump_to(usize::MAX),
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.descend(),
-            KeyCode::Tab => {
-                if self.wanted_detail().is_some() {
-                    self.focus = PaneFocus::Detail;
-                }
+            KeyCode::Tab if self.wanted_detail().is_some() => {
+                self.focus = PaneFocus::Detail;
             }
             KeyCode::Esc => {
                 if self.stack.len() > 1 {
@@ -230,10 +228,8 @@ impl App {
                     self.should_quit = true;
                 }
             }
-            KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace => {
-                if self.stack.len() > 1 {
-                    self.stack.pop();
-                }
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace if self.stack.len() > 1 => {
+                self.stack.pop();
             }
             KeyCode::Char('/') => {
                 if matches!(self.view(), View::TargetList { .. } | View::KeyList { .. }) {

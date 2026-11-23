@@ -4,6 +4,7 @@ description = "Command-line tool for structured Git metadata (get/set, serialize
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/git-meta-cli"

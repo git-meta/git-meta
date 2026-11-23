@@ -522,8 +522,7 @@ pub(crate) fn run(
             sqlite_bytes_after_pull: std::fs::metadata(
                 crate::support::git_dir(&consumer_dir).join("git-meta.sqlite"),
             )
-            .map(|meta| meta.len())
-            .unwrap_or(0),
+            .map_or(0, |meta| meta.len()),
             tip_key_read,
             pruned_key_read,
             deep_read_latency: summarize_deep(&deep_reads),

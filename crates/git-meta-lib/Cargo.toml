@@ -4,6 +4,7 @@ description = "Library for attaching and exchanging structured metadata in Git r
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/git-meta-lib"
